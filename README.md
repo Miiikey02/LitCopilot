@@ -1,4 +1,4 @@
-# LitCopilot · 生物医学文献研究助手
+# Gaze · 生物医学文献研究助手
 
 A Chinese-first, bilingual (中文/English) natural-language search tool for
 biomedical researchers. Ask a question in Chinese or English and get a

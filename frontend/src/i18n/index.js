@@ -6,7 +6,7 @@ import LanguageDetector from 'i18next-browser-languagedetector'
 const resources = {
   zh: {
     translation: {
-      appName: 'LitCopilot',
+      appName: 'Gaze',
       tagline: '生物医学文献研究助手',
       searchPlaceholder: '用中文或英文提问，例如：CRISPR 递送方法治疗囊性纤维化的最新研究',
       searchButton: '检索',
@@ -72,7 +72,7 @@ const resources = {
   },
   en: {
     translation: {
-      appName: 'LitCopilot',
+      appName: 'Gaze',
       tagline: 'Biomedical literature research copilot',
       searchPlaceholder: 'Ask in Chinese or English, e.g. What is known about CRISPR delivery methods for cystic fibrosis?',
       searchButton: 'Search',
@@ -89,7 +89,7 @@ const resources = {
       langEn: 'English',
       noAnswer: 'No synthesized answer',
       emptyStateTitle: 'Start your literature search',
-      emptyStateBody: 'Enter a biomedical research question. LitCopilot retrieves real papers from PubMed and Semantic Scholar and returns a cited, synthesized answer.',
+      emptyStateBody: 'Enter a biomedical research question. Gaze retrieves real papers from PubMed and Semantic Scholar and returns a cited, synthesized answer.',
       errorGeneric: 'Something went wrong. Please try again.',
       errorNetwork: 'Cannot reach the backend service. Make sure it is running.',
       toggleToEn: 'English',

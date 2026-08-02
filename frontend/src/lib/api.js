@@ -1,4 +1,4 @@
-// Thin API client for the LitCopilot backend.
+// Thin API client for the Gaze backend.
 
 async function req(path, options) {
   const res = await fetch(path, options)

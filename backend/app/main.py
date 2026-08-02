@@ -1,4 +1,4 @@
-"""LitCopilot backend — FastAPI app.
+"""Gaze backend — FastAPI app.
 
 Pipeline: detect language -> expand query to English medical terms ->
 retrieve from PubMed + Semantic Scholar -> dedupe -> DeepSeek synthesis with
@@ -30,7 +30,7 @@ from .services import llm_service, sessions
 from .services.retrieval import retrieve
 from .services.trials import find_trials
 
-app = FastAPI(title="LitCopilot API", version="0.1.0")
+app = FastAPI(title="Gaze API", version="0.1.0")
 
 
 @app.on_event("startup")

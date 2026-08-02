@@ -1,4 +1,4 @@
-# Deploying LitCopilot
+# Deploying Gaze
 
 The whole app ships as **one Docker image**: a build stage compiles the React
 frontend, and the FastAPI backend serves both that frontend and the `/api`

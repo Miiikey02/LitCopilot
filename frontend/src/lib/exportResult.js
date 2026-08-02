@@ -4,7 +4,7 @@
 
 export function resultToMarkdown(result) {
   const lines = []
-  lines.push(`# LitCopilot — ${result.original_query}`)
+  lines.push(`# Gaze — ${result.original_query}`)
   lines.push('')
   lines.push(`_${result.detected_lang === 'zh' ? '识别语言' : 'Detected language'}: ${result.detected_lang} · 检索用词 (English): ${result.english_query}_`)
   lines.push('')
@@ -41,8 +41,8 @@ function download(filename, text, mime) {
 }
 
 export function exportMarkdown(result) {
-  const safe = (result.original_query || 'litcopilot').replace(/[^\w一-鿿-]+/g, '_').slice(0, 40)
-  download(`litcopilot-${safe}.md`, resultToMarkdown(result), 'text/markdown;charset=utf-8')
+  const safe = (result.original_query || 'gaze').replace(/[^\w一-鿿-]+/g, '_').slice(0, 40)
+  download(`gaze-${safe}.md`, resultToMarkdown(result), 'text/markdown;charset=utf-8')
 }
 
 // PDF export uses the browser's native print-to-PDF. A print stylesheet

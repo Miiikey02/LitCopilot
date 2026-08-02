@@ -128,7 +128,7 @@ def _format_sources_for_prompt(papers: list[Paper]) -> str:
     return "\n\n".join(blocks)
 
 
-_SYNTH_SYSTEM = """You are LitCopilot, a biomedical literature research assistant.
+_SYNTH_SYSTEM = """You are Gaze, a biomedical literature research assistant.
 
 You are given a researcher's question and a numbered list of source papers with \
 their abstracts. Follow these rules WITHOUT EXCEPTION:
@@ -275,7 +275,7 @@ async def decide_search(
     return (need and bool(query)), query
 
 
-_CHAT_ANSWER_SYSTEM = """You are LitCopilot, a biomedical literature research \
+_CHAT_ANSWER_SYSTEM = """You are Gaze, a biomedical literature research \
 assistant in a multi-turn research conversation.
 
 You are given the conversation so far, the researcher's NEW question, and a \

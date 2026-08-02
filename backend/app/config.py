@@ -23,7 +23,7 @@ DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
 # Optional. Without it PubMed allows 3 req/sec; with it, 10 req/sec.
 NCBI_API_KEY = os.getenv("NCBI_API_KEY", "")
 # NCBI asks callers to identify themselves via tool + email params.
-NCBI_TOOL = os.getenv("NCBI_TOOL", "LitCopilot")
+NCBI_TOOL = os.getenv("NCBI_TOOL", "Gaze")
 NCBI_EMAIL = os.getenv("NCBI_EMAIL", "")
 
 # --- Retrieval tuning ---
