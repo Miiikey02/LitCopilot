@@ -54,27 +54,28 @@ def dedupe(papers: list[Paper]) -> list[Paper]:
     return [seen[k] for k in order]
 
 
-async def retrieve(english_query: str, limit: int) -> list[Paper]:
-    """Fetch from PubMed + Semantic Scholar + OpenAlex + bioRxiv, then dedupe.
+async def retrieve(
+    english_query: str, limit: int, include_preprints: bool = True
+) -> list[Paper]:
+    """Fetch from PubMed + Semantic Scholar + OpenAlex (+ bioRxiv), then dedupe.
 
     PubMed is the primary source (curated, has structured surnames); its records
     are placed first so they win on merge. Semantic Scholar and OpenAlex broaden
-    coverage; bioRxiv adds cutting-edge preprints. All sources fail soft, so any
-    one outage never breaks the pipeline.
+    coverage; bioRxiv adds cutting-edge preprints (included only when
+    `include_preprints`). All sources fail soft, so any one outage never breaks
+    the pipeline.
     """
-    pubmed_res, s2_res, openalex_res, biorxiv_res = await asyncio.gather(
+    tasks = [
         search_pubmed(english_query, retmax=limit),
         search_semantic_scholar(english_query, limit=limit),
         search_openalex(english_query, limit=limit),
-        search_biorxiv(english_query, limit=limit),
-        return_exceptions=True,
-    )
+    ]
+    if include_preprints:
+        tasks.append(search_biorxiv(english_query, limit=limit))
+
+    results = await asyncio.gather(*tasks, return_exceptions=True)
     # Keep source order pubmed → s2 → openalex → biorxiv (PubMed wins merges),
     # but interleave so the downstream [:limit] cap includes a mix from each
     # source rather than filling up entirely from PubMed.
-    lists = [
-        r
-        for r in (pubmed_res, s2_res, openalex_res, biorxiv_res)
-        if isinstance(r, list)
-    ]
+    lists = [r for r in results if isinstance(r, list)]
     return dedupe(_interleave(lists))

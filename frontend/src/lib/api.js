@@ -18,8 +18,13 @@ const jsonPost = (path, body) =>
   })
 
 // --- Search ---
-export const search = (query, lang, limit) =>
-  jsonPost('/api/search', { query, lang: lang || null, limit: limit ?? null })
+export const search = (query, lang, limit, includePreprints = true) =>
+  jsonPost('/api/search', {
+    query,
+    lang: lang || null,
+    limit: limit ?? null,
+    include_preprints: includePreprints,
+  })
 
 // --- Research agent (multi-turn follow-ups) ---
 export const chat = (sessionId, message, lang) =>

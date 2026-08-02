@@ -13,6 +13,8 @@ class SearchRequest(BaseModel):
     # How many papers to retrieve/synthesize this search. Clamped server-side;
     # defaults to MAX_RESULTS when omitted.
     limit: Optional[int] = None
+    # Whether to include bioRxiv preprints (not peer-reviewed) in retrieval.
+    include_preprints: bool = True
 
 
 class SourceCard(BaseModel):

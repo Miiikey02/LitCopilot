@@ -66,7 +66,9 @@ async def search(req: SearchRequest) -> SearchResponse:
     #    the synthesis prompt stays bounded. Honor the caller's limit within a
     #    safe range; fall back to MAX_RESULTS when unset.
     limit = max(3, min(req.limit or MAX_RESULTS, 40))
-    papers = (await retrieve(english_query, limit=limit))[:limit]
+    papers = (
+        await retrieve(english_query, limit=limit, include_preprints=req.include_preprints)
+    )[:limit]
 
     # 3. Synthesize a cited answer (or a clear message if no key / no hits).
     warning = None
@@ -109,7 +111,9 @@ async def search(req: SearchRequest) -> SearchResponse:
     seed_messages = [{"role": "user", "content": query}]
     if answer:
         seed_messages.append({"role": "assistant", "content": answer})
-    session_id = sessions.create_session(papers, seed_messages, lang)
+    session_id = sessions.create_session(
+        papers, seed_messages, lang, include_preprints=req.include_preprints
+    )
 
     return SearchResponse(
         original_query=query,
@@ -178,7 +182,11 @@ async def chat(req: ChatRequest) -> ChatResponse:
 
     searched = False
     if need_search and search_query:
-        new_papers = await retrieve(search_query, limit=8)
+        new_papers = await retrieve(
+            search_query,
+            limit=8,
+            include_preprints=sess.get("include_preprints", True),
+        )
         added = sessions.add_papers(req.session_id, new_papers)
         if added:
             searched = True

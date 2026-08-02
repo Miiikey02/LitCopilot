@@ -25,13 +25,19 @@ _MAX_HISTORY = 12  # cap stored messages per session
 _sessions: "OrderedDict[str, dict]" = OrderedDict()
 
 
-def create_session(papers: list[Paper], messages: list[dict], lang: str) -> str:
+def create_session(
+    papers: list[Paper],
+    messages: list[dict],
+    lang: str,
+    include_preprints: bool = True,
+) -> str:
     """Start a session seeded with the initial search's papers + first exchange."""
     session_id = uuid.uuid4().hex
     _sessions[session_id] = {
         "papers": list(papers),
         "messages": list(messages),
         "lang": lang,
+        "include_preprints": include_preprints,
         "updated": time(),
     }
     _sessions.move_to_end(session_id)

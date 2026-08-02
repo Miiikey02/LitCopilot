@@ -14,6 +14,7 @@ export default function App() {
   const [tab, setTab] = useState('search') // 'search' | 'library'
   const [query, setQuery] = useState('')
   const [limit, setLimit] = useState(15) // how many papers to retrieve per search
+  const [includePreprints, setIncludePreprints] = useState(true) // bioRxiv preprints
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [result, setResult] = useState(null)
@@ -54,7 +55,7 @@ export default function App() {
       setTrials(null) // clear trials from any previous search
       setChatTurns([]) // start a fresh research thread for the new search
       try {
-        const data = await api.search(text, lang, limit)
+        const data = await api.search(text, lang, limit, includePreprints)
         setResult(data)
         loadHistory()
       } catch (err) {
@@ -64,7 +65,7 @@ export default function App() {
         setLoading(false)
       }
     },
-    [loading, loadHistory, limit, t, i18n]
+    [loading, loadHistory, limit, includePreprints, t, i18n]
   )
 
   const onFindTrials = async () => {
@@ -218,6 +219,15 @@ export default function App() {
                 </option>
               ))}
             </select>
+            <label className="ml-2 inline-flex cursor-pointer items-center gap-1.5">
+              <input
+                type="checkbox"
+                checked={includePreprints}
+                onChange={(e) => setIncludePreprints(e.target.checked)}
+                className="h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+              />
+              {t('includePreprints')}
+            </label>
           </div>
         </form>
 
