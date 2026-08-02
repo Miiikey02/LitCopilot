@@ -6,6 +6,7 @@ const sourceLabel = {
   pubmed: 'PubMed',
   semantic_scholar: 'Semantic Scholar',
   openalex: 'OpenAlex',
+  biorxiv: 'bioRxiv',
 }
 
 const SourceCard = React.forwardRef(function SourceCard({ paper, index, onSave }, ref) {

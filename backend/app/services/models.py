@@ -13,8 +13,8 @@ from typing import Optional
 
 @dataclass
 class Paper:
-    source: str  # "pubmed" | "semantic_scholar" | "openalex"
-    source_id: str  # PMID, S2 paper id, or OpenAlex work id
+    source: str  # "pubmed" | "semantic_scholar" | "openalex" | "biorxiv"
+    source_id: str  # PMID, S2 paper id, OpenAlex work id, or bioRxiv DOI
     title: str
     authors: list[str] = field(default_factory=list)
     year: Optional[int] = None

@@ -6,6 +6,7 @@ const sourceLabel = {
   pubmed: 'PubMed',
   semantic_scholar: 'Semantic Scholar',
   openalex: 'OpenAlex',
+  biorxiv: 'bioRxiv',
 }
 
 function LibraryCard({ paper, onChanged }) {
