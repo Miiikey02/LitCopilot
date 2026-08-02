@@ -1,0 +1,34 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  @apply bg-slate-50 text-slate-900 antialiased;
+}
+
+/* Highlight animation when a citation is clicked. */
+@keyframes cardFlash {
+  0% { background-color: rgb(219 234 254); }
+  100% { background-color: transparent; }
+}
+.card-flash {
+  animation: cardFlash 1.6s ease-out;
+}
+
+/* Print / export-to-PDF: show only the answer + reference material. */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  body {
+    background: #fff;
+  }
+  main {
+    padding: 0 !important;
+    max-width: 100% !important;
+  }
+}

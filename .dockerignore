@@ -1,0 +1,21 @@
+# Keep the build context small and — critically — keep secrets/state OUT of the image.
+**/.venv
+**/__pycache__
+**/*.pyc
+**/.DS_Store
+.git
+.gitignore
+
+# Secrets and local state (never bake these into an image)
+backend/.env
+backend/*.db
+backend/data
+
+# Rebuilt inside the image, so don't ship local copies
+frontend/node_modules
+frontend/dist
+
+# Docs / configs not needed at runtime
+*.md
+render.yaml
+fly.toml

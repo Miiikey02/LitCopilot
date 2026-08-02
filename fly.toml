@@ -1,0 +1,28 @@
+# Fly.io config — deploy LitCopilot as one Docker app.
+# First time:
+#   fly launch --no-deploy --copy-config --name litcopilot   # reuses this file
+#   fly secrets set DEEPSEEK_API_KEY=sk-...                   # secret, not in this file
+#   fly deploy
+app = "litcopilot"
+primary_region = "hkg"        # Hong Kong — low latency for CN/APAC users; change as needed
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  DEEPSEEK_MODEL = "deepseek-chat"
+  FRONTEND_DIST = "/app/frontend/dist"
+  DB_PATH = "/app/backend/data/litcopilot.db"
+
+[http_service]
+  internal_port = 8000        # matches the Dockerfile's default port
+  force_https = true
+  auto_stop_machines = true   # scale to zero when idle (cheap demo)
+  auto_start_machines = true
+  min_machines_running = 0
+
+# Optional: persist saved library + history across deploys.
+# Create the volume first:  fly volumes create litcopilot_data --size 1 --region hkg
+# [mounts]
+#   source = "litcopilot_data"
+#   destination = "/app/backend/data"

@@ -1,0 +1,20 @@
+# --- Secrets & local state (NEVER commit) ---
+.env
+.env.local
+*.db
+backend/data/
+
+# --- Python ---
+.venv/
+__pycache__/
+*.pyc
+
+# --- Node / frontend build artifacts ---
+node_modules/
+dist/
+
+# --- OS / editor ---
+.DS_Store
+*.log
+
+# .env.example IS tracked (it's a template with no secrets)

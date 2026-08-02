@@ -1,0 +1,90 @@
+import React, { useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import CiteButton from './CiteButton'
+
+const sourceLabel = { pubmed: 'PubMed', semantic_scholar: 'Semantic Scholar' }
+
+const SourceCard = React.forwardRef(function SourceCard({ paper, index, onSave }, ref) {
+  const { t } = useTranslation()
+  const [saved, setSaved] = useState(false)
+  const [saving, setSaving] = useState(false)
+
+  const handleSave = async () => {
+    if (saved || saving) return
+    setSaving(true)
+    try {
+      await onSave(paper)
+      setSaved(true)
+    } catch {
+      // Surface nothing intrusive; leave the button retryable.
+    } finally {
+      setSaving(false)
+    }
+  }
+  return (
+    <div
+      ref={ref}
+      data-cite={paper.citation_key}
+      className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm transition-colors"
+    >
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
+          {index + 1} · {sourceLabel[paper.source] || paper.source}
+        </span>
+        <span className="text-xs font-medium text-blue-700">
+          [{paper.citation_key}]
+        </span>
+      </div>
+
+      {/* Title: Chinese translation first (Chinese-first), English below. */}
+      {paper.title_zh && (
+        <h3 className="mb-0.5 font-semibold leading-6 text-slate-900">
+          {paper.title_zh}
+        </h3>
+      )}
+      <p className="text-sm leading-6 text-slate-600">{paper.title}</p>
+
+      <p className="mt-2 text-xs text-slate-500">
+        {paper.authors.slice(0, 4).join(', ')}
+        {paper.authors.length > 4 ? ' et al.' : ''}
+        {paper.year ? ` · ${paper.year}` : ''}
+        {paper.venue ? ` · ${paper.venue}` : ''}
+      </p>
+
+      {paper.relevance_zh && (
+        <div className="mt-3 rounded-md bg-amber-50 p-2 text-sm text-amber-900">
+          <span className="font-medium">{t('whyRelevant')}：</span>
+          {paper.relevance_zh}
+        </div>
+      )}
+
+      <div className="mt-3 flex items-center gap-4">
+        <a
+          href={paper.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline"
+        >
+          {t('viewSource')} →
+        </a>
+        <CiteButton paper={paper} />
+        {onSave && (
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={saved || saving}
+            className={
+              saved
+                ? 'ml-auto text-sm font-medium text-green-600'
+                : 'ml-auto text-sm font-medium text-slate-600 hover:text-slate-900 disabled:opacity-50'
+            }
+          >
+            {saved ? `✓ ${t('saved')}` : `☆ ${t('save')}`}
+          </button>
+        )}
+      </div>
+    </div>
+  )
+})
+
+export default SourceCard
