@@ -41,14 +41,16 @@ export default function App() {
   }, [loadHistory])
 
   const runSearch = useCallback(
-    async (q) => {
+    async (q, langOverride) => {
       const text = (q ?? '').trim()
       if (!text || loading) return
+      // Response language follows the UI language (toggle drives content too).
+      const lang = langOverride || (i18n.language.startsWith('zh') ? 'zh' : 'en')
       setLoading(true)
       setError('')
       setTrials(null) // clear trials from any previous search
       try {
-        const data = await api.search(text, null, limit)
+        const data = await api.search(text, lang, limit)
         setResult(data)
         loadHistory()
       } catch (err) {
@@ -58,7 +60,7 @@ export default function App() {
         setLoading(false)
       }
     },
-    [loading, loadHistory, limit, t]
+    [loading, loadHistory, limit, t, i18n]
   )
 
   const onFindTrials = async () => {
@@ -100,7 +102,11 @@ export default function App() {
   }
 
   const toggleLang = () => {
-    i18n.changeLanguage(i18n.language.startsWith('zh') ? 'en' : 'zh')
+    const next = i18n.language.startsWith('zh') ? 'en' : 'zh'
+    i18n.changeLanguage(next)
+    // The answer and per-source localized fields are generated server-side, so
+    // switching language re-runs the current search to regenerate them.
+    if (result?.original_query) runSearch(result.original_query, next)
   }
 
   return (

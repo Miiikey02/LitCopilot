@@ -141,21 +141,22 @@ always use the [Surname, Year] token shown for the source. Only cite sources \
 from the provided list.
 3. If the provided abstracts do not contain enough information to answer, say so \
 explicitly in the answer rather than guessing.
-4. Write the answer in the SAME LANGUAGE as the user's question. If the question \
-is in Chinese, write a natural, fluent Chinese answer directly (do NOT translate \
-a literal English draft). 3-5 paragraphs.
+4. Write the answer in the RESPONSE LANGUAGE stated in the user message (Chinese \
+or English). Write naturally and fluently in that language directly — do NOT \
+translate a literal draft from the other language. 3-5 paragraphs.
 5. Do NOT reproduce abstract text verbatim — paraphrase in your own words.
 
-Then, for EACH source, provide:
-  - title_zh: a natural Chinese translation of the title.
-  - relevance_zh: one short Chinese sentence on why this paper is relevant to the \
-    question (your own paraphrase, not copied text).
+Then, for EACH source, provide (ALL in the RESPONSE LANGUAGE):
+  - title_localized: the paper's title translated into the response language. If \
+    the title is ALREADY in the response language, return an empty string "".
+  - relevance: one short sentence in the response language on why this paper is \
+    relevant to the question (your own paraphrase, not copied text).
 
 Return ONLY a JSON object of this exact shape and nothing else:
 {
-  "answer": "<the synthesized answer in the user's language>",
+  "answer": "<the synthesized answer in the response language>",
   "sources": [
-    {"index": 1, "title_zh": "...", "relevance_zh": "..."},
+    {"index": 1, "title_localized": "...", "relevance": "..."},
     ...
   ]
 }"""
@@ -176,8 +177,11 @@ async def synthesize(query: str, lang: str, papers: list[Paper]) -> dict:
         )
         return {"answer": no_hits, "sources": []}
 
+    response_language = "Chinese" if lang == "zh" else "English"
     user_msg = (
-        f"User question (language: {lang}):\n{query}\n\n"
+        f"RESPONSE LANGUAGE: {response_language} — write the answer, "
+        f"title_localized, and relevance fields entirely in {response_language}.\n\n"
+        f"User question:\n{query}\n\n"
         f"Source papers:\n{_format_sources_for_prompt(papers)}"
     )
     # Budget generously: a Chinese answer + title_zh/relevance_zh for up to ~18
@@ -202,11 +206,18 @@ async def synthesize(query: str, lang: str, papers: list[Paper]) -> dict:
         # Both attempts failed to yield valid JSON.
         raise last_err or RuntimeError("synthesis returned no parseable JSON")
 
-    # Enrich papers with the per-source Chinese fields, matched by 1-based index.
+    # Enrich papers with the per-source localized fields (in the response
+    # language), matched by 1-based index. The Paper/DB field names keep their
+    # historical *_zh suffix but now hold response-language text.
     for s in data.get("sources", []):
         idx = s.get("index", 0) - 1
         if 0 <= idx < len(papers):
-            papers[idx].title_zh = s.get("title_zh", "")
-            papers[idx].relevance_zh = s.get("relevance_zh", "")
+            localized = (s.get("title_localized") or "").strip()
+            # Drop the translated title when it just duplicates the original
+            # (paper already in the response language) so the card shows it once.
+            if localized.lower() == papers[idx].title.strip().lower():
+                localized = ""
+            papers[idx].title_zh = localized
+            papers[idx].relevance_zh = s.get("relevance", "")
 
     return {"answer": data.get("answer", "").strip()}
