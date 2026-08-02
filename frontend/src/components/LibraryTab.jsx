@@ -2,7 +2,11 @@ import React, { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import * as api from '../lib/api'
 
-const sourceLabel = { pubmed: 'PubMed', semantic_scholar: 'Semantic Scholar' }
+const sourceLabel = {
+  pubmed: 'PubMed',
+  semantic_scholar: 'Semantic Scholar',
+  openalex: 'OpenAlex',
+}
 
 function LibraryCard({ paper, onChanged }) {
   const { t } = useTranslation()

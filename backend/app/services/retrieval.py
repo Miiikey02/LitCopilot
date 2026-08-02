@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 
 from .models import Paper
+from .openalex import search_openalex
 from .pubmed import search_pubmed
 from .semantic_scholar import search_semantic_scholar
 
@@ -21,6 +22,23 @@ def _merge(existing: Paper, other: Paper) -> Paper:
     return existing
 
 
+def _interleave(lists: list[list[Paper]]) -> list[Paper]:
+    """Round-robin merge so every source contributes within any prefix/cap.
+
+    Order is pubmed[0], s2[0], openalex[0], pubmed[1], ... — each source's top
+    hits surface early, and because PubMed is emitted first within each round it
+    still wins on the subsequent dedup/merge (keeping its curated abstracts).
+    """
+    out: list[Paper] = []
+    if not lists:
+        return out
+    for i in range(max(len(lst) for lst in lists)):
+        for lst in lists:
+            if i < len(lst):
+                out.append(lst[i])
+    return out
+
+
 def dedupe(papers: list[Paper]) -> list[Paper]:
     """Collapse duplicates across sources by DOI, then normalized title."""
     seen: dict[str, Paper] = {}
@@ -36,19 +54,20 @@ def dedupe(papers: list[Paper]) -> list[Paper]:
 
 
 async def retrieve(english_query: str, limit: int) -> list[Paper]:
-    """Fetch from PubMed + Semantic Scholar concurrently, then dedupe.
+    """Fetch from PubMed + Semantic Scholar + OpenAlex concurrently, then dedupe.
 
     PubMed is the primary source (curated, has structured surnames); its records
-    are placed first so they win on merge.
+    are placed first so they win on merge. Semantic Scholar and OpenAlex broaden
+    coverage; all three fail soft, so any one outage never breaks the pipeline.
     """
-    pubmed_res, s2_res = await asyncio.gather(
+    pubmed_res, s2_res, openalex_res = await asyncio.gather(
         search_pubmed(english_query, retmax=limit),
         search_semantic_scholar(english_query, limit=limit),
+        search_openalex(english_query, limit=limit),
         return_exceptions=True,
     )
-    papers: list[Paper] = []
-    if isinstance(pubmed_res, list):
-        papers.extend(pubmed_res)
-    if isinstance(s2_res, list):
-        papers.extend(s2_res)
-    return dedupe(papers)
+    # Keep source order pubmed → s2 → openalex (PubMed wins merges), but
+    # interleave so the downstream [:limit] cap includes a mix from each source
+    # rather than filling up entirely from PubMed.
+    lists = [r for r in (pubmed_res, s2_res, openalex_res) if isinstance(r, list)]
+    return dedupe(_interleave(lists))

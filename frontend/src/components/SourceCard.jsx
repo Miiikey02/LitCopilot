@@ -2,7 +2,11 @@ import React, { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import CiteButton from './CiteButton'
 
-const sourceLabel = { pubmed: 'PubMed', semantic_scholar: 'Semantic Scholar' }
+const sourceLabel = {
+  pubmed: 'PubMed',
+  semantic_scholar: 'Semantic Scholar',
+  openalex: 'OpenAlex',
+}
 
 const SourceCard = React.forwardRef(function SourceCard({ paper, index, onSave }, ref) {
   const { t } = useTranslation()

@@ -14,8 +14,8 @@ literature from PubMed and Semantic Scholar (no hallucinated summaries).
 ## What works today (end-to-end)
 
 `detect language → expand query to English medical terms → retrieve (PubMed +
-Semantic Scholar, concurrent) → dedupe → DeepSeek synthesis with strict
-citations → two-panel bilingual UI`
+Semantic Scholar + OpenAlex, concurrent) → dedupe → DeepSeek synthesis with
+strict citations → two-panel bilingual UI`
 
 - **Chinese-first UI** — every string in a translation table, Chinese by
   default, English toggle. Not a bolt-on.
@@ -151,6 +151,8 @@ cards with `title_zh` / `relevance_zh`), and an optional `warning`.
 |--------|--------|
 | PubMed / NCBI E-utilities | ✅ integrated |
 | Semantic Scholar Graph API | ✅ integrated (fail-soft) |
+| OpenAlex | ✅ integrated (fail-soft; free, no key; ~250M works — broad Scholar-like coverage) |
+| Google Scholar | ❌ no free/official API; scraping violates ToS & is blocked from cloud IPs → OpenAlex used instead (or a paid SerpApi bridge) |
 | ClinicalTrials.gov | ⏳ nice-to-have, has a free API |
 | CNKI (中国知网) / 万方 | ❌ no free API; scraping violates ToS → future paid institutional API |
 | ChiCTR (中国临床试验注册中心) | ❌ no documented public API → manual/future integration |
