@@ -6,6 +6,7 @@ import SourceCard from './components/SourceCard'
 import LibraryTab from './components/LibraryTab'
 import HistoryList from './components/HistoryList'
 import TrialsList from './components/TrialsList'
+import ResearchChat from './components/ResearchChat'
 import { exportMarkdown, exportPdf } from './lib/exportResult'
 
 export default function App() {
@@ -19,6 +20,8 @@ export default function App() {
   const [history, setHistory] = useState([])
   const [trials, setTrials] = useState(null)
   const [trialsLoading, setTrialsLoading] = useState(false)
+  const [chatTurns, setChatTurns] = useState([]) // follow-up research thread
+  const [chatLoading, setChatLoading] = useState(false)
 
   // Refs to each source card so citation clicks can scroll + flash them.
   const cardRefs = useRef({})
@@ -49,6 +52,7 @@ export default function App() {
       setLoading(true)
       setError('')
       setTrials(null) // clear trials from any previous search
+      setChatTurns([]) // start a fresh research thread for the new search
       try {
         const data = await api.search(text, lang, limit)
         setResult(data)
@@ -75,6 +79,37 @@ export default function App() {
       setTrialsLoading(false)
     }
   }
+
+  const onAsk = useCallback(
+    async (message) => {
+      if (!result?.session_id || chatLoading) return
+      const lang = i18n.language.startsWith('zh') ? 'zh' : 'en'
+      setChatLoading(true)
+      try {
+        const resp = await api.chat(result.session_id, message, lang)
+        setChatTurns((prev) => [
+          ...prev,
+          {
+            question: message,
+            answer: resp.answer,
+            searched: resp.searched,
+            searchQuery: resp.search_query,
+            warning: resp.warning,
+          },
+        ])
+        // The agent may have grown the corpus — refresh the sources panel.
+        setResult((prev) => (prev ? { ...prev, sources: resp.sources } : prev))
+      } catch {
+        setChatTurns((prev) => [
+          ...prev,
+          { question: message, answer: '', warning: t('errorNetwork') },
+        ])
+      } finally {
+        setChatLoading(false)
+      }
+    },
+    [result, chatLoading, i18n, t]
+  )
 
   const onSubmit = (e) => {
     e.preventDefault()
@@ -290,6 +325,17 @@ export default function App() {
                   </div>
                   <TrialsList trials={trials} />
                 </div>
+              )}
+
+              {/* Conversational deep-dive: follow-up research agent */}
+              {result.answer && result.session_id && (
+                <ResearchChat
+                  turns={chatTurns}
+                  onAsk={onAsk}
+                  loading={chatLoading}
+                  citationKeys={citationKeys}
+                  onCite={onCite}
+                />
               )}
             </section>
 

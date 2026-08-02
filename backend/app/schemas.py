@@ -35,7 +35,22 @@ class SearchResponse(BaseModel):
     english_query: str  # what we actually searched with
     answer: str
     sources: list[SourceCard]
+    session_id: str = ""  # research-conversation handle for follow-ups
     warning: Optional[str] = None  # e.g. LLM key missing
+
+
+class ChatRequest(BaseModel):
+    session_id: str
+    message: str
+    lang: Optional[str] = None  # response language; defaults to session's
+
+
+class ChatResponse(BaseModel):
+    answer: str
+    sources: list[SourceCard]  # full, updated corpus (metadata only)
+    searched: bool  # whether the agent pulled new literature this turn
+    search_query: str = ""  # the English query it searched, if any
+    warning: Optional[str] = None
 
 
 # --- Library (saved papers, tags, history) ---

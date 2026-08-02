@@ -21,6 +21,10 @@ const jsonPost = (path, body) =>
 export const search = (query, lang, limit) =>
   jsonPost('/api/search', { query, lang: lang || null, limit: limit ?? null })
 
+// --- Research agent (multi-turn follow-ups) ---
+export const chat = (sessionId, message, lang) =>
+  jsonPost('/api/chat', { session_id: sessionId, message, lang: lang || null })
+
 // --- Library ---
 export const saveLibrary = (paper) => jsonPost('/api/library/save', paper)
 export const listLibrary = (tag) =>

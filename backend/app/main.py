@@ -18,13 +18,15 @@ from . import db
 from .config import MAX_RESULTS, has_llm_key
 from .routers import library
 from .schemas import (
+    ChatRequest,
+    ChatResponse,
     SearchRequest,
     SearchResponse,
     SourceCard,
     TrialsRequest,
     TrialsResponse,
 )
-from .services import llm_service
+from .services import llm_service, sessions
 from .services.retrieval import retrieve
 from .services.trials import find_trials
 
@@ -102,12 +104,20 @@ async def search(req: SearchRequest) -> SearchResponse:
     # Record the search so it can be revisited from the history list.
     db.add_history(query, lang, english_query, len(cards))
 
+    # Seed a research session so the user can ask follow-up questions that keep
+    # this corpus (papers hold abstracts, kept server-side only).
+    seed_messages = [{"role": "user", "content": query}]
+    if answer:
+        seed_messages.append({"role": "assistant", "content": answer})
+    session_id = sessions.create_session(papers, seed_messages, lang)
+
     return SearchResponse(
         original_query=query,
         detected_lang=lang,
         english_query=english_query,
         answer=answer,
         sources=cards,
+        session_id=session_id,
         warning=warning,
     )
 
@@ -124,6 +134,83 @@ async def trials(req: TrialsRequest) -> TrialsResponse:
     term = await llm_service.expand_query(query, lang)
     found = await find_trials(term)
     return TrialsResponse(term=term, trials=found)
+
+
+@app.post("/api/chat", response_model=ChatResponse)
+async def chat(req: ChatRequest) -> ChatResponse:
+    """One turn of the multi-turn research agent.
+
+    The agent decides whether the follow-up needs new literature; if so it
+    searches, grows the session corpus, and localizes the new papers. It then
+    answers the follow-up citation-strictly from the accumulated corpus.
+    """
+    sess = sessions.get_session(req.session_id)
+    if sess is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Session not found or expired; run a new search to start one.",
+        )
+    message = req.message.strip()
+    if not message:
+        raise HTTPException(status_code=422, detail="Empty message")
+
+    lang = req.lang or sess["lang"]
+    sess["lang"] = lang  # follow the current UI language
+
+    def _cards() -> list[SourceCard]:
+        return [SourceCard(**p.to_card()) for p in sess["papers"]]
+
+    if not llm_service.has_llm_key():
+        return ChatResponse(
+            answer="",
+            sources=_cards(),
+            searched=False,
+            warning=(
+                "未配置 DEEPSEEK_API_KEY，无法进行对话式深挖。"
+                if lang == "zh"
+                else "DEEPSEEK_API_KEY is not configured; conversational research is unavailable."
+            ),
+        )
+
+    # 1. Agent decides whether to pull in new literature for this follow-up.
+    corpus_titles = [p.title for p in sess["papers"]]
+    need_search, search_query = await llm_service.decide_search(message, corpus_titles)
+
+    searched = False
+    if need_search and search_query:
+        new_papers = await retrieve(search_query, limit=8)
+        added = sessions.add_papers(req.session_id, new_papers)
+        if added:
+            searched = True
+            await llm_service.localize_papers(added, message, lang)
+
+    sess = sessions.get_session(req.session_id)  # refresh after any growth
+
+    # 2. Answer the follow-up from the (possibly grown) corpus.
+    warning = None
+    try:
+        answer = await llm_service.answer_from_corpus(
+            sess["messages"], message, lang, sess["papers"]
+        )
+    except Exception:  # noqa: BLE001 - surface a graceful message, keep corpus
+        answer = ""
+        warning = (
+            "回答生成失败（可能是密钥无效、额度不足或网络问题），请稍后重试。"
+            if lang == "zh"
+            else "Failed to generate a reply (invalid key, quota, or network). Please retry."
+        )
+
+    if answer:
+        sessions.add_message(req.session_id, "user", message)
+        sessions.add_message(req.session_id, "assistant", answer)
+
+    return ChatResponse(
+        answer=answer,
+        sources=_cards(),
+        searched=searched,
+        search_query=search_query if searched else "",
+        warning=warning,
+    )
 
 
 # --- Serve the built frontend (single-service deployment) -----------------

@@ -221,3 +221,141 @@ async def synthesize(query: str, lang: str, papers: list[Paper]) -> dict:
             papers[idx].relevance_zh = s.get("relevance", "")
 
     return {"answer": data.get("answer", "").strip()}
+
+
+# --- Multi-turn research agent ---------------------------------------------
+
+
+def _lang_name(lang: str) -> str:
+    return "Chinese" if lang == "zh" else "English"
+
+
+def _set_localized(paper: Paper, localized: str, relevance: str) -> None:
+    localized = (localized or "").strip()
+    if localized.lower() == paper.title.strip().lower():
+        localized = ""  # already in the response language — avoid duplicate title
+    paper.title_zh = localized
+    paper.relevance_zh = (relevance or "").strip()
+
+
+_DECIDE_SYSTEM = """You are the retrieval controller for a biomedical research \
+assistant in a multi-turn conversation.
+
+Given the conversation, the user's new follow-up question, and the TITLES of \
+papers already gathered, decide whether answering well requires searching for \
+NEW literature beyond what is already gathered.
+- If the gathered papers plausibly cover the follow-up, no search is needed.
+- If the follow-up shifts to a new sub-topic, mechanism, drug, population, or \
+asks for evidence not implied by the gathered titles, a search IS needed.
+When a search is needed, produce a concise ENGLISH search query using medical \
+terminology (under 20 words) suitable for PubMed / OpenAlex.
+
+Return ONLY a JSON object and nothing else:
+{"need_search": true|false, "search_query": "<english terms, or empty string>"}"""
+
+
+async def decide_search(
+    question: str, corpus_titles: list[str]
+) -> tuple[bool, str]:
+    """Decide whether a follow-up needs new literature, and if so the query."""
+    if not has_llm_key():
+        return False, ""
+    titles = "\n".join(f"- {t}" for t in corpus_titles[:40]) or "(none)"
+    user = (
+        f"Follow-up question:\n{question}\n\n"
+        f"Titles already gathered:\n{titles}"
+    )
+    try:
+        raw, _ = await _chat(_DECIDE_SYSTEM, user, max_tokens=200)
+        data = _extract_json(raw)
+    except Exception:  # noqa: BLE001 - on any failure, answer from what we have
+        return False, ""
+    need = bool(data.get("need_search"))
+    query = (data.get("search_query") or "").strip()
+    return (need and bool(query)), query
+
+
+_CHAT_ANSWER_SYSTEM = """You are LitCopilot, a biomedical literature research \
+assistant in a multi-turn research conversation.
+
+You are given the conversation so far, the researcher's NEW question, and a \
+numbered list of source papers (the accumulated corpus) with abstracts. Follow \
+these rules WITHOUT EXCEPTION:
+
+1. Answer ONLY using information found in the provided abstracts. Do not use \
+outside knowledge and never invent findings, numbers, or conclusions.
+2. Cite every substantive claim inline using the exact [citation_key] token \
+shown for that source, e.g. [Smith, 2021]. NEVER cite by number like [1]. Only \
+cite sources from the provided list.
+3. If the provided abstracts do not contain enough information to answer, say so \
+explicitly rather than guessing.
+4. Write in the RESPONSE LANGUAGE stated in the user message. Directly address \
+the new question, building on the conversation. Be focused: 1-4 paragraphs.
+5. Do NOT reproduce abstract text verbatim — paraphrase in your own words.
+
+Return ONLY the answer text — no JSON, no preamble."""
+
+
+def _format_history(history: list[dict]) -> str:
+    if not history:
+        return ""
+    lines = []
+    for m in history[-8:]:
+        role = "Researcher" if m.get("role") == "user" else "Assistant"
+        content = (m.get("content") or "")[:1200]
+        lines.append(f"{role}: {content}")
+    return "Conversation so far (most recent last):\n" + "\n".join(lines) + "\n\n"
+
+
+async def answer_from_corpus(
+    history: list[dict], question: str, lang: str, papers: list[Paper]
+) -> str:
+    """Citation-strict answer to a follow-up, grounded in the accumulated corpus."""
+    if not has_llm_key():
+        raise RuntimeError("DEEPSEEK_API_KEY not configured")
+    if not papers:
+        return (
+            "尚未检索到可用于回答的文献。请先进行一次检索。"
+            if lang == "zh"
+            else "No literature is available yet to answer from. Try a search first."
+        )
+    user = (
+        f"RESPONSE LANGUAGE: {_lang_name(lang)} — write the answer entirely in "
+        f"{_lang_name(lang)}.\n\n"
+        f"{_format_history(history)}"
+        f"New question:\n{question}\n\n"
+        f"Source papers (the corpus):\n{_format_sources_for_prompt(papers)}"
+    )
+    answer, _ = await _chat(_CHAT_ANSWER_SYSTEM, user, max_tokens=2000)
+    return answer.strip()
+
+
+_LOCALIZE_SYSTEM = """For each numbered source paper, provide, in the RESPONSE \
+LANGUAGE stated in the user message:
+  - title_localized: the paper's title translated into the response language; \
+return an empty string "" if the title is already in that language.
+  - relevance: one short sentence in the response language on why this paper is \
+relevant to the user's question (your own paraphrase, not copied text).
+
+Return ONLY a JSON object of this exact shape and nothing else:
+{"sources": [{"index": 1, "title_localized": "...", "relevance": "..."}, ...]}"""
+
+
+async def localize_papers(papers: list[Paper], question: str, lang: str) -> None:
+    """Populate title_zh/relevance_zh (in the response language) for the papers."""
+    if not papers or not has_llm_key():
+        return
+    user = (
+        f"RESPONSE LANGUAGE: {_lang_name(lang)}.\n"
+        f"User's question:\n{question}\n\n"
+        f"Source papers:\n{_format_sources_for_prompt(papers)}"
+    )
+    try:
+        raw, _ = await _chat(_LOCALIZE_SYSTEM, user, max_tokens=3000)
+        data = _extract_json(raw)
+    except Exception:  # noqa: BLE001 - localization is non-critical, skip on failure
+        return
+    for s in data.get("sources", []):
+        idx = s.get("index", 0) - 1
+        if 0 <= idx < len(papers):
+            _set_localized(papers[idx], s.get("title_localized", ""), s.get("relevance", ""))
