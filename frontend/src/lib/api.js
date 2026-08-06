@@ -18,12 +18,19 @@ const jsonPost = (path, body) =>
   })
 
 // --- Search ---
-export const search = (query, lang, limit, includePreprints = true) =>
+export const search = (
+  query,
+  lang,
+  limit,
+  includePreprints = true,
+  sort = 'relevance'
+) =>
   jsonPost('/api/search', {
     query,
     lang: lang || null,
     limit: limit ?? null,
     include_preprints: includePreprints,
+    sort,
   })
 
 // --- Research agent (multi-turn follow-ups) ---

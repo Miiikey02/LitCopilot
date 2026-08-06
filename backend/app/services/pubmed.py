@@ -28,13 +28,17 @@ def _common_params() -> dict:
     return p
 
 
-async def _esearch(client: httpx.AsyncClient, query: str, retmax: int) -> list[str]:
+async def _esearch(
+    client: httpx.AsyncClient, query: str, retmax: int, sort: str = "relevance"
+) -> list[str]:
     await _limiter.acquire()
     params = _common_params() | {
         "term": query,
         "retmax": str(retmax),
         "retmode": "json",
-        "sort": "relevance",
+        # E-utilities' own newest-first ordering, so "sort by date" surfaces
+        # recent papers rather than re-ordering the top relevance hits.
+        "sort": "pub_date" if sort == "date" else "relevance",
     }
     r = await client.get(f"{EUTILS}/esearch.fcgi", params=params, timeout=20)
     r.raise_for_status()
@@ -43,6 +47,50 @@ async def _esearch(client: httpx.AsyncClient, query: str, retmax: int) -> list[s
 
 def _text(node) -> str:
     return "".join(node.itertext()).strip() if node is not None else ""
+
+
+_MONTHS = {
+    m: i
+    for i, m in enumerate(
+        ("jan", "feb", "mar", "apr", "may", "jun",
+         "jul", "aug", "sep", "oct", "nov", "dec"),
+        start=1,
+    )
+}
+
+
+def _month_num(raw: str) -> int | None:
+    """PubMed months come as "03", "3" or "Mar" depending on the record."""
+    raw = raw.strip()
+    if raw.isdigit():
+        n = int(raw)
+        return n if 1 <= n <= 12 else None
+    return _MONTHS.get(raw[:3].lower())
+
+
+def _date_from(node) -> str:
+    """Build "YYYY", "YYYY-MM" or "YYYY-MM-DD" from a PubMed date element."""
+    if node is None:
+        return ""
+    year = "".join(c for c in _text(node.find("Year")) if c.isdigit())[:4]
+    if not year:
+        # MedlineDate is free text like "2019 Nov-Dec" — take the year only.
+        digits = "".join(c for c in _text(node.find("MedlineDate")) if c.isdigit())[:4]
+        return digits if len(digits) == 4 else ""
+    month = _month_num(_text(node.find("Month")))
+    if not month:
+        return year
+    day = "".join(c for c in _text(node.find("Day")) if c.isdigit())[:2]
+    if not day:
+        return f"{year}-{month:02d}"
+    return f"{year}-{month:02d}-{int(day):02d}"
+
+
+def _pub_date(article: ET.Element) -> str:
+    """Prefer the electronic ArticleDate; fall back to the journal PubDate."""
+    return _date_from(article.find("ArticleDate")) or _date_from(
+        article.find("Journal/JournalIssue/PubDate")
+    )
 
 
 def _parse_article(art: ET.Element) -> Paper | None:
@@ -72,22 +120,19 @@ def _parse_article(art: ET.Element) -> Paper | None:
             if not first_family:
                 first_family = last
 
-    year = None
-    for path in ("Journal/JournalIssue/PubDate/Year", "Journal/JournalIssue/PubDate/MedlineDate"):
-        node = article.find(path)
-        if node is not None and _text(node):
-            digits = "".join(c for c in _text(node) if c.isdigit())[:4]
-            if digits:
-                year = int(digits)
-                break
+    pub_date = _pub_date(article)
+    year = int(pub_date[:4]) if pub_date[:4].isdigit() else None
 
     venue = _text(article.find("Journal/Title"))
 
     doi = ""
+    pmcid = ""
     for eid in art.findall(".//ArticleId"):
-        if eid.get("IdType") == "doi":
+        id_type = eid.get("IdType")
+        if id_type == "doi" and not doi:
             doi = _text(eid)
-            break
+        elif id_type == "pmc" and not pmcid:
+            pmcid = _text(eid)
 
     return Paper(
         source="pubmed",
@@ -100,6 +145,9 @@ def _parse_article(art: ET.Element) -> Paper | None:
         doi=doi,
         abstract=abstract,
         first_author_family=first_family,
+        pub_date=pub_date,
+        # A PMC id means the full text is free to read there.
+        oa_url=f"https://pmc.ncbi.nlm.nih.gov/articles/{pmcid}/" if pmcid else "",
     )
 
 
@@ -116,11 +164,20 @@ async def _efetch(client: httpx.AsyncClient, pmids: list[str]) -> list[Paper]:
         p = _parse_article(art)
         if p and p.title:
             papers.append(p)
+    # Restore the esearch ranking (relevance or date); efetch does not promise
+    # to echo the id order back.
+    rank = {pmid: i for i, pmid in enumerate(pmids)}
+    papers.sort(key=lambda p: rank.get(p.source_id, len(rank)))
     return papers
 
 
-async def search_pubmed(query: str, retmax: int = MAX_RESULTS) -> list[Paper]:
-    """Search PubMed for `query` and return parsed Paper records with abstracts."""
+async def search_pubmed(
+    query: str, retmax: int = MAX_RESULTS, sort: str = "relevance"
+) -> list[Paper]:
+    """Search PubMed for `query` and return parsed Paper records with abstracts.
+
+    `sort` is "relevance" (default) or "date" (newest first).
+    """
     async with httpx.AsyncClient() as client:
-        pmids = await _esearch(client, query, retmax)
+        pmids = await _esearch(client, query, retmax, sort)
         return await _efetch(client, pmids)

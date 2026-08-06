@@ -15,6 +15,9 @@ class SearchRequest(BaseModel):
     limit: Optional[int] = None
     # Whether to include bioRxiv preprints (not peer-reviewed) in retrieval.
     include_preprints: bool = True
+    # "relevance" (default) or "date" (newest first). Applied at the source
+    # query, not just to the returned page.
+    sort: Optional[str] = None
 
 
 class SourceCard(BaseModel):
@@ -29,6 +32,11 @@ class SourceCard(BaseModel):
     doi: str
     citation_key: str
     relevance_zh: str
+    # "YYYY", "YYYY-MM" or "YYYY-MM-DD" when the source resolves it; drives
+    # date sorting in the UI. Defaulted so older saved-library rows still parse.
+    pub_date: str = ""
+    # Direct link to a legally free full text, when one exists.
+    oa_url: str = ""
 
 
 class SearchResponse(BaseModel):

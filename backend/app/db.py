@@ -26,6 +26,8 @@ CREATE TABLE IF NOT EXISTS saved_papers (
     doi          TEXT,
     citation_key TEXT,
     relevance_zh TEXT,
+    pub_date     TEXT,           -- "YYYY[-MM[-DD]]" when the source resolves it
+    oa_url       TEXT,           -- free full-text link, when one exists
     dedup_key    TEXT UNIQUE,    -- prevents saving the same paper twice
     created_at   TEXT
 );
@@ -55,9 +57,22 @@ def _conn() -> sqlite3.Connection:
     return conn
 
 
+# Columns added after the first release; existing databases get them via a
+# tiny in-place migration (SQLite has no "ADD COLUMN IF NOT EXISTS").
+_ADDED_COLUMNS = (("pub_date", "TEXT"), ("oa_url", "TEXT"))
+
+
 def init_db() -> None:
     with _conn() as conn:
         conn.executescript(_SCHEMA)
+        existing = {
+            r["name"] for r in conn.execute("PRAGMA table_info(saved_papers)")
+        }
+        for name, col_type in _ADDED_COLUMNS:
+            if name not in existing:
+                conn.execute(
+                    f"ALTER TABLE saved_papers ADD COLUMN {name} {col_type} DEFAULT ''"
+                )
 
 
 def _now() -> str:
@@ -78,6 +93,8 @@ def _row_to_paper(row: sqlite3.Row, tags: list[str]) -> dict:
         "doi": row["doi"],
         "citation_key": row["citation_key"],
         "relevance_zh": row["relevance_zh"],
+        "pub_date": row["pub_date"] or "",
+        "oa_url": row["oa_url"] or "",
         "tags": tags,
         "created_at": row["created_at"],
     }
@@ -109,8 +126,9 @@ def save_paper(card: dict, tags: list[str] | None = None) -> dict:
         conn.execute(
             """INSERT OR IGNORE INTO saved_papers
                (source, source_id, title, title_zh, authors, year, venue, url,
-                doi, citation_key, relevance_zh, dedup_key, created_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                doi, citation_key, relevance_zh, pub_date, oa_url, dedup_key,
+                created_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 card.get("source", ""),
                 card.get("source_id", ""),
@@ -123,6 +141,8 @@ def save_paper(card: dict, tags: list[str] | None = None) -> dict:
                 card.get("doi", ""),
                 card.get("citation_key", ""),
                 card.get("relevance_zh", ""),
+                card.get("pub_date", ""),
+                card.get("oa_url", ""),
                 key,
                 _now(),
             ),

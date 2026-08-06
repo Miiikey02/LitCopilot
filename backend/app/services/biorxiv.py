@@ -42,20 +42,36 @@ def _strip_jats(text: str) -> str:
     return re.sub(r"^abstract\s*", "", _clean(text), flags=re.IGNORECASE)
 
 
-def _year(item: dict) -> int | None:
+def _posted_date(item: dict) -> str:
+    """First resolvable Crossref date as "YYYY[-MM[-DD]]"; "" when unknown."""
     for key in ("posted", "published", "published-online", "created", "issued"):
         parts = (item.get(key) or {}).get("date-parts") or []
         if parts and parts[0] and parts[0][0]:
-            return parts[0][0]
-    return None
+            nums = [int(n) for n in parts[0][:3] if isinstance(n, int)]
+            return "-".join(
+                [f"{nums[0]:04d}"] + [f"{n:02d}" for n in nums[1:]]
+            )
+    return ""
 
 
-async def search_biorxiv(query: str, limit: int = MAX_RESULTS) -> list[Paper]:
+def _pdf_url(resource_url: str) -> str:
+    """bioRxiv serves every preprint's PDF at <landing page>.full.pdf."""
+    if "biorxiv.org/content/" in resource_url:
+        return f"{resource_url.rstrip('/')}.full.pdf"
+    return ""
+
+
+async def search_biorxiv(
+    query: str, limit: int = MAX_RESULTS, sort: str = "relevance"
+) -> list[Paper]:
     params = {
         "query": query,
         "filter": "type:posted-content,member:54368",  # openRxiv (bioRxiv/medRxiv)
         "rows": str(min(limit * 2, 50)),  # over-fetch, then keep only bioRxiv
     }
+    if sort == "date":
+        params["sort"] = "published"
+        params["order"] = "desc"
     if NCBI_EMAIL:
         params["mailto"] = NCBI_EMAIL  # Crossref "polite pool"
     try:
@@ -89,18 +105,22 @@ async def search_biorxiv(query: str, limit: int = MAX_RESULTS) -> list[Paper]:
 
         doi = (item.get("DOI") or "").strip()
         resource_url = (item.get("resource") or {}).get("primary", {}).get("URL", "")
+        pub_date = _posted_date(item)
         papers.append(
             Paper(
                 source="biorxiv",
                 source_id=doi,
                 title=title,
                 authors=authors,
-                year=_year(item),
+                year=int(pub_date[:4]) if pub_date[:4].isdigit() else None,
                 venue="bioRxiv (preprint)",
                 url=resource_url or item.get("URL") or (f"https://doi.org/{doi}" if doi else ""),
                 doi=doi,
                 abstract=_strip_jats(item.get("abstract", "")),
                 first_author_family=first_family,
+                pub_date=pub_date,
+                # Preprints are open by definition.
+                oa_url=_pdf_url(resource_url),
             )
         )
         if len(papers) >= limit:

@@ -37,11 +37,23 @@ def _bare_doi(doi_url: str | None) -> str:
     return doi_url.replace("https://doi.org/", "").replace("http://doi.org/", "")
 
 
-async def search_openalex(query: str, limit: int = MAX_RESULTS) -> list[Paper]:
+def _oa_pdf(item: dict) -> str:
+    """Best legally-free full text OpenAlex knows about, if any."""
+    best = item.get("best_oa_location") or {}
+    return best.get("pdf_url") or best.get("landing_page_url") or (
+        item.get("open_access") or {}
+    ).get("oa_url") or ""
+
+
+async def search_openalex(
+    query: str, limit: int = MAX_RESULTS, sort: str = "relevance"
+) -> list[Paper]:
     params = {
         "search": query,
         "per-page": str(min(limit, 200)),
     }
+    if sort == "date":
+        params["sort"] = "publication_date:desc"
     if NCBI_EMAIL:
         params["mailto"] = NCBI_EMAIL
     try:
@@ -89,6 +101,8 @@ async def search_openalex(query: str, limit: int = MAX_RESULTS) -> list[Paper]:
                 doi=doi,
                 abstract=_reconstruct_abstract(item.get("abstract_inverted_index")),
                 first_author_family=first_family,
+                pub_date=item.get("publication_date") or "",
+                oa_url=_oa_pdf(item),
             )
         )
     return papers

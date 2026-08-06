@@ -7,7 +7,11 @@ import LibraryTab from './components/LibraryTab'
 import HistoryList from './components/HistoryList'
 import TrialsList from './components/TrialsList'
 import ResearchChat from './components/ResearchChat'
+import BulkExport from './components/BulkExport'
 import { exportMarkdown, exportPdf } from './lib/exportResult'
+
+// Layout choice is a workspace preference, so it outlives a single search.
+const VIEW_KEY = 'gaze.sourcesView'
 
 export default function App() {
   const { t, i18n } = useTranslation()
@@ -15,6 +19,10 @@ export default function App() {
   const [query, setQuery] = useState('')
   const [limit, setLimit] = useState(15) // how many papers to retrieve per search
   const [includePreprints, setIncludePreprints] = useState(true) // bioRxiv preprints
+  const [sortBy, setSortBy] = useState('relevance') // 'relevance' | 'date'
+  const [wideSources, setWideSources] = useState(
+    () => localStorage.getItem(VIEW_KEY) === 'wide'
+  )
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [result, setResult] = useState(null)
@@ -32,6 +40,30 @@ export default function App() {
     [result]
   )
 
+  // Sort key: "YYYY-MM-DD" padded from whatever precision the source gave us
+  // (falling back to the year), so partial dates still order sensibly.
+  const dateKey = (s) => {
+    if (s.pub_date) {
+      const [y = '', m = '', d = ''] = s.pub_date.split('-')
+      return `${y.padStart(4, '0')}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`
+    }
+    return s.year ? `${String(s.year).padStart(4, '0')}-00-00` : ''
+  }
+
+  // The backend already applies the sort at the source query; re-sorting here
+  // keeps the displayed list consistent after the research agent appends new
+  // papers mid-session. Papers without any date sink to the bottom.
+  const sortedSources = useMemo(() => {
+    const sources = result?.sources || []
+    if (sortBy !== 'date') return sources
+    return [...sources].sort((a, b) => {
+      const ka = dateKey(a)
+      const kb = dateKey(b)
+      if (!ka || !kb) return ka ? -1 : kb ? 1 : 0
+      return kb.localeCompare(ka)
+    })
+  }, [result, sortBy])
+
   const loadHistory = useCallback(async () => {
     try {
       setHistory(await api.listHistory())
@@ -45,17 +77,21 @@ export default function App() {
   }, [loadHistory])
 
   const runSearch = useCallback(
-    async (q, langOverride) => {
+    async (q, overrides = {}) => {
       const text = (q ?? '').trim()
       if (!text || loading) return
       // Response language follows the UI language (toggle drives content too).
-      const lang = langOverride || (i18n.language.startsWith('zh') ? 'zh' : 'en')
+      const lang =
+        overrides.lang || (i18n.language.startsWith('zh') ? 'zh' : 'en')
+      // Sort is applied at the source query, so a change means a new search;
+      // the caller passes it explicitly to avoid racing the state update.
+      const sort = overrides.sort || sortBy
       setLoading(true)
       setError('')
       setTrials(null) // clear trials from any previous search
       setChatTurns([]) // start a fresh research thread for the new search
       try {
-        const data = await api.search(text, lang, limit, includePreprints)
+        const data = await api.search(text, lang, limit, includePreprints, sort)
         setResult(data)
         loadHistory()
       } catch (err) {
@@ -65,7 +101,7 @@ export default function App() {
         setLoading(false)
       }
     },
-    [loading, loadHistory, limit, includePreprints, t, i18n]
+    [loading, loadHistory, limit, includePreprints, sortBy, t, i18n]
   )
 
   const onFindTrials = async () => {
@@ -142,7 +178,22 @@ export default function App() {
     i18n.changeLanguage(next)
     // The answer and per-source localized fields are generated server-side, so
     // switching language re-runs the current search to regenerate them.
-    if (result?.original_query) runSearch(result.original_query, next)
+    if (result?.original_query)
+      runSearch(result.original_query, { lang: next })
+  }
+
+  const onSortChange = (next) => {
+    setSortBy(next)
+    // "By date" means *retrieve* the newest matching papers, not just reorder
+    // the top relevance hits — so re-run the search whenever one is showing.
+    if (result?.original_query) runSearch(result.original_query, { sort: next })
+  }
+
+  const toggleView = () => {
+    setWideSources((prev) => {
+      localStorage.setItem(VIEW_KEY, prev ? 'split' : 'wide')
+      return !prev
+    })
   }
 
   return (
@@ -205,7 +256,7 @@ export default function App() {
               {loading ? t('searching') : t('searchButton')}
             </button>
           </div>
-          <div className="mt-2 flex items-center gap-2 text-sm text-slate-500">
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-slate-500">
             <label htmlFor="result-limit">{t('resultsCount')}</label>
             <select
               id="result-limit"
@@ -218,6 +269,19 @@ export default function App() {
                   {t('resultsCountOption', { count: n })}
                 </option>
               ))}
+            </select>
+            <label className="ml-2" htmlFor="result-sort">
+              {t('sortBy')}
+            </label>
+            <select
+              id="result-sort"
+              value={sortBy}
+              onChange={(e) => onSortChange(e.target.value)}
+              title={t('sortHint')}
+              className="rounded-md border border-slate-300 bg-white px-2 py-1 text-slate-700 focus:border-blue-500 focus:outline-none"
+            >
+              <option value="relevance">{t('sortRelevance')}</option>
+              <option value="date">{t('sortDate')}</option>
             </select>
             <label className="ml-2 inline-flex cursor-pointer items-center gap-1.5">
               <input
@@ -256,9 +320,24 @@ export default function App() {
         )}
 
         {result && (
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
-            {/* Left: synthesized answer */}
-            <section className="lg:col-span-3">
+          <div
+            className={
+              wideSources
+                ? 'space-y-6'
+                : 'grid grid-cols-1 gap-6 lg:grid-cols-5'
+            }
+          >
+            {/* Answer. In split view it is sticky on large screens, so it stays
+                in view while a long source list scrolls past instead of leaving
+                a column of blank space (and scrolls internally if the answer
+                itself is taller than the viewport). */}
+            <section
+              className={
+                wideSources
+                  ? ''
+                  : 'lg:col-span-3 lg:sticky lg:top-6 lg:self-start lg:max-h-[calc(100vh-5rem)] lg:overflow-y-auto print:static print:max-h-none print:overflow-visible'
+              }
+            >
               <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
                 <div className="mb-4 flex items-center justify-between">
                   <h2 className="text-lg font-semibold text-slate-900">
@@ -349,21 +428,47 @@ export default function App() {
               )}
             </section>
 
-            {/* Right: source list */}
-            <aside className="lg:col-span-2">
-              <div className="mb-3 flex items-center justify-between">
-                <h2 className="text-lg font-semibold text-slate-900">
-                  {t('sourcesTitle')}
-                </h2>
-                <span className="text-sm text-slate-500">
-                  {t('sourceCount', { count: result.sources.length })}
-                </span>
+            {/* Sources: a narrow column beside the answer (split view), or a
+                full-width multi-column wall (wide view) so a 25-paper list
+                fits in a few screens instead of one very long one. */}
+            <aside className={wideSources ? '' : 'lg:col-span-2'}>
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-baseline gap-2">
+                  <h2 className="text-lg font-semibold text-slate-900">
+                    {t('sourcesTitle')}
+                  </h2>
+                  <span className="text-sm text-slate-500">
+                    {t('sourceCount', { count: result.sources.length })}
+                  </span>
+                </div>
+                {result.sources.length > 0 && (
+                  <div className="no-print flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={toggleView}
+                      title={wideSources ? t('viewSplitHint') : t('viewWideHint')}
+                      className="hidden rounded-md border border-slate-300 px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 lg:inline-flex"
+                    >
+                      {wideSources ? `▥ ${t('viewSplit')}` : `▦ ${t('viewWide')}`}
+                    </button>
+                    <BulkExport
+                      papers={sortedSources}
+                      queryLabel={result.original_query}
+                    />
+                  </div>
+                )}
               </div>
               {result.sources.length === 0 ? (
                 <p className="text-slate-500">{t('noSources')}</p>
               ) : (
-                <div className="space-y-3">
-                  {result.sources.map((p, i) => (
+                <div
+                  className={
+                    wideSources
+                      ? 'grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3 print:grid-cols-1'
+                      : 'space-y-3'
+                  }
+                >
+                  {sortedSources.map((p, i) => (
                     <SourceCard
                       key={`${p.source}-${p.source_id}`}
                       paper={p}

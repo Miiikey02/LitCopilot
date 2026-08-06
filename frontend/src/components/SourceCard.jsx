@@ -72,6 +72,16 @@ const SourceCard = React.forwardRef(function SourceCard({ paper, index, onSave }
         >
           {t('viewSource')} →
         </a>
+        {paper.oa_url && (
+          <a
+            href={paper.oa_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-sm font-medium text-green-700 hover:text-green-800 hover:underline"
+          >
+            ⇩ {t('freeFullText')}
+          </a>
+        )}
         <CiteButton paper={paper} />
         {onSave && (
           <button

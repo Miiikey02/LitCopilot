@@ -14,12 +14,24 @@ def _merge(existing: Paper, other: Paper) -> Paper:
     """Prefer the record with more complete metadata; keep any abstract we have."""
     if not existing.abstract and other.abstract:
         existing.abstract = other.abstract
-    if not existing.doi and other.doi:
+    # Prefer a real journal DOI over a data-repository mirror (figshare etc.),
+    # so citations export the citable article rather than its dataset record.
+    if other.doi and (
+        not existing.doi
+        or (existing.is_dataset_doi() and not other.is_dataset_doi())
+    ):
         existing.doi = other.doi
+        if other.url:
+            existing.url = other.url
     if not existing.venue and other.venue:
         existing.venue = other.venue
     if existing.year is None and other.year is not None:
         existing.year = other.year
+    # Prefer the more precise date (e.g. "2024-03-11" over "2024").
+    if len(other.pub_date) > len(existing.pub_date):
+        existing.pub_date = other.pub_date
+    if not existing.oa_url and other.oa_url:
+        existing.oa_url = other.oa_url
     return existing
 
 
@@ -41,21 +53,50 @@ def _interleave(lists: list[list[Paper]]) -> list[Paper]:
 
 
 def dedupe(papers: list[Paper]) -> list[Paper]:
-    """Collapse duplicates across sources by DOI, then normalized title."""
-    seen: dict[str, Paper] = {}
-    order: list[str] = []
+    """Collapse duplicates across sources by DOI *or* normalized title.
+
+    Matching on title as well as DOI catches the same work registered under
+    several DOIs (a journal DOI plus figshare/zenodo mirrors). To avoid merging
+    genuinely different papers that share a generic title (two reviews both
+    called "Glaucoma"), a title match only counts when the known years agree.
+    """
+    kept: list[Paper] = []
+    by_doi: dict[str, Paper] = {}
+    by_title: dict[str, Paper] = {}
+
     for p in papers:
-        key = p.dedup_key()
-        if key in seen:
-            _merge(seen[key], p)
-        else:
-            seen[key] = p
-            order.append(key)
-    return [seen[k] for k in order]
+        doi = p.doi.lower()
+        tkey = p.title_key()
+
+        match = by_doi.get(doi) if doi else None
+        if match is None and tkey:
+            candidate = by_title.get(tkey)
+            # Same title counts as the same paper unless the years disagree.
+            if candidate is not None and (
+                candidate.year is None or p.year is None or candidate.year == p.year
+            ):
+                match = candidate
+
+        if match is not None:
+            _merge(match, p)
+            # Index this DOI too, so later mirrors collapse onto the same record.
+            if doi:
+                by_doi.setdefault(doi, match)
+            continue
+
+        kept.append(p)
+        if doi:
+            by_doi[doi] = p
+        if tkey:
+            by_title.setdefault(tkey, p)
+    return kept
 
 
 async def retrieve(
-    english_query: str, limit: int, include_preprints: bool = True
+    english_query: str,
+    limit: int,
+    include_preprints: bool = True,
+    sort: str = "relevance",
 ) -> list[Paper]:
     """Fetch from PubMed + Semantic Scholar + OpenAlex (+ bioRxiv), then dedupe.
 
@@ -64,18 +105,27 @@ async def retrieve(
     coverage; bioRxiv adds cutting-edge preprints (included only when
     `include_preprints`). All sources fail soft, so any one outage never breaks
     the pipeline.
+
+    `sort` is "relevance" (default) or "date". Date sorting is pushed down into
+    each source's own query so we retrieve genuinely recent literature, and the
+    merged list is then re-sorted newest-first — otherwise the caller's [:limit]
+    cap would slice a round-robin of four differently-dated lists.
     """
     tasks = [
-        search_pubmed(english_query, retmax=limit),
-        search_semantic_scholar(english_query, limit=limit),
-        search_openalex(english_query, limit=limit),
+        search_pubmed(english_query, retmax=limit, sort=sort),
+        search_semantic_scholar(english_query, limit=limit, sort=sort),
+        search_openalex(english_query, limit=limit, sort=sort),
     ]
     if include_preprints:
-        tasks.append(search_biorxiv(english_query, limit=limit))
+        tasks.append(search_biorxiv(english_query, limit=limit, sort=sort))
 
     results = await asyncio.gather(*tasks, return_exceptions=True)
     # Keep source order pubmed → s2 → openalex → biorxiv (PubMed wins merges),
     # but interleave so the downstream [:limit] cap includes a mix from each
     # source rather than filling up entirely from PubMed.
     lists = [r for r in results if isinstance(r, list)]
-    return dedupe(_interleave(lists))
+    papers = dedupe(_interleave(lists))
+    if sort == "date":
+        # Undated records sort last rather than first.
+        papers.sort(key=lambda p: (p.sort_date() != "", p.sort_date()), reverse=True)
+    return papers

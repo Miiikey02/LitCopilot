@@ -23,6 +23,13 @@ class Paper:
     doi: str = ""
     abstract: str = ""  # in-memory only; never stored or displayed verbatim
     first_author_family: str = ""  # surname, normalized per-source by the parser
+    # Publication date as far as the source resolves it: "YYYY", "YYYY-MM" or
+    # "YYYY-MM-DD". Empty when unknown. Used for date sorting (`year` alone ties
+    # dozens of papers together within a year).
+    pub_date: str = ""
+    # Direct link to a legally free full text (PMC, OpenAlex/S2 open access,
+    # bioRxiv PDF). Empty when the paper is paywalled.
+    oa_url: str = ""
 
     # Populated later by the synthesis/translation step:
     title_zh: str = ""  # Chinese translation of the title
@@ -39,10 +46,37 @@ class Paper:
         yr = self.year if self.year else "n.d."
         return f"{first_author}, {yr}"
 
+    def sort_date(self) -> str:
+        """Zero-padded key for newest-first sorting; "" sorts last."""
+        if self.pub_date:
+            parts = self.pub_date.split("-")
+            y = parts[0].zfill(4)
+            m = (parts[1] if len(parts) > 1 else "00").zfill(2)
+            d = (parts[2] if len(parts) > 2 else "00").zfill(2)
+            return f"{y}-{m}-{d}"
+        if self.year:
+            return f"{self.year:04d}-00-00"
+        return ""
+
     def dedup_key(self) -> str:
         if self.doi:
             return f"doi:{self.doi.lower()}"
-        return f"title:{''.join(self.title.lower().split())[:80]}"
+        return self.title_key()
+
+    def title_key(self) -> str:
+        """Normalized-title key, used to catch the same paper under two DOIs.
+
+        Sources sometimes register several DOIs for one work (e.g. a journal DOI
+        plus figshare data-collection mirrors), which DOI-only dedup misses.
+        Returns "" for titles too short to match safely on their own.
+        """
+        norm = "".join(ch for ch in self.title.lower() if ch.isalnum())[:80]
+        return f"title:{norm}" if len(norm) >= 20 else ""
+
+    def is_dataset_doi(self) -> bool:
+        """True for data-repository DOIs (figshare/zenodo/dryad mirrors)."""
+        d = self.doi.lower()
+        return any(m in d for m in ("figshare", "zenodo", "dryad", "10.6084/"))
 
     def to_card(self) -> dict:
         """Display-safe projection. Deliberately omits the raw abstract."""
@@ -58,4 +92,6 @@ class Paper:
             "doi": self.doi,
             "citation_key": self.citation_key(),
             "relevance_zh": self.relevance_zh,
+            "pub_date": self.pub_date,
+            "oa_url": self.oa_url,
         }

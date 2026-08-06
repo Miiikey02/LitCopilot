@@ -66,8 +66,14 @@ async def search(req: SearchRequest) -> SearchResponse:
     #    the synthesis prompt stays bounded. Honor the caller's limit within a
     #    safe range; fall back to MAX_RESULTS when unset.
     limit = max(3, min(req.limit or MAX_RESULTS, 40))
+    sort = req.sort if req.sort in ("relevance", "date") else "relevance"
     papers = (
-        await retrieve(english_query, limit=limit, include_preprints=req.include_preprints)
+        await retrieve(
+            english_query,
+            limit=limit,
+            include_preprints=req.include_preprints,
+            sort=sort,
+        )
     )[:limit]
 
     # 3. Synthesize a cited answer (or a clear message if no key / no hits).
