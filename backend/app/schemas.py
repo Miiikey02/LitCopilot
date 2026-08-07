@@ -67,14 +67,16 @@ class ChatResponse(BaseModel):
 
 
 class SavePaperRequest(SourceCard):
-    """A SourceCard plus optional initial tags."""
+    """A SourceCard plus optional initial tags and destination folder."""
 
     tags: list[str] = []
+    folder_id: Optional[int] = None
 
 
 class SavedPaper(SourceCard):
     id: int
     tags: list[str] = []
+    folder_id: Optional[int] = None  # None = unfiled
     created_at: str
 
 
@@ -85,6 +87,20 @@ class TagUpdate(BaseModel):
 class TagCount(BaseModel):
     tag: str
     count: int
+
+
+class FolderCreate(BaseModel):
+    name: str
+
+
+class Folder(BaseModel):
+    id: Optional[int] = None  # None is the synthetic "unfiled" bucket
+    name: str
+    count: int
+
+
+class MoveToFolder(BaseModel):
+    folder_id: Optional[int] = None  # None moves the paper out of all folders
 
 
 class HistoryItem(BaseModel):

@@ -13,6 +13,12 @@ from datetime import datetime
 from .config import DB_PATH
 
 _SCHEMA = """
+CREATE TABLE IF NOT EXISTS folders (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    name       TEXT NOT NULL UNIQUE,
+    created_at TEXT
+);
+
 CREATE TABLE IF NOT EXISTS saved_papers (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     source       TEXT,
@@ -28,6 +34,7 @@ CREATE TABLE IF NOT EXISTS saved_papers (
     relevance_zh TEXT,
     pub_date     TEXT,           -- "YYYY[-MM[-DD]]" when the source resolves it
     oa_url       TEXT,           -- free full-text link, when one exists
+    folder_id    INTEGER,        -- NULL = unfiled; a paper lives in one folder
     dedup_key    TEXT UNIQUE,    -- prevents saving the same paper twice
     created_at   TEXT
 );
@@ -59,7 +66,11 @@ def _conn() -> sqlite3.Connection:
 
 # Columns added after the first release; existing databases get them via a
 # tiny in-place migration (SQLite has no "ADD COLUMN IF NOT EXISTS").
-_ADDED_COLUMNS = (("pub_date", "TEXT"), ("oa_url", "TEXT"))
+_ADDED_COLUMNS = (
+    ("pub_date", "TEXT", "''"),
+    ("oa_url", "TEXT", "''"),
+    ("folder_id", "INTEGER", "NULL"),  # NULL = unfiled
+)
 
 
 def init_db() -> None:
@@ -68,10 +79,11 @@ def init_db() -> None:
         existing = {
             r["name"] for r in conn.execute("PRAGMA table_info(saved_papers)")
         }
-        for name, col_type in _ADDED_COLUMNS:
+        for name, col_type, default in _ADDED_COLUMNS:
             if name not in existing:
                 conn.execute(
-                    f"ALTER TABLE saved_papers ADD COLUMN {name} {col_type} DEFAULT ''"
+                    f"ALTER TABLE saved_papers ADD COLUMN {name} {col_type} "
+                    f"DEFAULT {default}"
                 )
 
 
@@ -95,6 +107,7 @@ def _row_to_paper(row: sqlite3.Row, tags: list[str]) -> dict:
         "relevance_zh": row["relevance_zh"],
         "pub_date": row["pub_date"] or "",
         "oa_url": row["oa_url"] or "",
+        "folder_id": row["folder_id"],
         "tags": tags,
         "created_at": row["created_at"],
     }
@@ -115,7 +128,9 @@ def _dedup_key(card: dict) -> str:
 # --- Saved papers ---------------------------------------------------------
 
 
-def save_paper(card: dict, tags: list[str] | None = None) -> dict:
+def save_paper(
+    card: dict, tags: list[str] | None = None, folder_id: int | None = None
+) -> dict:
     """Idempotently save a paper (metadata only). Returns the stored record.
 
     Re-saving an already-saved paper is a no-op that merges any new tags in.
@@ -126,9 +141,9 @@ def save_paper(card: dict, tags: list[str] | None = None) -> dict:
         conn.execute(
             """INSERT OR IGNORE INTO saved_papers
                (source, source_id, title, title_zh, authors, year, venue, url,
-                doi, citation_key, relevance_zh, pub_date, oa_url, dedup_key,
-                created_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                doi, citation_key, relevance_zh, pub_date, oa_url, folder_id,
+                dedup_key, created_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 card.get("source", ""),
                 card.get("source_id", ""),
@@ -143,6 +158,7 @@ def save_paper(card: dict, tags: list[str] | None = None) -> dict:
                 card.get("relevance_zh", ""),
                 card.get("pub_date", ""),
                 card.get("oa_url", ""),
+                folder_id,
                 key,
                 _now(),
             ),
@@ -162,20 +178,32 @@ def save_paper(card: dict, tags: list[str] | None = None) -> dict:
     return _row_to_paper(row, [r["tag"] for r in tag_rows])
 
 
-def list_saved(tag: str | None = None) -> list[dict]:
+def list_saved(tag: str | None = None, folder: str | None = None) -> list[dict]:
+    """List saved papers, optionally filtered by tag and/or folder.
+
+    `folder` is a folder id as a string, or "unfiled" for papers in no folder.
+    """
+    clauses: list[str] = []
+    params: list = []
+    join = ""
+    if tag:
+        join = "JOIN paper_tags t ON t.paper_id = p.id"
+        clauses.append("t.tag = ?")
+        params.append(tag)
+    if folder == "unfiled":
+        clauses.append("p.folder_id IS NULL")
+    elif folder:
+        clauses.append("p.folder_id = ?")
+        params.append(int(folder))
+
+    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
     with _conn() as conn:
-        if tag:
-            rows = conn.execute(
-                """SELECT p.* FROM saved_papers p
-                   JOIN paper_tags t ON t.paper_id = p.id
-                   WHERE t.tag = ?
-                   ORDER BY p.created_at DESC""",
-                (tag,),
-            ).fetchall()
-        else:
-            rows = conn.execute(
-                "SELECT * FROM saved_papers ORDER BY created_at DESC"
-            ).fetchall()
+        rows = conn.execute(
+            f"""SELECT p.* FROM saved_papers p {join}
+                {where}
+                ORDER BY p.created_at DESC""",
+            params,
+        ).fetchall()
         result = []
         for row in rows:
             tag_rows = conn.execute(
@@ -224,6 +252,85 @@ def list_tags() -> list[dict]:
                GROUP BY tag ORDER BY tag"""
         ).fetchall()
     return [{"tag": r["tag"], "count": r["n"]} for r in rows]
+
+
+# --- Folders --------------------------------------------------------------
+
+
+def create_folder(name: str) -> dict | None:
+    """Create a folder. Returns None if the name is empty or already taken."""
+    name = name.strip()
+    if not name:
+        return None
+    with _conn() as conn:
+        try:
+            cur = conn.execute(
+                "INSERT INTO folders (name, created_at) VALUES (?,?)", (name, _now())
+            )
+        except sqlite3.IntegrityError:
+            return None  # duplicate name
+        row = conn.execute(
+            "SELECT * FROM folders WHERE id = ?", (cur.lastrowid,)
+        ).fetchone()
+    return {"id": row["id"], "name": row["name"], "count": 0}
+
+
+def list_folders() -> list[dict]:
+    """All folders with how many papers each holds."""
+    with _conn() as conn:
+        rows = conn.execute(
+            """SELECT f.id, f.name, COUNT(p.id) AS n
+               FROM folders f
+               LEFT JOIN saved_papers p ON p.folder_id = f.id
+               GROUP BY f.id, f.name
+               ORDER BY f.name"""
+        ).fetchall()
+        unfiled = conn.execute(
+            "SELECT COUNT(*) AS n FROM saved_papers WHERE folder_id IS NULL"
+        ).fetchone()["n"]
+    folders = [{"id": r["id"], "name": r["name"], "count": r["n"]} for r in rows]
+    return folders + [{"id": None, "name": "", "count": unfiled}]
+
+
+def rename_folder(folder_id: int, name: str) -> bool:
+    name = name.strip()
+    if not name:
+        return False
+    with _conn() as conn:
+        try:
+            cur = conn.execute(
+                "UPDATE folders SET name = ? WHERE id = ?", (name, folder_id)
+            )
+        except sqlite3.IntegrityError:
+            return False  # another folder already uses that name
+        return cur.rowcount > 0
+
+
+def delete_folder(folder_id: int) -> bool:
+    """Delete a folder. Its papers are kept and become unfiled."""
+    with _conn() as conn:
+        conn.execute(
+            "UPDATE saved_papers SET folder_id = NULL WHERE folder_id = ?",
+            (folder_id,),
+        )
+        cur = conn.execute("DELETE FROM folders WHERE id = ?", (folder_id,))
+        return cur.rowcount > 0
+
+
+def set_paper_folder(paper_id: int, folder_id: int | None) -> bool:
+    """Move a paper into a folder, or out of all folders when folder_id is None."""
+    with _conn() as conn:
+        if folder_id is not None:
+            exists = conn.execute(
+                "SELECT 1 FROM folders WHERE id = ?", (folder_id,)
+            ).fetchone()
+            if not exists:
+                return False
+        cur = conn.execute(
+            "UPDATE saved_papers SET folder_id = ? WHERE id = ?",
+            (folder_id, paper_id),
+        )
+        return cur.rowcount > 0
 
 
 # --- Search history -------------------------------------------------------

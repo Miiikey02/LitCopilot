@@ -39,13 +39,35 @@ export const chat = (sessionId, message, lang) =>
 
 // --- Library ---
 export const saveLibrary = (paper) => jsonPost('/api/library/save', paper)
-export const listLibrary = (tag) =>
-  req(`/api/library${tag ? `?tag=${encodeURIComponent(tag)}` : ''}`)
+export const listLibrary = (tag, folder) => {
+  const qs = new URLSearchParams()
+  if (tag) qs.set('tag', tag)
+  if (folder !== null && folder !== undefined) qs.set('folder', folder)
+  const s = qs.toString()
+  return req(`/api/library${s ? `?${s}` : ''}`)
+}
 export const deletePaper = (id) => req(`/api/library/${id}`, { method: 'DELETE' })
 export const addTag = (id, tag) => jsonPost(`/api/library/${id}/tags`, { tag })
 export const removeTag = (id, tag) =>
   req(`/api/library/${id}/tags/${encodeURIComponent(tag)}`, { method: 'DELETE' })
 export const listTags = () => req('/api/library/tags')
+
+// --- Folders ---
+export const listFolders = () => req('/api/folders')
+export const createFolder = (name) => jsonPost('/api/folders', { name })
+export const renameFolder = (id, name) =>
+  req(`/api/folders/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  })
+export const deleteFolder = (id) => req(`/api/folders/${id}`, { method: 'DELETE' })
+export const movePaper = (paperId, folderId) =>
+  req(`/api/library/${paperId}/folder`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ folder_id: folderId }),
+  })
 
 // --- History ---
 export const listHistory = () => req('/api/history')
