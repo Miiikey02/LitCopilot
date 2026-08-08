@@ -168,6 +168,19 @@ export default function App() {
     [result, chatLoading, i18n, t]
   )
 
+  // Saving needs an account. Send signed-out users to the sign-in screen rather
+  // than letting the click fail silently with a 401.
+  const onSavePaper = useCallback(
+    async (paper) => {
+      if (authEnabled && session === false) {
+        setTab('library')
+        throw new Error('sign in required')
+      }
+      return api.saveLibrary(paper)
+    },
+    [session]
+  )
+
   const onSubmit = (e) => {
     e.preventDefault()
     runSearch(query)
@@ -262,6 +275,16 @@ export default function App() {
                   {t('signOut')}
                 </button>
               </>
+            )}
+            {/* Signed out, accounts exist: make signing in visible from any tab,
+                otherwise the only way in is discovering the library tab. */}
+            {authEnabled && session === false && (
+              <button
+                onClick={() => setTab('library')}
+                className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
+              >
+                {t('signIn')} / {t('signUp')}
+              </button>
             )}
             <button
               onClick={toggleLang}
@@ -514,7 +537,7 @@ export default function App() {
                       key={`${p.source}-${p.source_id}`}
                       paper={p}
                       index={i}
-                      onSave={api.saveLibrary}
+                      onSave={onSavePaper}
                       ref={(el) => {
                         if (el) cardRefs.current[p.citation_key] = el
                       }}
