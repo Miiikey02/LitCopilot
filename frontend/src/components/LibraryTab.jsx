@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import * as api from '../lib/api'
+import LibraryChat from './LibraryChat'
 
 const sourceLabel = {
   pubmed: 'PubMed',
@@ -12,10 +13,24 @@ const sourceLabel = {
 function LibraryCard({ paper, folders = [], onChanged }) {
   const { t } = useTranslation()
   const [newTag, setNewTag] = useState('')
+  const [note, setNote] = useState(paper.notes || '')
+  const [editingNote, setEditingNote] = useState(false)
+  const [savingNote, setSavingNote] = useState(false)
 
   const moveTo = async (value) => {
     await api.movePaper(paper.id, value === '' ? null : Number(value))
     onChanged()
+  }
+
+  const saveNote = async () => {
+    setSavingNote(true)
+    try {
+      await api.setNotes(paper.id, note)
+      setEditingNote(false)
+      onChanged()
+    } finally {
+      setSavingNote(false)
+    }
   }
 
   const addTag = async (e) => {
@@ -56,6 +71,56 @@ function LibraryCard({ paper, folders = [], onChanged }) {
         {paper.year ? ` · ${paper.year}` : ''}
         {paper.venue ? ` · ${paper.venue}` : ''}
       </p>
+
+      {/* Your own note on this paper — also used by library chat as evidence */}
+      <div className="mt-3">
+        {editingNote ? (
+          <div>
+            <textarea
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              rows={3}
+              autoFocus
+              placeholder={t('notePlaceholder')}
+              className="w-full rounded-md border border-slate-300 p-2 text-sm text-slate-800 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            />
+            <div className="mt-1 flex gap-2">
+              <button
+                onClick={saveNote}
+                disabled={savingNote}
+                className="rounded-md bg-blue-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+              >
+                {t('saveNote')}
+              </button>
+              <button
+                onClick={() => {
+                  setNote(paper.notes || '')
+                  setEditingNote(false)
+                }}
+                className="rounded-md border border-slate-300 px-2.5 py-1 text-xs text-slate-600 hover:bg-slate-50"
+              >
+                {t('cancel')}
+              </button>
+            </div>
+          </div>
+        ) : paper.notes ? (
+          <button
+            onClick={() => setEditingNote(true)}
+            className="w-full rounded-md bg-amber-50 p-2 text-left text-sm text-amber-900 hover:bg-amber-100"
+            title={t('editNote')}
+          >
+            <span className="font-medium">📝 {t('myNote')}：</span>
+            {paper.notes}
+          </button>
+        ) : (
+          <button
+            onClick={() => setEditingNote(true)}
+            className="text-xs text-slate-400 hover:text-slate-700"
+          >
+            📝 {t('addNote')}
+          </button>
+        )}
+      </div>
 
       {/* Tags */}
       <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -251,22 +316,34 @@ export default function LibraryTab() {
   const [folders, setFolders] = useState([])
   const [activeTag, setActiveTag] = useState(null)
   const [activeFolder, setActiveFolder] = useState(null) // null | id string | 'unfiled'
+  const [query, setQuery] = useState('')
+
+  const [loadError, setLoadError] = useState('')
 
   const load = async () => {
-    const [ps, ts, fs] = await Promise.all([
-      api.listLibrary(activeTag, activeFolder),
-      api.listTags(),
-      api.listFolders(),
-    ])
-    setPapers(ps)
-    setTags(ts)
-    setFolders(fs)
+    try {
+      const [ps, ts, fs] = await Promise.all([
+        api.listLibrary(activeTag, activeFolder, query),
+        api.listTags(),
+        api.listFolders(),
+      ])
+      setPapers(ps)
+      setTags(ts)
+      setFolders(fs)
+      setLoadError('')
+    } catch {
+      // Surface the failure instead of silently rendering an empty library,
+      // which would look like the user had lost their saved papers.
+      setLoadError(t('libraryLoadError'))
+    }
   }
 
   useEffect(() => {
-    load()
+    // Debounce so typing in the search box doesn't fire a request per keystroke.
+    const id = setTimeout(load, query ? 250 : 0)
+    return () => clearTimeout(id)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTag, activeFolder])
+  }, [activeTag, activeFolder, query])
 
   const total = folders.reduce((n, f) => n + f.count, 0)
 
@@ -283,12 +360,42 @@ export default function LibraryTab() {
       </aside>
 
       <div>
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-slate-900">{t('libraryTitle')}</h2>
-          <span className="text-sm text-slate-500">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <h2 className="shrink-0 text-lg font-semibold text-slate-900">
+            {t('libraryTitle')}
+          </h2>
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={t('librarySearchPlaceholder')}
+            className="w-full max-w-xs rounded-md border border-slate-300 px-3 py-1.5 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          />
+          <span className="shrink-0 text-sm text-slate-500">
             {t('savedCount', { count: papers.length })}
           </span>
         </div>
+
+        {/* Ask questions across the papers you've saved */}
+        <LibraryChat
+          folder={activeFolder}
+          scopeLabel={
+            activeFolder === null
+              ? t('allPapers')
+              : activeFolder === 'unfiled'
+              ? t('unfiled')
+              : folders.find((f) => String(f.id) === activeFolder)?.name || ''
+          }
+          paperCount={
+            activeFolder === null
+              ? folders.reduce((n, f) => n + f.count, 0)
+              : folders.find(
+                  (f) =>
+                    (activeFolder === 'unfiled' && f.id === null) ||
+                    String(f.id) === activeFolder
+                )?.count ?? 0
+          }
+        />
+
 
         {/* Tag filter bar */}
         {tags.length > 0 && (
@@ -319,9 +426,16 @@ export default function LibraryTab() {
           </div>
         )}
 
-        {papers.length === 0 ? (
+        {loadError ? (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+            {loadError}{' '}
+            <button onClick={load} className="font-medium underline">
+              {t('retry')}
+            </button>
+          </div>
+        ) : papers.length === 0 ? (
           <div className="rounded-lg border border-dashed border-slate-300 bg-white p-10 text-center text-slate-500">
-            {t('libraryEmpty')}
+            {query ? t('libraryNoMatch') : t('libraryEmpty')}
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">

@@ -76,8 +76,26 @@ class SavePaperRequest(SourceCard):
 class SavedPaper(SourceCard):
     id: int
     tags: list[str] = []
+    notes: str = ""  # the user's own note on this paper
     folder_id: Optional[int] = None  # None = unfiled
     created_at: str
+
+
+class NotesUpdate(BaseModel):
+    notes: str = ""
+
+
+class LibraryChatRequest(BaseModel):
+    message: str
+    folder: Optional[str] = None  # folder id, "unfiled", or None for the whole library
+    lang: Optional[str] = None
+    history: list[dict] = []  # prior [{role, content}] turns, newest last
+
+
+class LibraryChatResponse(BaseModel):
+    answer: str
+    paper_count: int  # how many saved papers the answer was grounded in
+    warning: Optional[str] = None
 
 
 class TagUpdate(BaseModel):

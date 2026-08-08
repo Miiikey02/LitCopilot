@@ -330,6 +330,76 @@ async def answer_from_corpus(
     return answer.strip()
 
 
+_LIBRARY_CHAT_SYSTEM = """You are Gaze, helping a researcher interrogate their \
+OWN saved library.
+
+IMPORTANT — what evidence you have: for privacy and copyright reasons the \
+library stores only each paper's METADATA (title, authors, year, venue), a one- \
+line relevance note written earlier by Gaze, the researcher's own notes, and \
+tags. You do NOT have the abstracts or full text. Work within that limit:
+
+1. Ground every statement in the listed papers only. Never invent papers, \
+findings, numbers or details that the metadata does not support.
+2. Cite papers inline using the exact [citation_key] token shown, e.g. \
+[Smith, 2021]. Only cite papers from the list.
+3. You CAN answer well: which saved papers relate to a topic, how the library \
+breaks down by theme/year/venue, what the researcher's own notes say, and what \
+is missing or thin in the collection.
+4. When a question needs findings that only an abstract or full text would give, \
+say so plainly and point to which saved papers would likely answer it — do NOT \
+guess at their contents.
+5. Write in the RESPONSE LANGUAGE stated in the user message, naturally and \
+directly. Be concise: 1-4 short paragraphs, using a list when it helps.
+
+Return ONLY the answer text — no JSON, no preamble."""
+
+
+def _format_library_for_prompt(papers: list[dict]) -> str:
+    blocks = []
+    for i, p in enumerate(papers, 1):
+        authors = ", ".join((p.get("authors") or [])[:6])
+        parts = [
+            f"[{i}] cite as [{p.get('citation_key', '')}]",
+            f"    title: {p.get('title', '')}",
+        ]
+        if p.get("title_zh"):
+            parts.append(f"    title (translated): {p['title_zh']}")
+        parts.append(f"    authors: {authors}")
+        parts.append(f"    year: {p.get('year')}    venue: {p.get('venue', '')}")
+        if p.get("relevance_zh"):
+            parts.append(f"    gaze relevance note: {p['relevance_zh']}")
+        if p.get("notes"):
+            parts.append(f"    RESEARCHER'S OWN NOTE: {p['notes']}")
+        if p.get("tags"):
+            parts.append(f"    tags: {', '.join(p['tags'])}")
+        blocks.append("\n".join(parts))
+    return "\n\n".join(blocks)
+
+
+async def answer_from_library(
+    papers: list[dict], question: str, lang: str, history: list[dict] | None = None
+) -> str:
+    """Answer a question grounded in the user's saved-paper metadata."""
+    if not has_llm_key():
+        raise RuntimeError("DEEPSEEK_API_KEY not configured")
+    if not papers:
+        return (
+            "你的文库中还没有文献，无法作答。请先在检索结果中保存一些文献。"
+            if lang == "zh"
+            else "Your library is empty, so there is nothing to answer from. Save some papers first."
+        )
+    user = (
+        f"RESPONSE LANGUAGE: {_lang_name(lang)} — write the answer entirely in "
+        f"{_lang_name(lang)}.\n\n"
+        f"{_format_history(history or [])}"
+        f"Question:\n{question}\n\n"
+        f"The researcher's saved papers ({len(papers)} total):\n"
+        f"{_format_library_for_prompt(papers)}"
+    )
+    answer, _ = await _chat(_LIBRARY_CHAT_SYSTEM, user, max_tokens=2000)
+    return answer.strip()
+
+
 _LOCALIZE_SYSTEM = """For each numbered source paper, provide, in the RESPONSE \
 LANGUAGE stated in the user message:
   - title_localized: the paper's title translated into the response language; \

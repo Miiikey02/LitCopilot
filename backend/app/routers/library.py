@@ -9,12 +9,16 @@ from ..schemas import (
     Folder,
     FolderCreate,
     HistoryItem,
+    LibraryChatRequest,
+    LibraryChatResponse,
     MoveToFolder,
+    NotesUpdate,
     SavedPaper,
     SavePaperRequest,
     TagCount,
     TagUpdate,
 )
+from ..services import llm_service
 
 router = APIRouter(prefix="/api", tags=["library"])
 
@@ -37,10 +41,20 @@ def save_paper(
 def list_library(
     tag: str | None = None,
     folder: str | None = None,
+    q: str | None = None,
     user: str = Depends(current_user),
 ) -> list[SavedPaper]:
-    """List saved papers; `folder` is a folder id or "unfiled"."""
-    return [SavedPaper(**p) for p in db.list_saved(user, tag, folder)]
+    """List saved papers; `folder` is a folder id or "unfiled", `q` free text."""
+    return [SavedPaper(**p) for p in db.list_saved(user, tag, folder, q)]
+
+
+@router.patch("/library/{paper_id}/notes")
+def set_notes(
+    paper_id: int, body: NotesUpdate, user: str = Depends(current_user)
+) -> dict:
+    if not db.set_notes(user, paper_id, body.notes):
+        raise HTTPException(status_code=404, detail="Paper not found")
+    return {"ok": True}
 
 
 @router.delete("/library/{paper_id}")
@@ -71,6 +85,52 @@ def remove_tag(
 @router.get("/library/tags", response_model=list[TagCount])
 def list_tags(user: str = Depends(current_user)) -> list[TagCount]:
     return [TagCount(**t) for t in db.list_tags(user)]
+
+
+# --- Chat with your library -----------------------------------------------
+
+
+@router.post("/library/chat", response_model=LibraryChatResponse)
+async def library_chat(
+    req: LibraryChatRequest, user: str = Depends(current_user)
+) -> LibraryChatResponse:
+    """Answer a question grounded only in this user's saved papers.
+
+    Optionally scoped to one folder. Note that saved rows hold metadata and
+    notes, never abstract text, so the model is told to work within that.
+    """
+    message = req.message.strip()
+    if not message:
+        raise HTTPException(status_code=422, detail="Empty message")
+
+    lang = req.lang or llm_service.detect_language(message)
+    papers = db.list_saved(user, folder=req.folder)
+
+    if not llm_service.has_llm_key():
+        return LibraryChatResponse(
+            answer="",
+            paper_count=len(papers),
+            warning=(
+                "未配置 DEEPSEEK_API_KEY，无法与文库对话。"
+                if lang == "zh"
+                else "DEEPSEEK_API_KEY is not configured; library chat is unavailable."
+            ),
+        )
+    try:
+        answer = await llm_service.answer_from_library(
+            papers, message, lang, req.history
+        )
+    except Exception:  # noqa: BLE001 - keep the API responsive on LLM errors
+        return LibraryChatResponse(
+            answer="",
+            paper_count=len(papers),
+            warning=(
+                "回答生成失败（可能是密钥无效、额度不足或网络问题），请稍后重试。"
+                if lang == "zh"
+                else "Failed to generate a reply (invalid key, quota, or network). Please retry."
+            ),
+        )
+    return LibraryChatResponse(answer=answer, paper_count=len(papers))
 
 
 # --- Folders --------------------------------------------------------------

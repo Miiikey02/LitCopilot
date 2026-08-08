@@ -29,3 +29,10 @@ export async function getAccessToken() {
   const { data } = await supabase.auth.getSession()
   return data?.session?.access_token || null
 }
+
+/** Force a session refresh and return the new access token, or null. */
+export async function refreshSession() {
+  if (!supabase) return null
+  const { data } = await supabase.auth.refreshSession()
+  return data?.session?.access_token || null
+}

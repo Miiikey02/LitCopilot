@@ -45,6 +45,7 @@ CREATE TABLE IF NOT EXISTS saved_papers (
     relevance_zh TEXT,
     pub_date     TEXT,
     oa_url       TEXT,
+    notes        TEXT NOT NULL DEFAULT '',
     folder_id    BIGINT REFERENCES folders(id) ON DELETE SET NULL,
     dedup_key    TEXT NOT NULL,
     created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -89,6 +90,10 @@ def _get_pool() -> ConnectionPool:
 def init_db() -> None:
     with _get_pool().connection() as conn:
         conn.execute(_SCHEMA)
+        # Columns added after a table already existed in a deployed database.
+        conn.execute(
+            "ALTER TABLE saved_papers ADD COLUMN IF NOT EXISTS notes TEXT NOT NULL DEFAULT ''"
+        )
 
 
 def _row_to_paper(row: dict, tags: list[str]) -> dict:
@@ -110,6 +115,7 @@ def _row_to_paper(row: dict, tags: list[str]) -> dict:
         "relevance_zh": row["relevance_zh"] or "",
         "pub_date": row["pub_date"] or "",
         "oa_url": row["oa_url"] or "",
+        "notes": row["notes"] or "",
         "folder_id": row["folder_id"],
         "tags": tags,
         "created_at": row["created_at"].isoformat(),
@@ -198,11 +204,16 @@ def save_paper(
 
 
 def list_saved(
-    user_id: str, tag: str | None = None, folder: str | None = None
+    user_id: str,
+    tag: str | None = None,
+    folder: str | None = None,
+    q: str | None = None,
 ) -> list[dict]:
-    """List a user's saved papers, optionally filtered by tag and/or folder.
+    """List a user's saved papers, optionally filtered by tag, folder and text.
 
     `folder` is a folder id as a string, or "unfiled" for papers in no folder.
+    `q` matches case-insensitively across title, Chinese title, authors, venue
+    and the user's own notes.
     """
     clauses = ["p.user_id = %s"]
     params: list = [user_id]
@@ -216,6 +227,12 @@ def list_saved(
     elif folder:
         clauses.append("p.folder_id = %s")
         params.append(int(folder))
+    if q and q.strip():
+        clauses.append(
+            "(p.title ILIKE %s OR p.title_zh ILIKE %s OR p.venue ILIKE %s"
+            " OR p.notes ILIKE %s OR p.authors::text ILIKE %s)"
+        )
+        params.extend([f"%{q.strip()}%"] * 5)
 
     with _get_pool().connection() as conn:
         rows = conn.execute(
@@ -267,6 +284,16 @@ def remove_tag(user_id: str, paper_id: int, tag: str) -> bool:
         cur = conn.execute(
             "DELETE FROM paper_tags WHERE paper_id = %s AND tag = %s",
             (paper_id, tag),
+        )
+        return cur.rowcount > 0
+
+
+def set_notes(user_id: str, paper_id: int, notes: str) -> bool:
+    """Replace a paper's note. Owner-scoped like every other mutation."""
+    with _get_pool().connection() as conn:
+        cur = conn.execute(
+            "UPDATE saved_papers SET notes = %s WHERE id = %s AND user_id = %s",
+            (notes or "", paper_id, user_id),
         )
         return cur.rowcount > 0
 

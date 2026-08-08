@@ -1,14 +1,29 @@
 // Thin API client for the Gaze backend.
-import { getAccessToken } from './supabase'
+import { getAccessToken, refreshSession } from './supabase'
+
+async function send(path, options, token) {
+  const headers = { ...(options.headers || {}) }
+  if (token) headers.Authorization = `Bearer ${token}`
+  return fetch(path, { ...options, headers })
+}
 
 async function req(path, options = {}) {
   // Attach the Supabase access token so the backend can identify the user and
   // scope library/folder/history rows to them.
-  const token = await getAccessToken()
-  const headers = { ...(options.headers || {}) }
-  if (token) headers.Authorization = `Bearer ${token}`
+  let token = await getAccessToken()
+  let res = await send(path, options, token)
 
-  const res = await fetch(path, { ...options, headers })
+  // A 401 right after sign-in usually means the session wasn't persisted yet,
+  // or the access token just expired. Refresh once and retry before failing —
+  // otherwise a transient blip leaves the library looking empty.
+  if (res.status === 401) {
+    const fresh = await refreshSession()
+    if (fresh && fresh !== token) {
+      token = fresh
+      res = await send(path, options, token)
+    }
+  }
+
   if (!res.ok) {
     const err = new Error(`${options?.method || 'GET'} ${path} failed: ${res.status}`)
     err.status = res.status
@@ -48,13 +63,30 @@ export const chat = (sessionId, message, lang) =>
 
 // --- Library ---
 export const saveLibrary = (paper) => jsonPost('/api/library/save', paper)
-export const listLibrary = (tag, folder) => {
+export const listLibrary = (tag, folder, q) => {
   const qs = new URLSearchParams()
   if (tag) qs.set('tag', tag)
   if (folder !== null && folder !== undefined) qs.set('folder', folder)
+  if (q) qs.set('q', q)
   const s = qs.toString()
   return req(`/api/library${s ? `?${s}` : ''}`)
 }
+
+export const setNotes = (id, notes) =>
+  req(`/api/library/${id}/notes`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ notes }),
+  })
+
+// Ask questions grounded in your own saved papers.
+export const libraryChat = (message, folder, lang, history) =>
+  jsonPost('/api/library/chat', {
+    message,
+    folder: folder ?? null,
+    lang: lang || null,
+    history: history || [],
+  })
 export const deletePaper = (id) => req(`/api/library/${id}`, { method: 'DELETE' })
 export const addTag = (id, tag) => jsonPost(`/api/library/${id}/tags`, { tag })
 export const removeTag = (id, tag) =>
