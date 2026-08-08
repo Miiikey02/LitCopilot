@@ -16,6 +16,16 @@ services:
         sync: false            # set this in the Render dashboard (kept secret)
       - key: DEEPSEEK_MODEL
         value: deepseek-chat
+      # Supabase Postgres — data now lives here, so it survives redeploys.
+      - key: DATABASE_URL
+        sync: false            # Session-pooler URI, incl. the DB password
+      - key: SUPABASE_URL
+        sync: false            # used to verify access tokens via JWKS
+      # Publishable client config, baked into the frontend at build time.
+      - key: VITE_SUPABASE_URL
+        sync: false
+      - key: VITE_SUPABASE_ANON_KEY
+        sync: false
     # Persist saved library + history across deploys.
     # NOTE: Render disks require a paid instance type; the free plan is ephemeral.
     # disk:

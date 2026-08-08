@@ -8,6 +8,13 @@ WORKDIR /app/frontend
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
 COPY frontend/ ./
+# Vite inlines VITE_* variables at build time, so Supabase's publishable config
+# has to arrive as build args (Render: set these under the service's Environment
+# as build-time variables). Both are publishable client values, never secrets.
+ARG VITE_SUPABASE_URL=""
+ARG VITE_SUPABASE_ANON_KEY=""
+ENV VITE_SUPABASE_URL=$VITE_SUPABASE_URL \
+    VITE_SUPABASE_ANON_KEY=$VITE_SUPABASE_ANON_KEY
 RUN npm run build          # emits /app/frontend/dist
 
 # ---- Stage 2: Python backend that serves API + built frontend ----

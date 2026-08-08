@@ -8,6 +8,8 @@ import HistoryList from './components/HistoryList'
 import TrialsList from './components/TrialsList'
 import ResearchChat from './components/ResearchChat'
 import BulkExport from './components/BulkExport'
+import AuthPanel from './components/AuthPanel'
+import { supabase, authEnabled } from './lib/supabase'
 import { exportMarkdown, exportPdf } from './lib/exportResult'
 
 // Layout choice is a workspace preference, so it outlives a single search.
@@ -31,6 +33,19 @@ export default function App() {
   const [trialsLoading, setTrialsLoading] = useState(false)
   const [chatTurns, setChatTurns] = useState([]) // follow-up research thread
   const [chatLoading, setChatLoading] = useState(false)
+  // null while we're still restoring a persisted session on first paint.
+  const [session, setSession] = useState(authEnabled ? null : 'disabled')
+
+  useEffect(() => {
+    if (!authEnabled) return
+    supabase.auth.getSession().then(({ data }) => setSession(data.session ?? false))
+    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) =>
+      setSession(s ?? false)
+    )
+    return () => sub.subscription.unsubscribe()
+  }, [])
+
+  const signedIn = session === 'disabled' || Boolean(session)
 
   // Refs to each source card so citation clicks can scroll + flash them.
   const cardRefs = useRef({})
@@ -65,12 +80,17 @@ export default function App() {
   }, [result, sortBy])
 
   const loadHistory = useCallback(async () => {
+    // History is per-account; signed-out visitors simply have none.
+    if (!signedIn) {
+      setHistory([])
+      return
+    }
     try {
       setHistory(await api.listHistory())
     } catch {
       /* history is non-critical */
     }
-  }, [])
+  }, [signedIn])
 
   useEffect(() => {
     loadHistory()
@@ -226,17 +246,38 @@ export default function App() {
               ))}
             </nav>
           </div>
-          <button
-            onClick={toggleLang}
-            className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
-          >
-            {i18n.language.startsWith('zh') ? t('toggleToEn') : t('toggleToZh')}
-          </button>
+          <div className="flex items-center gap-3">
+            {authEnabled && session && (
+              <>
+                <span
+                  className="hidden max-w-[12rem] truncate text-sm text-slate-500 sm:inline"
+                  title={session.user?.email}
+                >
+                  {session.user?.email}
+                </span>
+                <button
+                  onClick={() => supabase.auth.signOut()}
+                  className="text-sm text-slate-500 hover:text-slate-800"
+                >
+                  {t('signOut')}
+                </button>
+              </>
+            )}
+            <button
+              onClick={toggleLang}
+              className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            >
+              {i18n.language.startsWith('zh') ? t('toggleToEn') : t('toggleToZh')}
+            </button>
+          </div>
         </div>
       </header>
 
       <main className="mx-auto max-w-6xl px-6 py-6">
-        {tab === 'library' && <LibraryTab />}
+        {/* The library is per-account, so it needs a signed-in user. Search
+            itself stays open so people can try Gaze before registering. */}
+        {tab === 'library' &&
+          (signedIn ? <LibraryTab /> : <AuthPanel onDone={() => setTab('library')} />)}
 
         {tab === 'search' && (
         <>

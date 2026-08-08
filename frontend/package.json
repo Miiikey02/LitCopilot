@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.112.2",
     "i18next": "^24.2.0",
     "i18next-browser-languagedetector": "^8.0.2",
     "react": "^18.3.1",

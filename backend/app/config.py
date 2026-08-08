@@ -29,9 +29,26 @@ NCBI_EMAIL = os.getenv("NCBI_EMAIL", "")
 # --- Retrieval tuning ---
 MAX_RESULTS = int(os.getenv("MAX_RESULTS", "18"))  # target 15-20 abstracts
 
-# --- Storage ---
-DB_PATH = os.getenv("DB_PATH", os.path.join(os.path.dirname(os.path.dirname(__file__)), "litcopilot.db"))
+# --- Storage: Supabase Postgres ---
+# Session-pooler URI from Supabase → Settings → Database → Connection string.
+DATABASE_URL = os.getenv("DATABASE_URL", "")
+
+# --- Auth: Supabase ---
+# Project URL, e.g. https://abcdefgh.supabase.co — used to fetch the JWKS that
+# verifies access tokens, and to check the token issuer.
+SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
+# Legacy HS256 projects sign tokens with this shared secret instead of JWKS.
+# Optional: leave empty when the project uses asymmetric (RS256/ES256) keys.
+SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET", "")
 
 
 def has_llm_key() -> bool:
     return bool(DEEPSEEK_API_KEY.strip())
+
+
+def has_db() -> bool:
+    return bool(DATABASE_URL.strip())
+
+
+def has_auth() -> bool:
+    return bool(SUPABASE_URL or SUPABASE_JWT_SECRET)

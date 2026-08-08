@@ -9,12 +9,13 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import db
+from .auth import optional_user
 from .config import MAX_RESULTS, has_llm_key
 from .routers import library
 from .schemas import (
@@ -35,7 +36,12 @@ app = FastAPI(title="Gaze API", version="0.1.0")
 
 @app.on_event("startup")
 def _startup() -> None:
-    db.init_db()
+    # Search works without a database; only the library needs one, so a
+    # missing/unreachable DB must not stop the app from booting.
+    try:
+        db.init_db()
+    except Exception as exc:  # noqa: BLE001
+        print(f"[startup] database unavailable: {type(exc).__name__}: {exc}")
 
 
 app.include_router(library.router)
@@ -55,7 +61,9 @@ async def health() -> dict:
 
 
 @app.post("/api/search", response_model=SearchResponse)
-async def search(req: SearchRequest) -> SearchResponse:
+async def search(
+    req: SearchRequest, user: str | None = Depends(optional_user)
+) -> SearchResponse:
     query = req.query.strip()
     lang = req.lang or llm_service.detect_language(query)
 
@@ -109,8 +117,13 @@ async def search(req: SearchRequest) -> SearchResponse:
 
     cards = [SourceCard(**p.to_card()) for p in papers]
 
-    # Record the search so it can be revisited from the history list.
-    db.add_history(query, lang, english_query, len(cards))
+    # Record the search so it can be revisited from the history list. Only
+    # signed-in users have a history; anonymous searches are not stored.
+    if user:
+        try:
+            db.add_history(user, query, lang, english_query, len(cards))
+        except Exception:  # noqa: BLE001 - history is non-critical
+            pass
 
     # Seed a research session so the user can ask follow-up questions that keep
     # this corpus (papers hold abstracts, kept server-side only).

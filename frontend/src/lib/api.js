@@ -1,9 +1,18 @@
 // Thin API client for the Gaze backend.
+import { getAccessToken } from './supabase'
 
-async function req(path, options) {
-  const res = await fetch(path, options)
+async function req(path, options = {}) {
+  // Attach the Supabase access token so the backend can identify the user and
+  // scope library/folder/history rows to them.
+  const token = await getAccessToken()
+  const headers = { ...(options.headers || {}) }
+  if (token) headers.Authorization = `Bearer ${token}`
+
+  const res = await fetch(path, { ...options, headers })
   if (!res.ok) {
-    throw new Error(`${options?.method || 'GET'} ${path} failed: ${res.status}`)
+    const err = new Error(`${options?.method || 'GET'} ${path} failed: ${res.status}`)
+    err.status = res.status
+    throw err
   }
   // DELETE endpoints may return an empty-ish body; guard the parse.
   const text = await res.text()
