@@ -181,3 +181,28 @@ async def search_pubmed(
     async with httpx.AsyncClient() as client:
         pmids = await _esearch(client, query, retmax, sort)
         return await _efetch(client, pmids)
+
+
+async def fetch_by_doi(doi: str) -> Paper | None:
+    """Look one paper up by DOI, for filling in a missing abstract.
+
+    Other sources sometimes return a paper's metadata without its abstract
+    (common for very recent or closed-access articles); PubMed usually has it.
+    Fails soft — returns None if the DOI isn't indexed or anything goes wrong.
+    """
+    doi = (doi or "").strip()
+    if not doi:
+        return None
+    try:
+        async with httpx.AsyncClient() as client:
+            # [AID] is the article-id field; fall back to a bare DOI search,
+            # which PubMed also resolves, in case the field query misses.
+            ids = await _esearch(client, f"{doi}[AID]", 1)
+            if not ids:
+                ids = await _esearch(client, doi, 1)
+            if not ids:
+                return None
+            papers = await _efetch(client, ids[:1])
+            return papers[0] if papers else None
+    except (httpx.HTTPError, ValueError, KeyError):
+        return None

@@ -28,7 +28,7 @@ from .schemas import (
     TrialsResponse,
 )
 from .services import llm_service, sessions
-from .services.retrieval import retrieve
+from .services.retrieval import looks_like_known_item, retrieve
 from .services.trials import find_trials
 
 app = FastAPI(title="Gaze API", version="0.1.0")
@@ -75,12 +75,16 @@ async def search(
     #    safe range; fall back to MAX_RESULTS when unset.
     limit = max(3, min(req.limit or MAX_RESULTS, 40))
     sort = req.sort if req.sort in ("relevance", "date") else "relevance"
+    # A pasted title or DOI is a request for one specific paper, so search the
+    # user's exact words too — expansion alone finds the topic, not the paper.
+    exact = query if looks_like_known_item(query) else None
     papers = (
         await retrieve(
             english_query,
             limit=limit,
             include_preprints=req.include_preprints,
             sort=sort,
+            exact_query=exact,
         )
     )[:limit]
 
@@ -268,3 +272,4 @@ if (FRONTEND_DIST / "index.html").is_file():
         if full_path and candidate.is_file():
             return FileResponse(candidate)
         return FileResponse(_INDEX)
+

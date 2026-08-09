@@ -2,11 +2,12 @@
 from __future__ import annotations
 
 import asyncio
+import re
 
 from .biorxiv import search_biorxiv
 from .models import Paper
 from .openalex import search_openalex
-from .pubmed import search_pubmed
+from .pubmed import fetch_by_doi, search_pubmed
 from .semantic_scholar import search_semantic_scholar
 
 
@@ -33,6 +34,50 @@ def _merge(existing: Paper, other: Paper) -> Paper:
     if not existing.oa_url and other.oa_url:
         existing.oa_url = other.oa_url
     return existing
+
+
+_DOI_RE = re.compile(r"\b10\.\d{4,9}/[-._;()/:a-z0-9]+", re.I)
+_QUESTION_STARTS = (
+    "what", "how", "which", "why", "when", "who", "is ", "are ", "does ", "do ",
+    "can ", "should ", "recent", "latest", "current",
+)
+
+
+def looks_like_known_item(query: str) -> bool:
+    """True when the query looks like a specific paper the user already knows.
+
+    Researchers routinely paste a full title (or a DOI) to pull up one paper.
+    Expanding that into topical keywords searches for the *subject* instead of
+    the *paper*, so those queries also need a verbatim search.
+    """
+    q = query.strip()
+    if _DOI_RE.search(q):
+        return True
+    if q.isdigit() and 6 <= len(q) <= 9:  # looks like a PMID
+        return True
+    lowered = q.lower()
+    if q.endswith("?") or lowered.startswith(_QUESTION_STARTS):
+        return False
+    # A long, statement-shaped English phrase reads like a title.
+    return len(q.split()) >= 6 and q.isascii()
+
+
+def _norm_title(text: str) -> str:
+    return "".join(ch for ch in text.lower() if ch.isalnum())
+
+
+def _pin_exact_matches(papers: list[Paper], query: str) -> list[Paper]:
+    """Move papers whose title matches the query to the front."""
+    target = _norm_title(query)
+    if not target:
+        return papers
+    exact, rest = [], []
+    for p in papers:
+        t = _norm_title(p.title)
+        # Either direction of containment catches subtitle/punctuation drift.
+        hit = t and (t == target or t in target or target in t)
+        (exact if hit else rest).append(p)
+    return exact + rest
 
 
 def _interleave(lists: list[list[Paper]]) -> list[Paper]:
@@ -97,6 +142,7 @@ async def retrieve(
     limit: int,
     include_preprints: bool = True,
     sort: str = "relevance",
+    exact_query: str | None = None,
 ) -> list[Paper]:
     """Fetch from PubMed + Semantic Scholar + OpenAlex (+ bioRxiv), then dedupe.
 
@@ -110,22 +156,67 @@ async def retrieve(
     each source's own query so we retrieve genuinely recent literature, and the
     merged list is then re-sorted newest-first — otherwise the caller's [:limit]
     cap would slice a round-robin of four differently-dated lists.
-    """
-    tasks = [
-        search_pubmed(english_query, retmax=limit, sort=sort),
-        search_semantic_scholar(english_query, limit=limit, sort=sort),
-        search_openalex(english_query, limit=limit, sort=sort),
-    ]
-    if include_preprints:
-        tasks.append(search_biorxiv(english_query, limit=limit, sort=sort))
 
-    results = await asyncio.gather(*tasks, return_exceptions=True)
+    `exact_query` is the user's untouched text, passed when it looks like a
+    specific paper (a pasted title or DOI). We then additionally search that
+    verbatim and pin title matches to the front — expansion alone would look for
+    the topic and miss the very paper being asked for.
+    """
+
+    def _source_tasks(q: str) -> list:
+        tasks = [
+            search_pubmed(q, retmax=limit, sort=sort),
+            search_semantic_scholar(q, limit=limit, sort=sort),
+            search_openalex(q, limit=limit, sort=sort),
+        ]
+        if include_preprints:
+            tasks.append(search_biorxiv(q, limit=limit, sort=sort))
+        return tasks
+
+    queries = [english_query]
+    if exact_query and exact_query.strip() != english_query.strip():
+        queries.append(exact_query.strip())
+
+    per_query = [_source_tasks(q) for q in queries]
+    results = await asyncio.gather(
+        *[t for tasks in per_query for t in tasks], return_exceptions=True
+    )
+
     # Keep source order pubmed → s2 → openalex → biorxiv (PubMed wins merges),
     # but interleave so the downstream [:limit] cap includes a mix from each
-    # source rather than filling up entirely from PubMed.
+    # source rather than filling up entirely from PubMed. The verbatim pass is
+    # interleaved first so a known-item hit survives the cap.
+    n = len(per_query[0])
     lists = [r for r in results if isinstance(r, list)]
+    if len(queries) > 1:
+        expanded, verbatim = lists[:n], lists[n:]
+        lists = verbatim + expanded
+
     papers = dedupe(_interleave(lists))
     if sort == "date":
         # Undated records sort last rather than first.
         papers.sort(key=lambda p: (p.sort_date() != "", p.sort_date()), reverse=True)
+    if exact_query:
+        papers = _pin_exact_matches(papers, exact_query)
+        await _backfill_abstracts(papers[:3])
     return papers
+
+
+async def _backfill_abstracts(papers: list[Paper]) -> None:
+    """Fill in missing abstracts by DOI for the top known-item hits.
+
+    A paper found only via a metadata-only source arrives without an abstract,
+    and the synthesis step then has nothing to summarise — precisely the case
+    where the user asked for that paper by name. PubMed usually carries it.
+    """
+    targets = [p for p in papers if not p.abstract and p.doi]
+    if not targets:
+        return
+    fetched = await asyncio.gather(
+        *[fetch_by_doi(p.doi) for p in targets], return_exceptions=True
+    )
+    for paper, found in zip(targets, fetched):
+        if isinstance(found, Paper) and found.abstract:
+            paper.abstract = found.abstract
+            if not paper.venue:
+                paper.venue = found.venue
