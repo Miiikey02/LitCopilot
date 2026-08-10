@@ -15,7 +15,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import db
-from .auth import optional_user
+from .auth import current_user, optional_user
 from .config import MAX_RESULTS, has_llm_key
 from .routers import library
 from .schemas import (
@@ -164,7 +164,9 @@ async def trials(req: TrialsRequest) -> TrialsResponse:
 
 
 @app.post("/api/chat", response_model=ChatResponse)
-async def chat(req: ChatRequest) -> ChatResponse:
+async def chat(
+    req: ChatRequest, user: str | None = Depends(optional_user)
+) -> ChatResponse:
     """One turn of the multi-turn research agent.
 
     The agent decides whether the follow-up needs new literature; if so it
@@ -235,11 +237,32 @@ async def chat(req: ChatRequest) -> ChatResponse:
         sessions.add_message(req.session_id, "user", message)
         sessions.add_message(req.session_id, "assistant", answer)
 
+    # Persist the exchange so this deep-dive can be reopened later. Only the
+    # messages are stored — the paper corpus (which holds abstracts) is not, so
+    # a resumed thread re-runs its seed query to rebuild it.
+    conversation_id = req.conversation_id
+    if user and answer:
+        try:
+            if conversation_id is None:
+                seed = sess["messages"][0]["content"] if sess["messages"] else message
+                conversation_id = db.create_conversation(
+                    user, "search", message, seed_query=seed
+                )
+            db.append_messages(
+                user,
+                conversation_id,
+                [{"role": "user", "content": message},
+                 {"role": "assistant", "content": answer}],
+            )
+        except Exception:  # noqa: BLE001 - saving must not lose the answer
+            pass
+
     return ChatResponse(
         answer=answer,
         sources=_cards(),
         searched=searched,
         search_query=search_query if searched else "",
+        conversation_id=conversation_id,
         warning=warning,
     )
 

@@ -53,6 +53,8 @@ class ChatRequest(BaseModel):
     session_id: str
     message: str
     lang: Optional[str] = None  # response language; defaults to session's
+    # Continue an existing saved thread; omitted starts a new one.
+    conversation_id: Optional[int] = None
 
 
 class ChatResponse(BaseModel):
@@ -60,6 +62,7 @@ class ChatResponse(BaseModel):
     sources: list[SourceCard]  # full, updated corpus (metadata only)
     searched: bool  # whether the agent pulled new literature this turn
     search_query: str = ""  # the English query it searched, if any
+    conversation_id: Optional[int] = None  # saved thread this turn belongs to
     warning: Optional[str] = None
 
 
@@ -114,6 +117,8 @@ class NotesUpdate(BaseModel):
 
 class LibraryChatRequest(BaseModel):
     message: str
+    # Continue an existing saved thread; omitted starts a new one.
+    conversation_id: Optional[int] = None
     folder: Optional[str] = None  # folder id, "unfiled", or None for the whole library
     team_id: Optional[int] = None  # None chats with the personal library
     lang: Optional[str] = None
@@ -123,7 +128,40 @@ class LibraryChatRequest(BaseModel):
 class LibraryChatResponse(BaseModel):
     answer: str
     paper_count: int  # how many saved papers the answer was grounded in
+    conversation_id: Optional[int] = None  # saved thread this turn belongs to
     warning: Optional[str] = None
+
+
+# --- Saved conversations ---
+
+
+class ConversationSummary(BaseModel):
+    id: int
+    kind: str  # "search" | "library"
+    title: str
+    seed_query: str = ""
+    team_id: Optional[int] = None
+    message_count: int
+    updated_at: str
+
+
+class ConversationMessage(BaseModel):
+    role: str
+    content: str
+
+
+class Conversation(BaseModel):
+    id: int
+    kind: str
+    title: str
+    seed_query: str = ""
+    team_id: Optional[int] = None
+    updated_at: str
+    messages: list[ConversationMessage]
+
+
+class ConversationRename(BaseModel):
+    title: str
 
 
 class TagUpdate(BaseModel):

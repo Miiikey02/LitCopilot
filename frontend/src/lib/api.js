@@ -58,8 +58,26 @@ export const search = (
   })
 
 // --- Research agent (multi-turn follow-ups) ---
-export const chat = (sessionId, message, lang) =>
-  jsonPost('/api/chat', { session_id: sessionId, message, lang: lang || null })
+export const chat = (sessionId, message, lang, conversationId) =>
+  jsonPost('/api/chat', {
+    session_id: sessionId,
+    message,
+    lang: lang || null,
+    conversation_id: conversationId ?? null,
+  })
+
+// --- Saved conversations ---
+export const listConversations = (kind) =>
+  req(`/api/conversations${kind ? `?kind=${kind}` : ''}`)
+export const getConversation = (id) => req(`/api/conversations/${id}`)
+export const deleteConversation = (id) =>
+  req(`/api/conversations/${id}`, { method: 'DELETE' })
+export const renameConversation = (id, title) =>
+  req(`/api/conversations/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title }),
+  })
 
 // --- Library ---
 export const saveLibrary = (paper, teamId) =>
@@ -86,13 +104,14 @@ export const setNotes = (id, notes, teamId) =>
   })
 
 // Ask questions grounded in your own saved papers.
-export const libraryChat = (message, folder, lang, history, teamId) =>
+export const libraryChat = (message, folder, lang, history, teamId, conversationId) =>
   jsonPost('/api/library/chat', {
     message,
     folder: folder ?? null,
     team_id: teamId ?? null,
     lang: lang || null,
     history: history || [],
+    conversation_id: conversationId ?? null,
   })
 export const deletePaper = (id, teamId) =>
   req(`/api/library/${id}${ws({}, teamId)}`, { method: 'DELETE' })

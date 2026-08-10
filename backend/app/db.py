@@ -76,6 +76,33 @@ CREATE TABLE IF NOT EXISTS paper_tags (
     UNIQUE (paper_id, tag)
 );
 
+-- Saved chats with the research agent, so a conversation can be picked up
+-- later. Only the exchanged messages are stored; abstracts never are, so a
+-- resumed search conversation rebuilds its corpus by re-running seed_query.
+CREATE TABLE IF NOT EXISTS conversations (
+    id         BIGSERIAL PRIMARY KEY,
+    user_id    UUID NOT NULL,
+    team_id    BIGINT REFERENCES teams(id) ON DELETE CASCADE,
+    kind       TEXT NOT NULL,          -- 'search' | 'library'
+    title      TEXT NOT NULL DEFAULT '',
+    seed_query TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS conversation_messages (
+    id              BIGSERIAL PRIMARY KEY,
+    conversation_id BIGINT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    role            TEXT NOT NULL,     -- 'user' | 'assistant'
+    content         TEXT NOT NULL,
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS conversations_user_idx
+    ON conversations (user_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS conversation_messages_idx
+    ON conversation_messages (conversation_id, id);
+
 CREATE TABLE IF NOT EXISTS search_history (
     id            BIGSERIAL PRIMARY KEY,
     user_id       UUID NOT NULL,
@@ -677,6 +704,138 @@ def set_paper_folder(
             (folder_id, paper_id),
         )
         return cur.rowcount > 0
+# --- Conversations --------------------------------------------------------
+
+
+def _title_from(text: str) -> str:
+    """A short label for the sidebar, taken from the opening question."""
+    t = " ".join((text or "").split())
+    return t[:60] if t else "…"
+
+
+def create_conversation(
+    user_id: str,
+    kind: str,
+    first_message: str,
+    seed_query: str = "",
+    team_id: int | None = None,
+) -> int:
+    with _get_pool().connection() as conn:
+        _assert_member(conn, user_id, team_id)
+        row = conn.execute(
+            """INSERT INTO conversations (user_id, team_id, kind, title, seed_query)
+               VALUES (%s,%s,%s,%s,%s) RETURNING id""",
+            (user_id, team_id, kind, _title_from(first_message), seed_query),
+        ).fetchone()
+        return row["id"]
+
+
+def _owns_conversation(conn, user_id: str, conversation_id: int) -> bool:
+    return bool(
+        conn.execute(
+            "SELECT 1 FROM conversations WHERE id = %s AND user_id = %s",
+            (conversation_id, user_id),
+        ).fetchone()
+    )
+
+
+def append_messages(user_id: str, conversation_id: int, messages: list[dict]) -> bool:
+    """Append turns and bump the conversation's updated_at."""
+    with _get_pool().connection() as conn:
+        if not _owns_conversation(conn, user_id, conversation_id):
+            return False
+        for m in messages:
+            conn.execute(
+                """INSERT INTO conversation_messages (conversation_id, role, content)
+                   VALUES (%s,%s,%s)""",
+                (conversation_id, m.get("role", "user"), m.get("content", "")),
+            )
+        conn.execute(
+            "UPDATE conversations SET updated_at = now() WHERE id = %s",
+            (conversation_id,),
+        )
+        return True
+
+
+def list_conversations(
+    user_id: str, kind: str | None = None, limit: int = 50
+) -> list[dict]:
+    clauses = ["c.user_id = %s"]
+    params: list = [user_id]
+    if kind:
+        clauses.append("c.kind = %s")
+        params.append(kind)
+    params.append(limit)
+    with _get_pool().connection() as conn:
+        rows = conn.execute(
+            f"""SELECT c.id, c.kind, c.title, c.seed_query, c.team_id, c.updated_at,
+                       (SELECT COUNT(*) FROM conversation_messages m
+                         WHERE m.conversation_id = c.id) AS message_count
+                FROM conversations c
+                WHERE {' AND '.join(clauses)}
+                ORDER BY c.updated_at DESC
+                LIMIT %s""",
+            params,
+        ).fetchall()
+    return [
+        {
+            "id": r["id"],
+            "kind": r["kind"],
+            "title": r["title"],
+            "seed_query": r["seed_query"] or "",
+            "team_id": r["team_id"],
+            "message_count": r["message_count"],
+            "updated_at": r["updated_at"].isoformat(),
+        }
+        for r in rows
+    ]
+
+
+def get_conversation(user_id: str, conversation_id: int) -> dict | None:
+    with _get_pool().connection() as conn:
+        c = conn.execute(
+            "SELECT * FROM conversations WHERE id = %s AND user_id = %s",
+            (conversation_id, user_id),
+        ).fetchone()
+        if not c:
+            return None
+        rows = conn.execute(
+            """SELECT role, content FROM conversation_messages
+               WHERE conversation_id = %s ORDER BY id""",
+            (conversation_id,),
+        ).fetchall()
+    return {
+        "id": c["id"],
+        "kind": c["kind"],
+        "title": c["title"],
+        "seed_query": c["seed_query"] or "",
+        "team_id": c["team_id"],
+        "updated_at": c["updated_at"].isoformat(),
+        "messages": [{"role": r["role"], "content": r["content"]} for r in rows],
+    }
+
+
+def rename_conversation(user_id: str, conversation_id: int, title: str) -> bool:
+    title = title.strip()
+    if not title:
+        return False
+    with _get_pool().connection() as conn:
+        cur = conn.execute(
+            "UPDATE conversations SET title = %s WHERE id = %s AND user_id = %s",
+            (title[:60], conversation_id, user_id),
+        )
+        return cur.rowcount > 0
+
+
+def delete_conversation(user_id: str, conversation_id: int) -> bool:
+    with _get_pool().connection() as conn:
+        cur = conn.execute(
+            "DELETE FROM conversations WHERE id = %s AND user_id = %s",
+            (conversation_id, user_id),
+        )
+        return cur.rowcount > 0
+
+
 # --- Search history -------------------------------------------------------
 
 

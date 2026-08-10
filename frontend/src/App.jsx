@@ -33,6 +33,7 @@ export default function App() {
   const [trialsLoading, setTrialsLoading] = useState(false)
   const [chatTurns, setChatTurns] = useState([]) // follow-up research thread
   const [chatLoading, setChatLoading] = useState(false)
+  const [conversationId, setConversationId] = useState(null)
   // null while we're still restoring a persisted session on first paint.
   const [session, setSession] = useState(authEnabled ? null : 'disabled')
   const [teams, setTeams] = useState([])
@@ -121,6 +122,7 @@ export default function App() {
       setError('')
       setTrials(null) // clear trials from any previous search
       setChatTurns([]) // start a fresh research thread for the new search
+      setConversationId(null)
       try {
         const data = await api.search(text, lang, limit, includePreprints, sort)
         setResult(data)
@@ -154,7 +156,8 @@ export default function App() {
       const lang = i18n.language.startsWith('zh') ? 'zh' : 'en'
       setChatLoading(true)
       try {
-        const resp = await api.chat(result.session_id, message, lang)
+        const resp = await api.chat(result.session_id, message, lang, conversationId)
+        if (resp.conversation_id) setConversationId(resp.conversation_id)
         setChatTurns((prev) => [
           ...prev,
           {
@@ -176,8 +179,41 @@ export default function App() {
         setChatLoading(false)
       }
     },
-    [result, chatLoading, i18n, t]
+    [result, chatLoading, conversationId, i18n, t]
   )
+
+  // Reopening a saved deep-dive: the paper corpus is never persisted (it holds
+  // abstracts), so re-run the conversation's seed query to rebuild it, then
+  // restore the transcript and keep talking in the same thread.
+  const onOpenConversation = useCallback(
+    async (id) => {
+      if (chatLoading || loading) return
+      try {
+        const c = await api.getConversation(id)
+        const restored = []
+        for (let i = 0; i < c.messages.length; i += 2) {
+          restored.push({
+            question: c.messages[i]?.content || '',
+            answer: c.messages[i + 1]?.content || '',
+          })
+        }
+        if (c.seed_query) {
+          setQuery(c.seed_query)
+          await runSearch(c.seed_query)
+        }
+        setChatTurns(restored)
+        setConversationId(c.id)
+      } catch {
+        /* ignore */
+      }
+    },
+    [chatLoading, loading, runSearch]
+  )
+
+  const onNewConversation = useCallback(() => {
+    setChatTurns([])
+    setConversationId(null)
+  }, [])
 
   // Saving needs an account. Send signed-out users to the sign-in screen rather
   // than letting the click fail silently with a 401.
@@ -516,6 +552,9 @@ export default function App() {
                   loading={chatLoading}
                   citationKeys={citationKeys}
                   onCite={onCite}
+                  conversationId={conversationId}
+                  onOpenConversation={onOpenConversation}
+                  onNewConversation={onNewConversation}
                 />
               )}
             </section>

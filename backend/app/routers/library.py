@@ -6,6 +6,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from .. import db
 from ..auth import current_user
 from ..schemas import (
+    Conversation,
+    ConversationRename,
+    ConversationSummary,
     Folder,
     FolderCreate,
     HistoryItem,
@@ -151,13 +154,72 @@ async def library_chat(
         return LibraryChatResponse(
             answer="",
             paper_count=len(papers),
+            conversation_id=req.conversation_id,
             warning=(
                 "回答生成失败（可能是密钥无效、额度不足或网络问题），请稍后重试。"
                 if lang == "zh"
                 else "Failed to generate a reply (invalid key, quota, or network). Please retry."
             ),
         )
-    return LibraryChatResponse(answer=answer, paper_count=len(papers))
+
+    # Persist the exchange so the thread can be reopened later. Failing to save
+    # must not lose the answer the user is waiting for.
+    conversation_id = req.conversation_id
+    try:
+        if conversation_id is None:
+            conversation_id = db.create_conversation(
+                user, "library", message, team_id=req.team_id
+            )
+        db.append_messages(
+            user,
+            conversation_id,
+            [{"role": "user", "content": message},
+             {"role": "assistant", "content": answer}],
+        )
+    except Exception:  # noqa: BLE001
+        pass
+
+    return LibraryChatResponse(
+        answer=answer, paper_count=len(papers), conversation_id=conversation_id
+    )
+
+
+# --- Saved conversations ---------------------------------------------------
+
+
+@router.get("/conversations", response_model=list[ConversationSummary])
+def list_conversations(
+    kind: str | None = None, user: str = Depends(current_user)
+) -> list[ConversationSummary]:
+    return [ConversationSummary(**c) for c in db.list_conversations(user, kind)]
+
+
+@router.get("/conversations/{conversation_id}", response_model=Conversation)
+def get_conversation(
+    conversation_id: int, user: str = Depends(current_user)
+) -> Conversation:
+    found = db.get_conversation(user, conversation_id)
+    if found is None:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    return Conversation(**found)
+
+
+@router.patch("/conversations/{conversation_id}")
+def rename_conversation(
+    conversation_id: int, body: ConversationRename, user: str = Depends(current_user)
+) -> dict:
+    if not db.rename_conversation(user, conversation_id, body.title):
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    return {"ok": True}
+
+
+@router.delete("/conversations/{conversation_id}")
+def delete_conversation(
+    conversation_id: int, user: str = Depends(current_user)
+) -> dict:
+    if not db.delete_conversation(user, conversation_id):
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    return {"ok": True}
 
 
 # --- Folders --------------------------------------------------------------

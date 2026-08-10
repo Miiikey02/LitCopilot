@@ -1,6 +1,8 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import * as api from '../lib/api'
 import AnswerText from './AnswerText'
+import ConversationList from './ConversationList'
 
 // Conversational "deep-dive" thread shown under the main answer. Each turn shows
 // the researcher's follow-up and the agent's citation-strict reply; when the
@@ -11,9 +13,25 @@ export default function ResearchChat({
   loading,
   citationKeys,
   onCite,
+  conversationId,
+  onOpenConversation,
+  onNewConversation,
 }) {
   const { t } = useTranslation()
   const [text, setText] = useState('')
+  const [conversations, setConversations] = useState([])
+
+  const loadConversations = async () => {
+    try {
+      setConversations(await api.listConversations('search'))
+    } catch {
+      /* history is non-critical */
+    }
+  }
+
+  useEffect(() => {
+    loadConversations()
+  }, [turns.length])
 
   const submit = (e) => {
     e.preventDefault()
@@ -28,8 +46,10 @@ export default function ResearchChat({
       <h2 className="text-lg font-semibold text-slate-900">{t('deepDiveTitle')}</h2>
       <p className="mt-1 text-xs text-slate-400">{t('followupHint')}</p>
 
+      <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-[1fr_15rem]">
+        <div>
       {turns.length > 0 && (
-        <div className="mt-4 space-y-5">
+        <div className="space-y-5">
           {turns.map((turn, i) => (
             <div key={i} className="space-y-2">
               {/* Researcher's follow-up */}
@@ -78,6 +98,17 @@ export default function ResearchChat({
           {loading ? t('thinking') : t('ask')}
         </button>
       </form>
+        </div>
+
+        <ConversationList
+          conversations={conversations}
+          activeId={conversationId}
+          onOpen={onOpenConversation}
+          onNew={onNewConversation}
+          onChanged={loadConversations}
+          compact
+        />
+      </div>
     </div>
   )
 }
