@@ -62,53 +62,82 @@ export const chat = (sessionId, message, lang) =>
   jsonPost('/api/chat', { session_id: sessionId, message, lang: lang || null })
 
 // --- Library ---
-export const saveLibrary = (paper) => jsonPost('/api/library/save', paper)
-export const listLibrary = (tag, folder, q) => {
+export const saveLibrary = (paper, teamId) =>
+  jsonPost('/api/library/save', { ...paper, team_id: teamId ?? null })
+// `team` selects the workspace: undefined/null = personal library.
+const ws = (params = {}, teamId) => {
   const qs = new URLSearchParams()
-  if (tag) qs.set('tag', tag)
-  if (folder !== null && folder !== undefined) qs.set('folder', folder)
-  if (q) qs.set('q', q)
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== null && v !== undefined && v !== '') qs.set(k, v)
+  }
+  if (teamId) qs.set('team', teamId)
   const s = qs.toString()
-  return req(`/api/library${s ? `?${s}` : ''}`)
+  return s ? `?${s}` : ''
 }
 
-export const setNotes = (id, notes) =>
-  req(`/api/library/${id}/notes`, {
+export const listLibrary = (tag, folder, q, teamId) =>
+  req(`/api/library${ws({ tag, folder, q }, teamId)}`)
+
+export const setNotes = (id, notes, teamId) =>
+  req(`/api/library/${id}/notes${ws({}, teamId)}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ notes }),
   })
 
 // Ask questions grounded in your own saved papers.
-export const libraryChat = (message, folder, lang, history) =>
+export const libraryChat = (message, folder, lang, history, teamId) =>
   jsonPost('/api/library/chat', {
     message,
     folder: folder ?? null,
+    team_id: teamId ?? null,
     lang: lang || null,
     history: history || [],
   })
-export const deletePaper = (id) => req(`/api/library/${id}`, { method: 'DELETE' })
-export const addTag = (id, tag) => jsonPost(`/api/library/${id}/tags`, { tag })
-export const removeTag = (id, tag) =>
-  req(`/api/library/${id}/tags/${encodeURIComponent(tag)}`, { method: 'DELETE' })
-export const listTags = () => req('/api/library/tags')
+export const deletePaper = (id, teamId) =>
+  req(`/api/library/${id}${ws({}, teamId)}`, { method: 'DELETE' })
+export const addTag = (id, tag, teamId) =>
+  jsonPost(`/api/library/${id}/tags${ws({}, teamId)}`, { tag })
+export const removeTag = (id, tag, teamId) =>
+  req(`/api/library/${id}/tags/${encodeURIComponent(tag)}${ws({}, teamId)}`, {
+    method: 'DELETE',
+  })
+export const listTags = (teamId) => req(`/api/library/tags${ws({}, teamId)}`)
 
 // --- Folders ---
-export const listFolders = () => req('/api/folders')
-export const createFolder = (name) => jsonPost('/api/folders', { name })
-export const renameFolder = (id, name) =>
-  req(`/api/folders/${id}`, {
+export const listFolders = (teamId) => req(`/api/folders${ws({}, teamId)}`)
+export const createFolder = (name, teamId) =>
+  jsonPost(`/api/folders${ws({}, teamId)}`, { name })
+export const renameFolder = (id, name, teamId) =>
+  req(`/api/folders/${id}${ws({}, teamId)}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name }),
   })
-export const deleteFolder = (id) => req(`/api/folders/${id}`, { method: 'DELETE' })
-export const movePaper = (paperId, folderId) =>
-  req(`/api/library/${paperId}/folder`, {
+export const deleteFolder = (id, teamId) =>
+  req(`/api/folders/${id}${ws({}, teamId)}`, { method: 'DELETE' })
+export const movePaper = (paperId, folderId, teamId) =>
+  req(`/api/library/${paperId}/folder${ws({}, teamId)}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ folder_id: folderId }),
   })
+
+// --- Teams (shared lab workspaces) ---
+export const listTeams = () => req('/api/teams')
+export const createTeam = (name) => jsonPost('/api/teams', { name })
+export const joinTeam = (inviteCode) =>
+  jsonPost('/api/teams/join', { invite_code: inviteCode })
+export const listMembers = (teamId) => req(`/api/teams/${teamId}/members`)
+export const renameTeam = (teamId, name) =>
+  req(`/api/teams/${teamId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  })
+export const deleteTeam = (teamId) => req(`/api/teams/${teamId}`, { method: 'DELETE' })
+export const removeMember = (teamId, memberId) =>
+  req(`/api/teams/${teamId}/members/${memberId}`, { method: 'DELETE' })
 
 // --- History ---
 export const listHistory = () => req('/api/history')

@@ -5,7 +5,7 @@ import * as api from '../lib/api'
 // Ask questions about your own saved papers. Answers are grounded in stored
 // metadata + your notes (never abstracts), so the assistant says plainly when a
 // question needs the full text.
-export default function LibraryChat({ folder, scopeLabel, paperCount }) {
+export default function LibraryChat({ folder, scopeLabel, paperCount, teamId }) {
   const { t, i18n } = useTranslation()
   const [open, setOpen] = useState(false)
   const [text, setText] = useState('')
@@ -25,7 +25,7 @@ export default function LibraryChat({ folder, scopeLabel, paperCount }) {
     ])
     try {
       const lang = i18n.language.startsWith('zh') ? 'zh' : 'en'
-      const r = await api.libraryChat(msg, folder, lang, history)
+      const r = await api.libraryChat(msg, folder, lang, history, teamId)
       setTurns((p) => [...p, { q: msg, a: r.answer, warning: r.warning }])
     } catch {
       setTurns((p) => [...p, { q: msg, a: '', warning: t('errorNetwork') }])

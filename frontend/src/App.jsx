@@ -35,6 +35,9 @@ export default function App() {
   const [chatLoading, setChatLoading] = useState(false)
   // null while we're still restoring a persisted session on first paint.
   const [session, setSession] = useState(authEnabled ? null : 'disabled')
+  const [teams, setTeams] = useState([])
+  // Which workspace a "Save" on a search result goes to: '' = personal.
+  const [saveTeam, setSaveTeam] = useState('')
 
   useEffect(() => {
     if (!authEnabled) return
@@ -46,6 +49,14 @@ export default function App() {
   }, [])
 
   const signedIn = session === 'disabled' || Boolean(session)
+
+  useEffect(() => {
+    if (!signedIn) {
+      setTeams([])
+      return
+    }
+    api.listTeams().then(setTeams).catch(() => setTeams([]))
+  }, [signedIn])
 
   // Refs to each source card so citation clicks can scroll + flash them.
   const cardRefs = useRef({})
@@ -176,9 +187,9 @@ export default function App() {
         setTab('library')
         throw new Error('sign in required')
       }
-      return api.saveLibrary(paper)
+      return api.saveLibrary(paper, saveTeam ? Number(saveTeam) : null)
     },
-    [session]
+    [session, saveTeam]
   )
 
   const onSubmit = (e) => {
@@ -347,6 +358,23 @@ export default function App() {
               <option value="relevance">{t('sortRelevance')}</option>
               <option value="date">{t('sortDate')}</option>
             </select>
+            {teams.length > 0 && (
+              <label className="ml-2 inline-flex items-center gap-1.5">
+                {t('saveTo')}
+                <select
+                  value={saveTeam}
+                  onChange={(e) => setSaveTeam(e.target.value)}
+                  className="rounded-md border border-slate-300 bg-white px-2 py-1 text-slate-700 focus:border-blue-500 focus:outline-none"
+                >
+                  <option value="">👤 {t('personalLibrary')}</option>
+                  {teams.map((x) => (
+                    <option key={x.id} value={x.id}>
+                      🧪 {x.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             <label className="ml-2 inline-flex cursor-pointer items-center gap-1.5">
               <input
                 type="checkbox"

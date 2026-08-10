@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import * as api from '../lib/api'
 import LibraryChat from './LibraryChat'
+import WorkspaceBar from './WorkspaceBar'
 
 const sourceLabel = {
   pubmed: 'PubMed',
@@ -10,7 +11,7 @@ const sourceLabel = {
   biorxiv: 'bioRxiv',
 }
 
-function LibraryCard({ paper, folders = [], onChanged }) {
+function LibraryCard({ paper, folders = [], teamId, onChanged }) {
   const { t } = useTranslation()
   const [newTag, setNewTag] = useState('')
   const [note, setNote] = useState(paper.notes || '')
@@ -18,14 +19,14 @@ function LibraryCard({ paper, folders = [], onChanged }) {
   const [savingNote, setSavingNote] = useState(false)
 
   const moveTo = async (value) => {
-    await api.movePaper(paper.id, value === '' ? null : Number(value))
+    await api.movePaper(paper.id, value === '' ? null : Number(value), teamId)
     onChanged()
   }
 
   const saveNote = async () => {
     setSavingNote(true)
     try {
-      await api.setNotes(paper.id, note)
+      await api.setNotes(paper.id, note, teamId)
       setEditingNote(false)
       onChanged()
     } finally {
@@ -37,18 +38,18 @@ function LibraryCard({ paper, folders = [], onChanged }) {
     e.preventDefault()
     const tag = newTag.trim()
     if (!tag) return
-    await api.addTag(paper.id, tag)
+    await api.addTag(paper.id, tag, teamId)
     setNewTag('')
     onChanged()
   }
 
   const removeTag = async (tag) => {
-    await api.removeTag(paper.id, tag)
+    await api.removeTag(paper.id, tag, teamId)
     onChanged()
   }
 
   const remove = async () => {
-    await api.deletePaper(paper.id)
+    await api.deletePaper(paper.id, teamId)
     onChanged()
   }
 
@@ -71,6 +72,12 @@ function LibraryCard({ paper, folders = [], onChanged }) {
         {paper.year ? ` · ${paper.year}` : ''}
         {paper.venue ? ` · ${paper.venue}` : ''}
       </p>
+      {/* In a shared lab library, show who contributed the paper. */}
+      {teamId && paper.added_by && (
+        <p className="mt-1 text-xs text-slate-400">
+          {t('addedBy', { who: paper.added_by })}
+        </p>
+      )}
 
       {/* Your own note on this paper — also used by library chat as evidence */}
       <div className="mt-3">
@@ -194,7 +201,7 @@ function LibraryCard({ paper, folders = [], onChanged }) {
 }
 
 // Left-hand folder navigation: all / per-folder / unfiled, plus create-rename-delete.
-function FolderSidebar({ folders, active, onPick, onChanged, total }) {
+function FolderSidebar({ folders, active, onPick, onChanged, total, teamId }) {
   const { t } = useTranslation()
   const [newName, setNewName] = useState('')
   const [error, setError] = useState('')
@@ -207,7 +214,7 @@ function FolderSidebar({ folders, active, onPick, onChanged, total }) {
     const name = newName.trim()
     if (!name) return
     try {
-      await api.createFolder(name)
+      await api.createFolder(name, teamId)
       setNewName('')
       setError('')
       onChanged()
@@ -220,7 +227,7 @@ function FolderSidebar({ folders, active, onPick, onChanged, total }) {
     const name = window.prompt(t('renameFolder'), folder.name)
     if (!name || name.trim() === folder.name) return
     try {
-      await api.renameFolder(folder.id, name.trim())
+      await api.renameFolder(folder.id, name.trim(), teamId)
       onChanged()
     } catch {
       setError(t('folderExists'))
@@ -229,7 +236,7 @@ function FolderSidebar({ folders, active, onPick, onChanged, total }) {
 
   const remove = async (folder) => {
     if (!window.confirm(t('deleteFolderConfirm', { name: folder.name }))) return
-    await api.deleteFolder(folder.id)
+    await api.deleteFolder(folder.id, teamId)
     if (active === String(folder.id)) onPick(null)
     onChanged()
   }
@@ -317,15 +324,18 @@ export default function LibraryTab() {
   const [activeTag, setActiveTag] = useState(null)
   const [activeFolder, setActiveFolder] = useState(null) // null | id string | 'unfiled'
   const [query, setQuery] = useState('')
+  const [teams, setTeams] = useState([])
+  // null = personal library; otherwise the active team's id (as a string).
+  const [activeTeam, setActiveTeam] = useState(null)
 
   const [loadError, setLoadError] = useState('')
 
   const load = async () => {
     try {
       const [ps, ts, fs] = await Promise.all([
-        api.listLibrary(activeTag, activeFolder, query),
-        api.listTags(),
-        api.listFolders(),
+        api.listLibrary(activeTag, activeFolder, query, activeTeam),
+        api.listTags(activeTeam),
+        api.listFolders(activeTeam),
       ])
       setPapers(ps)
       setTags(ts)
@@ -343,12 +353,39 @@ export default function LibraryTab() {
     const id = setTimeout(load, query ? 250 : 0)
     return () => clearTimeout(id)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTag, activeFolder, query])
+  }, [activeTag, activeFolder, query, activeTeam])
+
+  const loadTeams = async () => {
+    try {
+      setTeams(await api.listTeams())
+    } catch {
+      /* teams are optional; personal library still works */
+    }
+  }
+
+  useEffect(() => {
+    loadTeams()
+  }, [])
+
+  // Switching workspace resets filters, which belong to the old one.
+  const switchWorkspace = (teamId) => {
+    setActiveTeam(teamId)
+    setActiveTag(null)
+    setActiveFolder(null)
+    setQuery('')
+  }
 
   const total = folders.reduce((n, f) => n + f.count, 0)
 
   return (
-    <div className="grid grid-cols-1 gap-5 md:grid-cols-[13rem_1fr]">
+    <div>
+      <WorkspaceBar
+        teams={teams}
+        activeTeam={activeTeam}
+        onSwitch={switchWorkspace}
+        onTeamsChanged={loadTeams}
+      />
+      <div className="grid grid-cols-1 gap-5 md:grid-cols-[13rem_1fr]">
       <aside>
         <FolderSidebar
           folders={folders}
@@ -356,6 +393,7 @@ export default function LibraryTab() {
           onPick={setActiveFolder}
           onChanged={load}
           total={total}
+          teamId={activeTeam}
         />
       </aside>
 
@@ -377,6 +415,7 @@ export default function LibraryTab() {
 
         {/* Ask questions across the papers you've saved */}
         <LibraryChat
+          teamId={activeTeam}
           folder={activeFolder}
           scopeLabel={
             activeFolder === null
@@ -444,12 +483,14 @@ export default function LibraryTab() {
                 key={p.id}
                 paper={p}
                 folders={folders.filter((f) => f.id !== null)}
+                teamId={activeTeam}
                 onChanged={load}
               />
             ))}
           </div>
         )}
       </div>
+    </div>
     </div>
   )
 }

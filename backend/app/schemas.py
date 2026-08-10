@@ -67,10 +67,11 @@ class ChatResponse(BaseModel):
 
 
 class SavePaperRequest(SourceCard):
-    """A SourceCard plus optional initial tags and destination folder."""
+    """A SourceCard plus optional initial tags, folder and destination team."""
 
     tags: list[str] = []
     folder_id: Optional[int] = None
+    team_id: Optional[int] = None  # None saves to the personal library
 
 
 class SavedPaper(SourceCard):
@@ -78,7 +79,33 @@ class SavedPaper(SourceCard):
     tags: list[str] = []
     notes: str = ""  # the user's own note on this paper
     folder_id: Optional[int] = None  # None = unfiled
+    added_by: str = ""  # email of whoever saved it (shown in team libraries)
     created_at: str
+
+
+# --- Teams (shared lab workspaces) ---
+
+
+class TeamCreate(BaseModel):
+    name: str
+
+
+class TeamJoin(BaseModel):
+    invite_code: str
+
+
+class Team(BaseModel):
+    id: int
+    name: str
+    invite_code: str
+    role: str  # "owner" | "member"
+    member_count: int
+
+
+class TeamMember(BaseModel):
+    user_id: str
+    email: str
+    role: str
 
 
 class NotesUpdate(BaseModel):
@@ -88,6 +115,7 @@ class NotesUpdate(BaseModel):
 class LibraryChatRequest(BaseModel):
     message: str
     folder: Optional[str] = None  # folder id, "unfiled", or None for the whole library
+    team_id: Optional[int] = None  # None chats with the personal library
     lang: Optional[str] = None
     history: list[dict] = []  # prior [{role, content}] turns, newest last
 

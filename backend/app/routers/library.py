@@ -17,10 +17,22 @@ from ..schemas import (
     SavePaperRequest,
     TagCount,
     TagUpdate,
+    Team,
+    TeamCreate,
+    TeamJoin,
+    TeamMember,
 )
 from ..services import llm_service
 
 router = APIRouter(prefix="/api", tags=["library"])
+
+
+def _guard(fn, *args, **kwargs):
+    """Run a db call, turning a non-member team access into a clean 403."""
+    try:
+        return fn(*args, **kwargs)
+    except db.NotAMember:
+        raise HTTPException(status_code=403, detail="Not a member of this team")
 
 
 # --- Saved papers ---------------------------------------------------------
@@ -33,7 +45,8 @@ def save_paper(
     card = req.model_dump()
     tags = card.pop("tags", [])
     folder_id = card.pop("folder_id", None)
-    saved = db.save_paper(user, card, tags, folder_id)
+    team_id = card.pop("team_id", None)
+    saved = _guard(db.save_paper, user, card, tags, folder_id, team_id)
     return SavedPaper(**saved)
 
 
@@ -42,49 +55,63 @@ def list_library(
     tag: str | None = None,
     folder: str | None = None,
     q: str | None = None,
+    team: int | None = None,
     user: str = Depends(current_user),
 ) -> list[SavedPaper]:
     """List saved papers; `folder` is a folder id or "unfiled", `q` free text."""
-    return [SavedPaper(**p) for p in db.list_saved(user, tag, folder, q)]
+    return [SavedPaper(**p) for p in _guard(db.list_saved, user, tag, folder, q, team)]
 
 
 @router.patch("/library/{paper_id}/notes")
 def set_notes(
-    paper_id: int, body: NotesUpdate, user: str = Depends(current_user)
+    paper_id: int,
+    body: NotesUpdate,
+    team: int | None = None,
+    user: str = Depends(current_user),
 ) -> dict:
-    if not db.set_notes(user, paper_id, body.notes):
+    if not _guard(db.set_notes, user, paper_id, body.notes, team):
         raise HTTPException(status_code=404, detail="Paper not found")
     return {"ok": True}
 
 
 @router.delete("/library/{paper_id}")
-def delete_paper(paper_id: int, user: str = Depends(current_user)) -> dict:
-    if not db.delete_saved(user, paper_id):
+def delete_paper(
+    paper_id: int, team: int | None = None, user: str = Depends(current_user)
+) -> dict:
+    if not _guard(db.delete_saved, user, paper_id, team):
         raise HTTPException(status_code=404, detail="Paper not found")
     return {"ok": True}
 
 
 @router.post("/library/{paper_id}/tags")
 def add_tag(
-    paper_id: int, body: TagUpdate, user: str = Depends(current_user)
+    paper_id: int,
+    body: TagUpdate,
+    team: int | None = None,
+    user: str = Depends(current_user),
 ) -> dict:
-    if not db.add_tag(user, paper_id, body.tag):
+    if not _guard(db.add_tag, user, paper_id, body.tag, team):
         raise HTTPException(status_code=404, detail="Paper not found or empty tag")
     return {"ok": True}
 
 
 @router.delete("/library/{paper_id}/tags/{tag}")
 def remove_tag(
-    paper_id: int, tag: str, user: str = Depends(current_user)
+    paper_id: int,
+    tag: str,
+    team: int | None = None,
+    user: str = Depends(current_user),
 ) -> dict:
-    if not db.remove_tag(user, paper_id, tag):
+    if not _guard(db.remove_tag, user, paper_id, tag, team):
         raise HTTPException(status_code=404, detail="Tag not found on paper")
     return {"ok": True}
 
 
 @router.get("/library/tags", response_model=list[TagCount])
-def list_tags(user: str = Depends(current_user)) -> list[TagCount]:
-    return [TagCount(**t) for t in db.list_tags(user)]
+def list_tags(
+    team: int | None = None, user: str = Depends(current_user)
+) -> list[TagCount]:
+    return [TagCount(**t) for t in _guard(db.list_tags, user, team)]
 
 
 # --- Chat with your library -----------------------------------------------
@@ -104,7 +131,7 @@ async def library_chat(
         raise HTTPException(status_code=422, detail="Empty message")
 
     lang = req.lang or llm_service.detect_language(message)
-    papers = db.list_saved(user, folder=req.folder)
+    papers = _guard(db.list_saved, user, None, req.folder, None, req.team_id)
 
     if not llm_service.has_llm_key():
         return LibraryChatResponse(
@@ -137,8 +164,10 @@ async def library_chat(
 
 
 @router.post("/folders", response_model=Folder)
-def create_folder(req: FolderCreate, user: str = Depends(current_user)) -> Folder:
-    created = db.create_folder(user, req.name)
+def create_folder(
+    req: FolderCreate, team: int | None = None, user: str = Depends(current_user)
+) -> Folder:
+    created = _guard(db.create_folder, user, req.name, team)
     if created is None:
         raise HTTPException(
             status_code=409, detail="Folder name is empty or already exists"
@@ -147,15 +176,20 @@ def create_folder(req: FolderCreate, user: str = Depends(current_user)) -> Folde
 
 
 @router.get("/folders", response_model=list[Folder])
-def list_folders(user: str = Depends(current_user)) -> list[Folder]:
-    return [Folder(**f) for f in db.list_folders(user)]
+def list_folders(
+    team: int | None = None, user: str = Depends(current_user)
+) -> list[Folder]:
+    return [Folder(**f) for f in _guard(db.list_folders, user, team)]
 
 
 @router.patch("/folders/{folder_id}")
 def rename_folder(
-    folder_id: int, req: FolderCreate, user: str = Depends(current_user)
+    folder_id: int,
+    req: FolderCreate,
+    team: int | None = None,
+    user: str = Depends(current_user),
 ) -> dict:
-    if not db.rename_folder(user, folder_id, req.name):
+    if not _guard(db.rename_folder, user, folder_id, req.name, team):
         raise HTTPException(
             status_code=409, detail="Folder not found, or name empty/taken"
         )
@@ -163,19 +197,84 @@ def rename_folder(
 
 
 @router.delete("/folders/{folder_id}")
-def delete_folder(folder_id: int, user: str = Depends(current_user)) -> dict:
+def delete_folder(
+    folder_id: int, team: int | None = None, user: str = Depends(current_user)
+) -> dict:
     """Delete a folder; its papers are kept and become unfiled."""
-    if not db.delete_folder(user, folder_id):
+    if not _guard(db.delete_folder, user, folder_id, team):
         raise HTTPException(status_code=404, detail="Folder not found")
     return {"ok": True}
 
 
 @router.put("/library/{paper_id}/folder")
 def move_paper(
-    paper_id: int, req: MoveToFolder, user: str = Depends(current_user)
+    paper_id: int,
+    req: MoveToFolder,
+    team: int | None = None,
+    user: str = Depends(current_user),
 ) -> dict:
-    if not db.set_paper_folder(user, paper_id, req.folder_id):
+    if not _guard(db.set_paper_folder, user, paper_id, req.folder_id, team):
         raise HTTPException(status_code=404, detail="Paper or folder not found")
+    return {"ok": True}
+
+
+# --- Teams (shared lab workspaces) ----------------------------------------
+
+
+@router.post("/teams", response_model=Team)
+def create_team(req: TeamCreate, user: str = Depends(current_user)) -> Team:
+    created = db.create_team(user, req.name)
+    if created is None:
+        raise HTTPException(status_code=422, detail="Team name is required")
+    return Team(**created)
+
+
+@router.get("/teams", response_model=list[Team])
+def list_teams(user: str = Depends(current_user)) -> list[Team]:
+    return [Team(**t) for t in db.list_teams(user)]
+
+
+@router.post("/teams/join", response_model=Team)
+def join_team(req: TeamJoin, user: str = Depends(current_user)) -> Team:
+    joined = db.join_team(user, req.invite_code)
+    if joined is None:
+        raise HTTPException(status_code=404, detail="No team with that invite code")
+    return Team(**joined)
+
+
+@router.get("/teams/{team_id}/members", response_model=list[TeamMember])
+def list_members(team_id: int, user: str = Depends(current_user)) -> list[TeamMember]:
+    return [TeamMember(**m) for m in _guard(db.list_members, user, team_id)]
+
+
+@router.patch("/teams/{team_id}")
+def rename_team(
+    team_id: int, req: TeamCreate, user: str = Depends(current_user)
+) -> dict:
+    if not db.rename_team(user, team_id, req.name):
+        raise HTTPException(status_code=403, detail="Only the owner can rename a team")
+    return {"ok": True}
+
+
+@router.delete("/teams/{team_id}")
+def delete_team(team_id: int, user: str = Depends(current_user)) -> dict:
+    """Disband a team. Its shared papers and folders go with it."""
+    if not db.delete_team(user, team_id):
+        raise HTTPException(status_code=403, detail="Only the owner can delete a team")
+    return {"ok": True}
+
+
+@router.delete("/teams/{team_id}/members/{member_id}")
+def remove_member(
+    team_id: int, member_id: str, user: str = Depends(current_user)
+) -> dict:
+    """Leave a team, or (as owner) remove someone. Pass "me" to leave."""
+    target = None if member_id == "me" else member_id
+    if not db.leave_team(user, team_id, target):
+        raise HTTPException(
+            status_code=403,
+            detail="Not permitted (the owner must delete the team instead of leaving)",
+        )
     return {"ok": True}
 
 

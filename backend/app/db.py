@@ -12,6 +12,7 @@ storage.
 from __future__ import annotations
 
 import json
+import secrets
 from typing import Optional
 
 from psycopg import connect
@@ -21,6 +22,22 @@ from psycopg_pool import ConnectionPool
 from .config import DATABASE_URL
 
 _SCHEMA = """
+CREATE TABLE IF NOT EXISTS teams (
+    id          BIGSERIAL PRIMARY KEY,
+    name        TEXT NOT NULL,
+    owner_id    UUID NOT NULL,
+    invite_code TEXT NOT NULL UNIQUE,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS team_members (
+    team_id   BIGINT NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+    user_id   UUID NOT NULL,
+    role      TEXT NOT NULL DEFAULT 'member',
+    joined_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (team_id, user_id)
+);
+
 CREATE TABLE IF NOT EXISTS folders (
     id         BIGSERIAL PRIMARY KEY,
     user_id    UUID NOT NULL,
@@ -94,6 +111,35 @@ def init_db() -> None:
         conn.execute(
             "ALTER TABLE saved_papers ADD COLUMN IF NOT EXISTS notes TEXT NOT NULL DEFAULT ''"
         )
+        # A row belongs to a team workspace when team_id is set, otherwise to
+        # the personal library of user_id. user_id always records who added it.
+        for table in ("saved_papers", "folders"):
+            conn.execute(
+                f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS team_id BIGINT "
+                "REFERENCES teams(id) ON DELETE CASCADE"
+            )
+        # Uniqueness is per workspace, so the original per-user constraints are
+        # replaced by partial indexes: one for personal rows, one for team rows.
+        conn.execute(
+            "ALTER TABLE saved_papers DROP CONSTRAINT IF EXISTS saved_papers_user_id_dedup_key_key"
+        )
+        conn.execute("ALTER TABLE folders DROP CONSTRAINT IF EXISTS folders_user_id_name_key")
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS saved_papers_personal_uniq ON saved_papers "
+            "(user_id, dedup_key) WHERE team_id IS NULL"
+        )
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS saved_papers_team_uniq ON saved_papers "
+            "(team_id, dedup_key) WHERE team_id IS NOT NULL"
+        )
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS folders_personal_uniq ON folders "
+            "(user_id, name) WHERE team_id IS NULL"
+        )
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS folders_team_uniq ON folders "
+            "(team_id, name) WHERE team_id IS NOT NULL"
+        )
 
 
 def _row_to_paper(row: dict, tags: list[str]) -> dict:
@@ -141,7 +187,182 @@ def _tags_for(conn, paper_id: int) -> list[str]:
     return [r["tag"] for r in rows]
 
 
+# --- Teams ----------------------------------------------------------------
+
+
+class NotAMember(Exception):
+    """Raised when a user touches a team workspace they don't belong to."""
+
+
+def _new_invite_code() -> str:
+    # Short, unambiguous, easy to paste into a group chat.
+    alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+    return "".join(secrets.choice(alphabet) for _ in range(8))
+
+
+def _assert_member(conn, user_id: str, team_id: int | None) -> None:
+    """Every team query goes through here — membership is the access rule."""
+    if team_id is None:
+        return
+    row = conn.execute(
+        "SELECT 1 FROM team_members WHERE team_id = %s AND user_id = %s",
+        (team_id, user_id),
+    ).fetchone()
+    if not row:
+        raise NotAMember(f"user is not a member of team {team_id}")
+
+
+def create_team(user_id: str, name: str) -> dict | None:
+    name = name.strip()
+    if not name:
+        return None
+    with _get_pool().connection() as conn:
+        for _ in range(5):  # retry on the astronomically unlikely code clash
+            code = _new_invite_code()
+            row = conn.execute(
+                """INSERT INTO teams (name, owner_id, invite_code) VALUES (%s,%s,%s)
+                   ON CONFLICT (invite_code) DO NOTHING
+                   RETURNING id, name, invite_code""",
+                (name, user_id, code),
+            ).fetchone()
+            if row:
+                conn.execute(
+                    "INSERT INTO team_members (team_id, user_id, role) VALUES (%s,%s,'owner')",
+                    (row["id"], user_id),
+                )
+                return {
+                    "id": row["id"],
+                    "name": row["name"],
+                    "invite_code": row["invite_code"],
+                    "role": "owner",
+                    "member_count": 1,
+                }
+    return None
+
+
+def list_teams(user_id: str) -> list[dict]:
+    with _get_pool().connection() as conn:
+        rows = conn.execute(
+            """SELECT t.id, t.name, t.invite_code, m.role,
+                      (SELECT COUNT(*) FROM team_members x WHERE x.team_id = t.id) AS member_count
+               FROM teams t
+               JOIN team_members m ON m.team_id = t.id
+               WHERE m.user_id = %s
+               ORDER BY t.name""",
+            (user_id,),
+        ).fetchall()
+    return [
+        {
+            "id": r["id"],
+            "name": r["name"],
+            "invite_code": r["invite_code"],
+            "role": r["role"],
+            "member_count": r["member_count"],
+        }
+        for r in rows
+    ]
+
+
+def join_team(user_id: str, invite_code: str) -> dict | None:
+    code = (invite_code or "").strip().upper()
+    if not code:
+        return None
+    with _get_pool().connection() as conn:
+        team = conn.execute(
+            "SELECT id, name, invite_code FROM teams WHERE invite_code = %s", (code,)
+        ).fetchone()
+        if not team:
+            return None
+        conn.execute(
+            """INSERT INTO team_members (team_id, user_id) VALUES (%s,%s)
+               ON CONFLICT DO NOTHING""",
+            (team["id"], user_id),
+        )
+        n = conn.execute(
+            "SELECT COUNT(*) AS n FROM team_members WHERE team_id = %s", (team["id"],)
+        ).fetchone()["n"]
+    return {
+        "id": team["id"],
+        "name": team["name"],
+        "invite_code": team["invite_code"],
+        "role": "member",
+        "member_count": n,
+    }
+
+
+def list_members(user_id: str, team_id: int) -> list[dict]:
+    with _get_pool().connection() as conn:
+        _assert_member(conn, user_id, team_id)
+        rows = conn.execute(
+            """SELECT m.user_id, m.role, u.email
+               FROM team_members m
+               LEFT JOIN auth.users u ON u.id = m.user_id
+               WHERE m.team_id = %s
+               ORDER BY m.role DESC, m.joined_at""",
+            (team_id,),
+        ).fetchall()
+    return [
+        {"user_id": str(r["user_id"]), "email": r["email"] or "", "role": r["role"]}
+        for r in rows
+    ]
+
+
+def rename_team(user_id: str, team_id: int, name: str) -> bool:
+    name = name.strip()
+    if not name:
+        return False
+    with _get_pool().connection() as conn:
+        cur = conn.execute(
+            "UPDATE teams SET name = %s WHERE id = %s AND owner_id = %s",
+            (name, team_id, user_id),
+        )
+        return cur.rowcount > 0
+
+
+def delete_team(user_id: str, team_id: int) -> bool:
+    """Only the owner can disband a team; its shared papers go with it."""
+    with _get_pool().connection() as conn:
+        cur = conn.execute(
+            "DELETE FROM teams WHERE id = %s AND owner_id = %s", (team_id, user_id)
+        )
+        return cur.rowcount > 0
+
+
+def leave_team(user_id: str, team_id: int, target_user_id: str | None = None) -> bool:
+    """Leave a team, or (as owner) remove another member.
+
+    The owner cannot leave their own team — they disband it instead, so a team
+    is never left without an owner.
+    """
+    target = target_user_id or user_id
+    with _get_pool().connection() as conn:
+        team = conn.execute("SELECT owner_id FROM teams WHERE id = %s", (team_id,)).fetchone()
+        if not team:
+            return False
+        is_owner = str(team["owner_id"]) == str(user_id)
+        if target != user_id and not is_owner:
+            return False  # only the owner removes other people
+        if str(team["owner_id"]) == str(target):
+            return False  # owner must delete the team instead
+        cur = conn.execute(
+            "DELETE FROM team_members WHERE team_id = %s AND user_id = %s",
+            (team_id, target),
+        )
+        return cur.rowcount > 0
+
+
 # --- Saved papers ---------------------------------------------------------
+#
+# Every row lives in exactly one workspace: a personal library (team_id NULL,
+# owned by user_id) or a team's shared library (team_id set). `user_id` always
+# records who added the row, which is what team attribution displays.
+
+
+def _paper_scope(user_id: str, team_id: int | None) -> tuple[str, list]:
+    """SQL predicate + params restricting `p` to one workspace."""
+    if team_id is None:
+        return "p.user_id = %s AND p.team_id IS NULL", [user_id]
+    return "p.team_id = %s", [team_id]
 
 
 def save_paper(
@@ -149,58 +370,72 @@ def save_paper(
     card: dict,
     tags: list[str] | None = None,
     folder_id: int | None = None,
+    team_id: int | None = None,
 ) -> dict:
-    """Idempotently save a paper for one user. Returns the stored record.
+    """Idempotently save a paper into a workspace. Returns the stored record.
 
-    Re-saving an already-saved paper is a no-op that merges any new tags in.
+    Re-saving a paper already in that workspace is a no-op that merges new tags.
     """
     tags = [t.strip() for t in (tags or []) if t.strip()]
     key = _dedup_key(card)
     with _get_pool().connection() as conn:
+        _assert_member(conn, user_id, team_id)
         if folder_id is not None:
+            where, params = (
+                ("user_id = %s AND team_id IS NULL", [user_id])
+                if team_id is None
+                else ("team_id = %s", [team_id])
+            )
             owns = conn.execute(
-                "SELECT 1 FROM folders WHERE id = %s AND user_id = %s",
-                (folder_id, user_id),
+                f"SELECT 1 FROM folders WHERE id = %s AND {where}",
+                [folder_id, *params],
             ).fetchone()
             if not owns:
-                folder_id = None  # ignore a folder that isn't this user's
-        conn.execute(
-            """INSERT INTO saved_papers
-               (user_id, source, source_id, title, title_zh, authors, year, venue,
-                url, doi, citation_key, relevance_zh, pub_date, oa_url, folder_id,
-                dedup_key)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-               ON CONFLICT (user_id, dedup_key) DO NOTHING""",
-            (
-                user_id,
-                card.get("source", ""),
-                card.get("source_id", ""),
-                card.get("title", ""),
-                card.get("title_zh", ""),
-                json.dumps(card.get("authors", []), ensure_ascii=False),
-                card.get("year"),
-                card.get("venue", ""),
-                card.get("url", ""),
-                card.get("doi", ""),
-                card.get("citation_key", ""),
-                card.get("relevance_zh", ""),
-                card.get("pub_date", ""),
-                card.get("oa_url", ""),
-                folder_id,
-                key,
-            ),
-        )
-        row = conn.execute(
-            "SELECT * FROM saved_papers WHERE user_id = %s AND dedup_key = %s",
-            (user_id, key),
+                folder_id = None  # ignore a folder from another workspace
+
+        scope_sql, scope_params = _paper_scope(user_id, team_id)
+        existing = conn.execute(
+            f"SELECT * FROM saved_papers p WHERE {scope_sql} AND p.dedup_key = %s",
+            [*scope_params, key],
         ).fetchone()
+        if existing is None:
+            conn.execute(
+                """INSERT INTO saved_papers
+                   (user_id, team_id, source, source_id, title, title_zh, authors,
+                    year, venue, url, doi, citation_key, relevance_zh, pub_date,
+                    oa_url, folder_id, dedup_key)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                (
+                    user_id,
+                    team_id,
+                    card.get("source", ""),
+                    card.get("source_id", ""),
+                    card.get("title", ""),
+                    card.get("title_zh", ""),
+                    json.dumps(card.get("authors", []), ensure_ascii=False),
+                    card.get("year"),
+                    card.get("venue", ""),
+                    card.get("url", ""),
+                    card.get("doi", ""),
+                    card.get("citation_key", ""),
+                    card.get("relevance_zh", ""),
+                    card.get("pub_date", ""),
+                    card.get("oa_url", ""),
+                    folder_id,
+                    key,
+                ),
+            )
+            existing = conn.execute(
+                f"SELECT * FROM saved_papers p WHERE {scope_sql} AND p.dedup_key = %s",
+                [*scope_params, key],
+            ).fetchone()
         for tag in tags:
             conn.execute(
                 """INSERT INTO paper_tags (paper_id, tag) VALUES (%s,%s)
                    ON CONFLICT DO NOTHING""",
-                (row["id"], tag),
+                (existing["id"], tag),
             )
-        return _row_to_paper(row, _tags_for(conn, row["id"]))
+        return _row_to_paper(existing, _tags_for(conn, existing["id"]))
 
 
 def list_saved(
@@ -208,15 +443,16 @@ def list_saved(
     tag: str | None = None,
     folder: str | None = None,
     q: str | None = None,
+    team_id: int | None = None,
 ) -> list[dict]:
-    """List a user's saved papers, optionally filtered by tag, folder and text.
+    """List a workspace's saved papers, optionally filtered by tag/folder/text.
 
     `folder` is a folder id as a string, or "unfiled" for papers in no folder.
     `q` matches case-insensitively across title, Chinese title, authors, venue
-    and the user's own notes.
+    and notes.
     """
-    clauses = ["p.user_id = %s"]
-    params: list = [user_id]
+    scope_sql, params = _paper_scope(user_id, team_id)
+    clauses = [scope_sql]
     join = ""
     if tag:
         join = "JOIN paper_tags t ON t.paper_id = p.id"
@@ -235,39 +471,50 @@ def list_saved(
         params.extend([f"%{q.strip()}%"] * 5)
 
     with _get_pool().connection() as conn:
+        _assert_member(conn, user_id, team_id)
         rows = conn.execute(
-            f"""SELECT p.* FROM saved_papers p {join}
+            f"""SELECT p.*, u.email AS added_by_email FROM saved_papers p {join}
+                LEFT JOIN auth.users u ON u.id = p.user_id
                 WHERE {' AND '.join(clauses)}
                 ORDER BY p.created_at DESC""",
             params,
         ).fetchall()
-        return [_row_to_paper(r, _tags_for(conn, r["id"])) for r in rows]
+        out = []
+        for r in rows:
+            paper = _row_to_paper(r, _tags_for(conn, r["id"]))
+            # Shown in a shared library so a lab can see who contributed what.
+            paper["added_by"] = r.get("added_by_email") or ""
+            out.append(paper)
+        return out
 
 
-def delete_saved(user_id: str, paper_id: int) -> bool:
-    with _get_pool().connection() as conn:
-        cur = conn.execute(
-            "DELETE FROM saved_papers WHERE id = %s AND user_id = %s",
-            (paper_id, user_id),
-        )
-        return cur.rowcount > 0
-
-
-def _owns_paper(conn, user_id: str, paper_id: int) -> bool:
+def _accessible_paper(conn, user_id: str, paper_id: int, team_id: int | None) -> bool:
+    """True when the paper is in the workspace the caller is acting in."""
+    scope_sql, params = _paper_scope(user_id, team_id)
     return bool(
         conn.execute(
-            "SELECT 1 FROM saved_papers WHERE id = %s AND user_id = %s",
-            (paper_id, user_id),
+            f"SELECT 1 FROM saved_papers p WHERE p.id = %s AND {scope_sql}",
+            [paper_id, *params],
         ).fetchone()
     )
 
 
-def add_tag(user_id: str, paper_id: int, tag: str) -> bool:
+def delete_saved(user_id: str, paper_id: int, team_id: int | None = None) -> bool:
+    with _get_pool().connection() as conn:
+        _assert_member(conn, user_id, team_id)
+        if not _accessible_paper(conn, user_id, paper_id, team_id):
+            return False
+        cur = conn.execute("DELETE FROM saved_papers WHERE id = %s", (paper_id,))
+        return cur.rowcount > 0
+
+
+def add_tag(user_id: str, paper_id: int, tag: str, team_id: int | None = None) -> bool:
     tag = tag.strip()
     if not tag:
         return False
     with _get_pool().connection() as conn:
-        if not _owns_paper(conn, user_id, paper_id):
+        _assert_member(conn, user_id, team_id)
+        if not _accessible_paper(conn, user_id, paper_id, team_id):
             return False
         conn.execute(
             """INSERT INTO paper_tags (paper_id, tag) VALUES (%s,%s)
@@ -277,36 +524,42 @@ def add_tag(user_id: str, paper_id: int, tag: str) -> bool:
         return True
 
 
-def remove_tag(user_id: str, paper_id: int, tag: str) -> bool:
+def remove_tag(user_id: str, paper_id: int, tag: str, team_id: int | None = None) -> bool:
     with _get_pool().connection() as conn:
-        if not _owns_paper(conn, user_id, paper_id):
+        _assert_member(conn, user_id, team_id)
+        if not _accessible_paper(conn, user_id, paper_id, team_id):
             return False
         cur = conn.execute(
-            "DELETE FROM paper_tags WHERE paper_id = %s AND tag = %s",
-            (paper_id, tag),
+            "DELETE FROM paper_tags WHERE paper_id = %s AND tag = %s", (paper_id, tag)
         )
         return cur.rowcount > 0
 
 
-def set_notes(user_id: str, paper_id: int, notes: str) -> bool:
-    """Replace a paper's note. Owner-scoped like every other mutation."""
+def set_notes(
+    user_id: str, paper_id: int, notes: str, team_id: int | None = None
+) -> bool:
+    """Replace a paper's note. In a team library, notes are shared."""
     with _get_pool().connection() as conn:
+        _assert_member(conn, user_id, team_id)
+        if not _accessible_paper(conn, user_id, paper_id, team_id):
+            return False
         cur = conn.execute(
-            "UPDATE saved_papers SET notes = %s WHERE id = %s AND user_id = %s",
-            (notes or "", paper_id, user_id),
+            "UPDATE saved_papers SET notes = %s WHERE id = %s", (notes or "", paper_id)
         )
         return cur.rowcount > 0
 
 
-def list_tags(user_id: str) -> list[dict]:
+def list_tags(user_id: str, team_id: int | None = None) -> list[dict]:
+    scope_sql, params = _paper_scope(user_id, team_id)
     with _get_pool().connection() as conn:
+        _assert_member(conn, user_id, team_id)
         rows = conn.execute(
-            """SELECT t.tag AS tag, COUNT(*) AS n
-               FROM paper_tags t
-               JOIN saved_papers p ON p.id = t.paper_id
-               WHERE p.user_id = %s
-               GROUP BY t.tag ORDER BY t.tag""",
-            (user_id,),
+            f"""SELECT t.tag AS tag, COUNT(*) AS n
+                FROM paper_tags t
+                JOIN saved_papers p ON p.id = t.paper_id
+                WHERE {scope_sql}
+                GROUP BY t.tag ORDER BY t.tag""",
+            params,
         ).fetchall()
     return [{"tag": r["tag"], "count": r["n"]} for r in rows]
 
@@ -314,88 +567,116 @@ def list_tags(user_id: str) -> list[dict]:
 # --- Folders --------------------------------------------------------------
 
 
-def create_folder(user_id: str, name: str) -> dict | None:
-    """Create a folder. Returns None if the name is empty or already used."""
+def _folder_scope(user_id: str, team_id: int | None) -> tuple[str, list]:
+    if team_id is None:
+        return "f.user_id = %s AND f.team_id IS NULL", [user_id]
+    return "f.team_id = %s", [team_id]
+
+
+def create_folder(user_id: str, name: str, team_id: int | None = None) -> dict | None:
+    """Create a folder in a workspace. None if the name is empty or taken."""
     name = name.strip()
     if not name:
         return None
     with _get_pool().connection() as conn:
-        row = conn.execute(
-            """INSERT INTO folders (user_id, name) VALUES (%s,%s)
-               ON CONFLICT (user_id, name) DO NOTHING
-               RETURNING id, name""",
-            (user_id, name),
+        _assert_member(conn, user_id, team_id)
+        scope_sql, params = _folder_scope(user_id, team_id)
+        clash = conn.execute(
+            f"SELECT 1 FROM folders f WHERE {scope_sql} AND f.name = %s",
+            [*params, name],
         ).fetchone()
-    if row is None:
-        return None  # duplicate name for this user
+        if clash:
+            return None
+        row = conn.execute(
+            "INSERT INTO folders (user_id, team_id, name) VALUES (%s,%s,%s) RETURNING id, name",
+            (user_id, team_id, name),
+        ).fetchone()
     return {"id": row["id"], "name": row["name"], "count": 0}
 
 
-def list_folders(user_id: str) -> list[dict]:
-    """A user's folders with how many papers each holds, plus the unfiled count."""
+def list_folders(user_id: str, team_id: int | None = None) -> list[dict]:
+    """A workspace's folders with paper counts, plus the unfiled count."""
+    scope_sql, params = _folder_scope(user_id, team_id)
+    p_scope, p_params = _paper_scope(user_id, team_id)
     with _get_pool().connection() as conn:
+        _assert_member(conn, user_id, team_id)
         rows = conn.execute(
-            """SELECT f.id, f.name, COUNT(p.id) AS n
-               FROM folders f
-               LEFT JOIN saved_papers p ON p.folder_id = f.id
-               WHERE f.user_id = %s
-               GROUP BY f.id, f.name
-               ORDER BY f.name""",
-            (user_id,),
+            f"""SELECT f.id, f.name, COUNT(p.id) AS n
+                FROM folders f
+                LEFT JOIN saved_papers p ON p.folder_id = f.id
+                WHERE {scope_sql}
+                GROUP BY f.id, f.name
+                ORDER BY f.name""",
+            params,
         ).fetchall()
         unfiled = conn.execute(
-            """SELECT COUNT(*) AS n FROM saved_papers
-               WHERE user_id = %s AND folder_id IS NULL""",
-            (user_id,),
+            f"SELECT COUNT(*) AS n FROM saved_papers p WHERE {p_scope} AND p.folder_id IS NULL",
+            p_params,
         ).fetchone()["n"]
     folders = [{"id": r["id"], "name": r["name"], "count": r["n"]} for r in rows]
     return folders + [{"id": None, "name": "", "count": unfiled}]
 
 
-def rename_folder(user_id: str, folder_id: int, name: str) -> bool:
+def _accessible_folder(conn, user_id: str, folder_id: int, team_id: int | None) -> bool:
+    scope_sql, params = _folder_scope(user_id, team_id)
+    return bool(
+        conn.execute(
+            f"SELECT 1 FROM folders f WHERE f.id = %s AND {scope_sql}",
+            [folder_id, *params],
+        ).fetchone()
+    )
+
+
+def rename_folder(
+    user_id: str, folder_id: int, name: str, team_id: int | None = None
+) -> bool:
     name = name.strip()
     if not name:
         return False
     with _get_pool().connection() as conn:
+        _assert_member(conn, user_id, team_id)
+        if not _accessible_folder(conn, user_id, folder_id, team_id):
+            return False
+        scope_sql, params = _folder_scope(user_id, team_id)
         taken = conn.execute(
-            "SELECT 1 FROM folders WHERE user_id = %s AND name = %s AND id <> %s",
-            (user_id, name, folder_id),
+            f"SELECT 1 FROM folders f WHERE {scope_sql} AND f.name = %s AND f.id <> %s",
+            [*params, name, folder_id],
         ).fetchone()
         if taken:
             return False
         cur = conn.execute(
-            "UPDATE folders SET name = %s WHERE id = %s AND user_id = %s",
-            (name, folder_id, user_id),
+            "UPDATE folders SET name = %s WHERE id = %s", (name, folder_id)
         )
         return cur.rowcount > 0
 
 
-def delete_folder(user_id: str, folder_id: int) -> bool:
-    """Delete a folder. Its papers are kept and become unfiled (FK ON DELETE SET NULL)."""
+def delete_folder(user_id: str, folder_id: int, team_id: int | None = None) -> bool:
+    """Delete a folder; its papers are kept and become unfiled."""
     with _get_pool().connection() as conn:
-        cur = conn.execute(
-            "DELETE FROM folders WHERE id = %s AND user_id = %s", (folder_id, user_id)
-        )
+        _assert_member(conn, user_id, team_id)
+        if not _accessible_folder(conn, user_id, folder_id, team_id):
+            return False
+        cur = conn.execute("DELETE FROM folders WHERE id = %s", (folder_id,))
         return cur.rowcount > 0
 
 
-def set_paper_folder(user_id: str, paper_id: int, folder_id: int | None) -> bool:
-    """Move a paper into a folder, or out of all folders when folder_id is None."""
+def set_paper_folder(
+    user_id: str, paper_id: int, folder_id: int | None, team_id: int | None = None
+) -> bool:
+    """Move a paper into a folder of the same workspace, or out of all folders."""
     with _get_pool().connection() as conn:
-        if folder_id is not None:
-            owns_folder = conn.execute(
-                "SELECT 1 FROM folders WHERE id = %s AND user_id = %s",
-                (folder_id, user_id),
-            ).fetchone()
-            if not owns_folder:
-                return False
+        _assert_member(conn, user_id, team_id)
+        if not _accessible_paper(conn, user_id, paper_id, team_id):
+            return False
+        if folder_id is not None and not _accessible_folder(
+            conn, user_id, folder_id, team_id
+        ):
+            return False
         cur = conn.execute(
-            "UPDATE saved_papers SET folder_id = %s WHERE id = %s AND user_id = %s",
-            (folder_id, paper_id, user_id),
+            "UPDATE saved_papers SET folder_id = %s WHERE id = %s",
+            (folder_id, paper_id),
         )
         return cur.rowcount > 0
-
-
 # --- Search history -------------------------------------------------------
 
 
