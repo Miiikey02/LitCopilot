@@ -550,19 +550,6 @@ export default function App() {
                 </div>
               )}
 
-              {/* Conversational deep-dive: follow-up research agent */}
-              {result.answer && result.session_id && (
-                <ResearchChat
-                  turns={chatTurns}
-                  onAsk={onAsk}
-                  loading={chatLoading}
-                  citationKeys={citationKeys}
-                  onCite={onCite}
-                  conversationId={conversationId}
-                  onOpenConversation={onOpenConversation}
-                  onNewConversation={onNewConversation}
-                />
-              )}
             </section>
 
             {/* Sources: a narrow column beside the answer (split view), or a
@@ -620,6 +607,21 @@ export default function App() {
               )}
             </aside>
           </div>
+        )}
+
+        {/* Deep-dive sits full width below the two panels: a chat squeezed into
+            the narrow answer column left no room for the thread or composer. */}
+        {result && !loading && result.answer && result.session_id && (
+          <ResearchChat
+            turns={chatTurns}
+            onAsk={onAsk}
+            loading={chatLoading}
+            citationKeys={citationKeys}
+            onCite={onCite}
+            conversationId={conversationId}
+            onOpenConversation={onOpenConversation}
+            onNewConversation={onNewConversation}
+          />
         )}
         </>
         )}

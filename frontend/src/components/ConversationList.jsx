@@ -10,7 +10,6 @@ export default function ConversationList({
   onOpen,
   onNew,
   onChanged,
-  compact = false,
 }) {
   const { t, i18n } = useTranslation()
 
@@ -32,54 +31,72 @@ export default function ConversationList({
   }
 
   return (
-    <div className={compact ? '' : 'rounded-lg border border-slate-200 bg-white p-3'}>
-      <div className="mb-2 flex items-center justify-between">
-        <h4 className="px-1 text-xs font-semibold uppercase tracking-wide text-slate-400">
+    <aside className="flex h-full flex-col rounded-xl border border-slate-200 bg-slate-50/70">
+      <div className="flex items-center justify-between border-b border-slate-200 px-3 py-2.5">
+        <h4 className="text-sm font-semibold text-slate-700">
           {t('conversationHistory')}
         </h4>
         <button
           onClick={onNew}
-          className="text-xs font-medium text-blue-600 hover:underline"
+          title={t('newConversation')}
+          className="inline-flex items-center gap-1 rounded-md bg-white px-2 py-1 text-xs font-medium text-blue-700 shadow-sm ring-1 ring-slate-200 transition-colors hover:bg-blue-50"
         >
-          <Icon name="plus" className="mr-0.5" />{t('newConversation')}
+          <Icon name="plus" />
+          {t('newConversation')}
         </button>
       </div>
 
       {conversations.length === 0 ? (
-        <p className="px-1 py-2 text-xs text-slate-400">{t('noConversations')}</p>
+        <p className="px-3 py-6 text-center text-xs leading-5 text-slate-400">
+          {t('noConversations')}
+        </p>
       ) : (
-        <ul className="max-h-64 space-y-0.5 overflow-y-auto">
-          {conversations.map((c) => (
-            <li key={c.id}>
-              <div
-                role="button"
-                tabIndex={0}
-                onClick={() => onOpen(c.id)}
-                onKeyDown={(e) => e.key === 'Enter' && onOpen(c.id)}
-                className={`group flex cursor-pointer items-start gap-2 rounded-md px-2 py-1.5 text-sm transition-colors ${
-                  String(activeId) === String(c.id)
-                    ? 'bg-blue-50 text-blue-800'
-                    : 'text-slate-600 hover:bg-slate-50'
-                }`}
-              >
-                <div className="min-w-0 flex-1">
-                  <div className="truncate">{c.title}</div>
-                  <div className="text-xs text-slate-400">
-                    {when(c.updated_at)} · {t('turnCount', { n: Math.ceil(c.message_count / 2) })}
-                  </div>
-                </div>
-                <button
-                  onClick={(e) => remove(e, c.id)}
-                  title={t('delete')}
-                  className="shrink-0 text-xs text-slate-300 opacity-0 transition-opacity hover:text-red-600 group-hover:opacity-100"
+        <ul className="flex-1 space-y-1 overflow-y-auto p-2">
+          {conversations.map((c) => {
+            const active = String(activeId) === String(c.id)
+            return (
+              <li key={c.id}>
+                <div
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => onOpen(c.id)}
+                  onKeyDown={(e) => e.key === 'Enter' && onOpen(c.id)}
+                  className={`group flex cursor-pointer items-start gap-2 rounded-lg px-2.5 py-2 transition-colors ${
+                    active
+                      ? 'bg-white shadow-sm ring-1 ring-blue-200'
+                      : 'hover:bg-white/80'
+                  }`}
                 >
-                  <Icon name="trash" />
-                </button>
-              </div>
-            </li>
-          ))}
+                  <Icon
+                    name="messageSquare"
+                    className={`mt-0.5 ${active ? 'text-blue-600' : 'text-slate-300'}`}
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div
+                      className={`line-clamp-2 text-[13px] leading-5 ${
+                        active ? 'font-medium text-slate-900' : 'text-slate-700'
+                      }`}
+                    >
+                      {c.title}
+                    </div>
+                    <div className="mt-0.5 text-[11px] text-slate-400">
+                      {when(c.updated_at)} ·{' '}
+                      {t('turnCount', { n: Math.ceil(c.message_count / 2) })}
+                    </div>
+                  </div>
+                  <button
+                    onClick={(e) => remove(e, c.id)}
+                    title={t('delete')}
+                    className="shrink-0 text-slate-300 opacity-0 transition hover:text-red-600 focus:opacity-100 group-hover:opacity-100"
+                  >
+                    <Icon name="trash" />
+                  </button>
+                </div>
+              </li>
+            )
+          })}
         </ul>
       )}
-    </div>
+    </aside>
   )
 }

@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import * as api from '../lib/api'
+import ChatComposer from './ChatComposer'
 import ConversationList from './ConversationList'
 import Icon from './Icon'
 import TypingDots from './TypingDots'
@@ -11,11 +12,11 @@ import TypingDots from './TypingDots'
 export default function LibraryChat({ folder, scopeLabel, paperCount, teamId }) {
   const { t, i18n } = useTranslation()
   const [open, setOpen] = useState(false)
-  const [text, setText] = useState('')
   const [turns, setTurns] = useState([])
   const [busy, setBusy] = useState(false)
   const [conversations, setConversations] = useState([])
   const [conversationId, setConversationId] = useState(null)
+  const endRef = useRef(null)
 
   const loadConversations = async () => {
     try {
@@ -28,6 +29,10 @@ export default function LibraryChat({ folder, scopeLabel, paperCount, teamId }) 
   useEffect(() => {
     if (open) loadConversations()
   }, [open])
+
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+  }, [turns.length, busy])
 
   // Reopen a saved thread: its transcript becomes the visible turns, and
   // further questions append to the same conversation.
@@ -53,11 +58,8 @@ export default function LibraryChat({ folder, scopeLabel, paperCount, teamId }) 
     setConversationId(null)
   }
 
-  const ask = async (e) => {
-    e.preventDefault()
-    const msg = text.trim()
-    if (!msg || busy) return
-    setText('')
+  const ask = async (msg) => {
+    if (busy) return
     setBusy(true)
     // Send prior turns so follow-ups keep context.
     const history = turns.flatMap((tn) => [
@@ -81,89 +83,92 @@ export default function LibraryChat({ folder, scopeLabel, paperCount, teamId }) 
     return (
       <button
         onClick={() => setOpen(true)}
-        className="mb-4 w-full rounded-lg border border-dashed border-blue-300 bg-blue-50/50 px-4 py-2.5 text-sm font-medium text-blue-700 transition-colors hover:bg-blue-100/70"
+        className="mb-4 flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-blue-300 bg-blue-50/50 px-4 py-3 text-sm font-medium text-blue-700 transition-colors hover:bg-blue-100/70"
       >
-        <Icon name="chat" className="mr-1.5" />{t('libraryChatOpen')}
+        <Icon name="chat" />
+        {t('libraryChatOpen')}
       </button>
     )
   }
 
   return (
-    <div className="animate-expand mb-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="mb-1 flex items-center justify-between">
-        <h3 className="font-semibold text-slate-900"><Icon name="chat" className="mr-1.5 text-blue-600" />{t('libraryChatTitle')}</h3>
+    <section className="animate-expand mb-4 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+      <header className="flex flex-wrap items-center gap-x-2 border-b border-slate-100 px-5 py-3.5">
+        <Icon name="chat" className="text-blue-600" />
+        <h3 className="text-base font-semibold text-slate-900">
+          {t('libraryChatTitle')}
+        </h3>
+        <span className="text-xs text-slate-400">
+          · {t('libraryChatScope', { scope: scopeLabel, count: paperCount })}
+        </span>
         <button
           onClick={() => setOpen(false)}
-          className="text-sm text-slate-400 hover:text-slate-700"
+          className="ml-auto text-sm text-slate-400 transition-colors hover:text-slate-700"
         >
           {t('collapse')}
         </button>
-      </div>
-      <p className="text-xs text-slate-400">
-        {t('libraryChatScope', { scope: scopeLabel, count: paperCount })}
-      </p>
-      <p className="mt-1 text-xs text-slate-400">{t('libraryChatHint')}</p>
+      </header>
 
-      <div className="mt-3 grid grid-cols-1 gap-4 lg:grid-cols-[1fr_15rem]">
-        <div>
-      {turns.length > 0 && (
-        <div className="space-y-4">
-          {turns.map((tn, i) => (
-            <div key={i} className="space-y-2">
-              <div className="flex justify-end">
-                <div className="animate-from-right max-w-[85%] rounded-2xl rounded-tr-sm bg-blue-600 px-3 py-1.5 text-sm text-white">
-                  {tn.q}
+      <div className="grid grid-cols-1 lg:grid-cols-[17rem_1fr]">
+        <div className="order-2 border-t border-slate-100 p-3 lg:order-1 lg:border-r lg:border-t-0">
+          <ConversationList
+            conversations={conversations}
+            activeId={conversationId}
+            onOpen={openConversation}
+            onNew={startNew}
+            onChanged={loadConversations}
+          />
+        </div>
+
+        <div className="order-1 flex min-h-[20rem] flex-col lg:order-2">
+          <div className="flex-1 space-y-5 overflow-y-auto px-5 py-4 lg:max-h-[30rem]">
+            {turns.length === 0 && !busy && (
+              <div className="flex h-full flex-col items-center justify-center py-10 text-center">
+                <Icon name="library" className="h-7 w-7 text-slate-300" />
+                <p className="mt-2 max-w-md text-sm leading-6 text-slate-400">
+                  {t('libraryChatHint')}
+                </p>
+              </div>
+            )}
+
+            {turns.map((tn, i) => (
+              <div key={i} className="space-y-2.5">
+                <div className="flex justify-end">
+                  <div className="animate-from-right max-w-[80%] rounded-2xl rounded-tr-md bg-blue-600 px-4 py-2.5 text-[15px] leading-6 text-white">
+                    {tn.q}
+                  </div>
+                </div>
+                {tn.warning ? (
+                  <div className="rounded-md border border-amber-200 bg-amber-50 p-2.5 text-sm text-amber-900">
+                    {tn.warning}
+                  </div>
+                ) : (
+                  <div className="animate-from-left whitespace-pre-wrap rounded-2xl rounded-tl-md bg-slate-50 px-4 py-3.5 text-[15px] leading-7 text-slate-800">
+                    {tn.a}
+                  </div>
+                )}
+              </div>
+            ))}
+
+            {busy && (
+              <div className="flex">
+                <div className="animate-from-left rounded-2xl rounded-tl-md bg-slate-50 px-5 py-4 text-slate-400">
+                  <TypingDots />
                 </div>
               </div>
-              {tn.warning ? (
-                <div className="rounded-md border border-amber-200 bg-amber-50 p-2 text-sm text-amber-900">
-                  {tn.warning}
-                </div>
-              ) : (
-                <div className="animate-from-left whitespace-pre-wrap rounded-2xl rounded-tl-sm bg-slate-50 px-3 py-2 text-sm leading-6 text-slate-800">
-                  {tn.a}
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
+            )}
+            <div ref={endRef} />
+          </div>
 
-      {busy && (
-        <div className="mt-3 flex">
-          <div className="animate-from-left rounded-2xl rounded-tl-sm bg-slate-50 px-4 py-3 text-slate-400">
-            <TypingDots />
+          <div className="border-t border-slate-100 p-4">
+            <ChatComposer
+              onSend={ask}
+              busy={busy}
+              placeholder={t('libraryChatPlaceholder')}
+            />
           </div>
         </div>
-      )}
-
-      <form onSubmit={ask} className="mt-3 flex gap-2">
-        <input
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          placeholder={t('libraryChatPlaceholder')}
-          disabled={busy}
-          className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-slate-50"
-        />
-        <button
-          type="submit"
-          disabled={busy || !text.trim()}
-          className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-        >
-          {busy ? t('thinking') : t('ask')}
-        </button>
-      </form>
-        </div>
-
-        <ConversationList
-          conversations={conversations}
-          activeId={conversationId}
-          onOpen={openConversation}
-          onNew={startNew}
-          onChanged={loadConversations}
-          compact
-        />
       </div>
-    </div>
+    </section>
   )
 }
