@@ -10,6 +10,13 @@ body {
   @apply bg-slate-50 text-slate-900 antialiased;
 }
 
+/* ---------------------------------------------------------------------------
+   Motion
+   Everything here is short and subtle: the point is to explain what changed
+   (results arrived, the agent is thinking) rather than to decorate. All of it
+   is disabled under prefers-reduced-motion at the bottom of this file.
+--------------------------------------------------------------------------- */
+
 /* Highlight animation when a citation is clicked. */
 @keyframes cardFlash {
   0% { background-color: rgb(219 234 254); }
@@ -17,6 +24,128 @@ body {
 }
 .card-flash {
   animation: cardFlash 1.6s ease-out;
+}
+
+/* Content arriving: a short rise + fade reads as "this is new". */
+@keyframes riseIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+.animate-rise {
+  animation: riseIn 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Source cards stagger in so a list of 20 doesn't snap into place at once.
+   Capped at 10 steps — beyond that the wait would be noticeable, not pleasant. */
+.stagger > * {
+  animation: riseIn 0.32s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.stagger > *:nth-child(1)  { animation-delay: 0.02s; }
+.stagger > *:nth-child(2)  { animation-delay: 0.05s; }
+.stagger > *:nth-child(3)  { animation-delay: 0.08s; }
+.stagger > *:nth-child(4)  { animation-delay: 0.11s; }
+.stagger > *:nth-child(5)  { animation-delay: 0.14s; }
+.stagger > *:nth-child(6)  { animation-delay: 0.17s; }
+.stagger > *:nth-child(7)  { animation-delay: 0.20s; }
+.stagger > *:nth-child(8)  { animation-delay: 0.23s; }
+.stagger > *:nth-child(9)  { animation-delay: 0.26s; }
+.stagger > *:nth-child(n+10) { animation-delay: 0.29s; }
+
+/* A chat message sliding in from its own side. */
+@keyframes slideFromRight {
+  from { opacity: 0; transform: translateX(10px); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes slideFromLeft {
+  from { opacity: 0; transform: translateX(-10px); }
+  to   { opacity: 1; transform: none; }
+}
+.animate-from-right { animation: slideFromRight 0.28s ease-out both; }
+.animate-from-left  { animation: slideFromLeft 0.28s ease-out both; }
+
+/* "Thinking" dots while the agent composes a reply. */
+@keyframes dotPulse {
+  0%, 60%, 100% { opacity: 0.25; transform: translateY(0); }
+  30%           { opacity: 1;    transform: translateY(-3px); }
+}
+.dot { animation: dotPulse 1.2s ease-in-out infinite; }
+.dot:nth-child(2) { animation-delay: 0.15s; }
+.dot:nth-child(3) { animation-delay: 0.3s; }
+
+/* Skeleton shimmer for content that is still loading. */
+@keyframes shimmer {
+  100% { transform: translateX(100%); }
+}
+.skeleton {
+  @apply relative overflow-hidden bg-slate-200/70;
+}
+.skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background-image: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0,
+    rgba(255, 255, 255, 0.6) 50%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  animation: shimmer 1.4s infinite;
+}
+
+/* The search button's own progress sheen while a search runs. */
+@keyframes sheen {
+  0%   { transform: translateX(-120%); }
+  100% { transform: translateX(220%); }
+}
+.btn-busy { @apply relative overflow-hidden; }
+.btn-busy::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 45%;
+  background-image: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0,
+    rgba(255, 255, 255, 0.35) 50%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  animation: sheen 1.5s ease-in-out infinite;
+}
+
+/* Indeterminate bar for the multi-stage search progress. */
+@keyframes track {
+  0%   { margin-left: -35%; width: 35%; }
+  50%  { margin-left: 40%;  width: 45%; }
+  100% { margin-left: 100%; width: 35%; }
+}
+.progress-track { animation: track 1.8s cubic-bezier(0.65, 0, 0.35, 1) infinite; }
+
+/* Panels that expand (chat, team management). */
+@keyframes expand {
+  from { opacity: 0; transform: scaleY(0.96); }
+  to   { opacity: 1; transform: none; }
+}
+.animate-expand {
+  animation: expand 0.22s ease-out both;
+  transform-origin: top;
+}
+
+/* A gentle spin for the refresh/loading glyph. */
+@keyframes spin360 { to { transform: rotate(360deg); } }
+.animate-spin-slow { animation: spin360 1.1s linear infinite; }
+
+/* Respect the user's motion preference: keep the state changes, drop the
+   movement. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 /* Print / export-to-PDF: show only the answer + reference material. */

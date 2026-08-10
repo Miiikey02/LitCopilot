@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import Icon from './Icon'
 import { BULK_FORMATS, downloadText } from '../lib/citation'
 
 // One-click download of the whole result set: all citations as .bib/.ris, or a
@@ -33,7 +34,7 @@ export default function BulkExport({ papers, queryLabel }) {
         onClick={() => setOpen((v) => !v)}
         className="rounded-md border border-slate-300 px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
       >
-        ⬇ {t('downloadAll')} ▾
+        <Icon name="download" className="mr-1" /> {t('downloadAll')} ▾
       </button>
       {open && (
         <div className="absolute right-0 z-20 mt-1 w-52 overflow-hidden rounded-md border border-slate-200 bg-white py-1 shadow-lg">

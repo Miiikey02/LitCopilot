@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import * as api from '../lib/api'
 import { copyText } from '../lib/citation'
+import Icon from './Icon'
 
 // Switch between the personal library and each lab (team) the user belongs to,
 // and manage the active lab: invite code, members, rename, leave/disband.
@@ -100,7 +101,7 @@ export default function WorkspaceBar({ teams, activeTeam, onSwitch, onTeamsChang
           {t('workspace')}
         </span>
         <button onClick={() => onSwitch(null)} className={tabClass(!activeTeam)}>
-          👤 {t('personalLibrary')}
+          <Icon name="user" className="mr-1" />{t('personalLibrary')}
         </button>
         {teams.map((x) => (
           <button
@@ -108,7 +109,7 @@ export default function WorkspaceBar({ teams, activeTeam, onSwitch, onTeamsChang
             onClick={() => onSwitch(String(x.id))}
             className={tabClass(String(activeTeam) === String(x.id))}
           >
-            🧪 {x.name}
+            <Icon name="flask" className="mr-1" />{x.name}
             <span className="ml-1 opacity-70">({x.member_count})</span>
           </button>
         ))}
@@ -116,7 +117,7 @@ export default function WorkspaceBar({ teams, activeTeam, onSwitch, onTeamsChang
           onClick={() => setPanel(panel === 'create' ? '' : 'create')}
           className="rounded-md border border-dashed border-slate-300 px-2.5 py-1.5 text-sm text-slate-500 hover:bg-slate-50"
         >
-          + {t('newTeam')}
+          <Icon name="plus" className="mr-0.5" />{t('newTeam')}
         </button>
         <button
           onClick={() => setPanel(panel === 'join' ? '' : 'join')}
@@ -129,7 +130,7 @@ export default function WorkspaceBar({ teams, activeTeam, onSwitch, onTeamsChang
             onClick={openManage}
             className="ml-auto text-sm text-slate-500 hover:text-slate-800"
           >
-            ⚙ {t('manageTeam')}
+            <Icon name="settings" className="mr-1" />{t('manageTeam')}
           </button>
         )}
       </div>
@@ -163,7 +164,7 @@ export default function WorkspaceBar({ teams, activeTeam, onSwitch, onTeamsChang
       )}
 
       {panel === 'manage' && team && (
-        <div className="mt-2 rounded-lg border border-slate-200 bg-white p-4">
+        <div className="animate-expand mt-2 rounded-lg border border-slate-200 bg-white p-4">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm text-slate-500">{t('inviteCode')}：</span>
             <code className="rounded bg-slate-100 px-2 py-1 font-mono text-sm tracking-widest text-slate-800">
@@ -173,7 +174,7 @@ export default function WorkspaceBar({ teams, activeTeam, onSwitch, onTeamsChang
               onClick={copyInvite}
               className={`text-sm ${copied ? 'text-green-600' : 'text-blue-600 hover:underline'}`}
             >
-              {copied ? `✓ ${t('citeCopied')}` : t('copy')}
+              {copied ? <><Icon name="check" className="mr-1" />{t('citeCopied')}</> : <><Icon name="copy" className="mr-1" />{t('copy')}</>}
             </button>
             <span className="text-xs text-slate-400">{t('inviteHint')}</span>
           </div>

@@ -1,6 +1,7 @@
 import React from 'react'
 import { useTranslation } from 'react-i18next'
 import * as api from '../lib/api'
+import Icon from './Icon'
 
 // Past conversations with the agent: click one to reopen it and keep talking.
 export default function ConversationList({
@@ -40,7 +41,7 @@ export default function ConversationList({
           onClick={onNew}
           className="text-xs font-medium text-blue-600 hover:underline"
         >
-          + {t('newConversation')}
+          <Icon name="plus" className="mr-0.5" />{t('newConversation')}
         </button>
       </div>
 
@@ -55,7 +56,7 @@ export default function ConversationList({
                 tabIndex={0}
                 onClick={() => onOpen(c.id)}
                 onKeyDown={(e) => e.key === 'Enter' && onOpen(c.id)}
-                className={`group flex cursor-pointer items-start gap-2 rounded-md px-2 py-1.5 text-sm ${
+                className={`group flex cursor-pointer items-start gap-2 rounded-md px-2 py-1.5 text-sm transition-colors ${
                   String(activeId) === String(c.id)
                     ? 'bg-blue-50 text-blue-800'
                     : 'text-slate-600 hover:bg-slate-50'
@@ -72,7 +73,7 @@ export default function ConversationList({
                   title={t('delete')}
                   className="shrink-0 text-xs text-slate-300 opacity-0 transition-opacity hover:text-red-600 group-hover:opacity-100"
                 >
-                  ×
+                  <Icon name="trash" />
                 </button>
               </div>
             </li>

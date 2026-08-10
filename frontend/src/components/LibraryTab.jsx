@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import * as api from '../lib/api'
 import LibraryChat from './LibraryChat'
+import Icon from './Icon'
 import WorkspaceBar from './WorkspaceBar'
 
 const sourceLabel = {
@@ -116,7 +117,7 @@ function LibraryCard({ paper, folders = [], teamId, onChanged }) {
             className="w-full rounded-md bg-amber-50 p-2 text-left text-sm text-amber-900 hover:bg-amber-100"
             title={t('editNote')}
           >
-            <span className="font-medium">📝 {t('myNote')}：</span>
+            <span className="font-medium"><Icon name="note" className="mr-1" />{t('myNote')}：</span>
             {paper.notes}
           </button>
         ) : (
@@ -124,7 +125,7 @@ function LibraryCard({ paper, folders = [], teamId, onChanged }) {
             onClick={() => setEditingNote(true)}
             className="text-xs text-slate-400 hover:text-slate-700"
           >
-            📝 {t('addNote')}
+            <Icon name="note" className="mr-1" />{t('addNote')}
           </button>
         )}
       </div>
@@ -170,10 +171,10 @@ function LibraryCard({ paper, folders = [], teamId, onChanged }) {
           rel="noopener noreferrer"
           className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline"
         >
-          {t('viewSource')} →
+          {t('viewSource')} <Icon name="externalLink" className="ml-0.5" />
         </a>
         <label className="flex items-center gap-1 text-xs text-slate-500">
-          📁
+          <Icon name="folder" />
           <select
             value={paper.folder_id ?? ''}
             onChange={(e) => moveTo(e.target.value)}
@@ -253,7 +254,7 @@ function FolderSidebar({ folders, active, onPick, onChanged, total, teamId }) {
       </h3>
 
       <button onClick={() => onPick(null)} className={itemClass(active === null)}>
-        <span className="flex-1 text-left">📚 {t('allPapers')}</span>
+        <span className="flex-1 text-left"><Icon name="library" className="mr-1.5" />{t('allPapers')}</span>
         <span className="text-xs text-slate-400">{total}</span>
       </button>
 
@@ -263,7 +264,7 @@ function FolderSidebar({ folders, active, onPick, onChanged, total, teamId }) {
             onClick={() => onPick(String(f.id))}
             className={itemClass(active === String(f.id))}
           >
-            <span className="flex-1 truncate text-left">📁 {f.name}</span>
+            <span className="flex-1 truncate text-left"><Icon name="folder" className="mr-1.5" />{f.name}</span>
             <span className="text-xs text-slate-400">{f.count}</span>
           </button>
           <div className="ml-1 flex shrink-0 gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100 hover:opacity-100">
@@ -272,7 +273,7 @@ function FolderSidebar({ folders, active, onPick, onChanged, total, teamId }) {
               title={t('renameFolder')}
               className="text-xs text-slate-400 hover:text-slate-700"
             >
-              ✎
+              <Icon name="pencil" />
             </button>
             <button
               onClick={() => remove(f)}
@@ -290,7 +291,7 @@ function FolderSidebar({ folders, active, onPick, onChanged, total, teamId }) {
           onClick={() => onPick('unfiled')}
           className={itemClass(active === 'unfiled')}
         >
-          <span className="flex-1 text-left">🗂 {t('unfiled')}</span>
+          <span className="flex-1 text-left"><Icon name="inbox" className="mr-1.5" />{t('unfiled')}</span>
           <span className="text-xs text-slate-400">{unfiled.count}</span>
         </button>
       )}
@@ -477,7 +478,7 @@ export default function LibraryTab() {
             {query ? t('libraryNoMatch') : t('libraryEmpty')}
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+          <div className="stagger grid grid-cols-1 gap-3 xl:grid-cols-2">
             {papers.map((p) => (
               <LibraryCard
                 key={p.id}

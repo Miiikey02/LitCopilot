@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import * as api from '../lib/api'
 import ConversationList from './ConversationList'
+import Icon from './Icon'
+import TypingDots from './TypingDots'
 
 // Ask questions about your own saved papers. Answers are grounded in stored
 // metadata + your notes (never abstracts), so the assistant says plainly when a
@@ -79,17 +81,17 @@ export default function LibraryChat({ folder, scopeLabel, paperCount, teamId }) 
     return (
       <button
         onClick={() => setOpen(true)}
-        className="mb-4 w-full rounded-lg border border-dashed border-blue-300 bg-blue-50/50 px-4 py-2.5 text-sm font-medium text-blue-700 hover:bg-blue-50"
+        className="mb-4 w-full rounded-lg border border-dashed border-blue-300 bg-blue-50/50 px-4 py-2.5 text-sm font-medium text-blue-700 transition-colors hover:bg-blue-100/70"
       >
-        💬 {t('libraryChatOpen')}
+        <Icon name="chat" className="mr-1.5" />{t('libraryChatOpen')}
       </button>
     )
   }
 
   return (
-    <div className="mb-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+    <div className="animate-expand mb-4 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
       <div className="mb-1 flex items-center justify-between">
-        <h3 className="font-semibold text-slate-900">💬 {t('libraryChatTitle')}</h3>
+        <h3 className="font-semibold text-slate-900"><Icon name="chat" className="mr-1.5 text-blue-600" />{t('libraryChatTitle')}</h3>
         <button
           onClick={() => setOpen(false)}
           className="text-sm text-slate-400 hover:text-slate-700"
@@ -109,7 +111,7 @@ export default function LibraryChat({ folder, scopeLabel, paperCount, teamId }) 
           {turns.map((tn, i) => (
             <div key={i} className="space-y-2">
               <div className="flex justify-end">
-                <div className="max-w-[85%] rounded-2xl rounded-tr-sm bg-blue-600 px-3 py-1.5 text-sm text-white">
+                <div className="animate-from-right max-w-[85%] rounded-2xl rounded-tr-sm bg-blue-600 px-3 py-1.5 text-sm text-white">
                   {tn.q}
                 </div>
               </div>
@@ -118,12 +120,20 @@ export default function LibraryChat({ folder, scopeLabel, paperCount, teamId }) 
                   {tn.warning}
                 </div>
               ) : (
-                <div className="whitespace-pre-wrap rounded-2xl rounded-tl-sm bg-slate-50 px-3 py-2 text-sm leading-6 text-slate-800">
+                <div className="animate-from-left whitespace-pre-wrap rounded-2xl rounded-tl-sm bg-slate-50 px-3 py-2 text-sm leading-6 text-slate-800">
                   {tn.a}
                 </div>
               )}
             </div>
           ))}
+        </div>
+      )}
+
+      {busy && (
+        <div className="mt-3 flex">
+          <div className="animate-from-left rounded-2xl rounded-tl-sm bg-slate-50 px-4 py-3 text-slate-400">
+            <TypingDots />
+          </div>
         </div>
       )}
 

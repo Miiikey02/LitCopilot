@@ -9,6 +9,8 @@ import TrialsList from './components/TrialsList'
 import ResearchChat from './components/ResearchChat'
 import BulkExport from './components/BulkExport'
 import AuthPanel from './components/AuthPanel'
+import Icon from './components/Icon'
+import SearchProgress from './components/SearchProgress'
 import { supabase, authEnabled } from './lib/supabase'
 import { exportMarkdown, exportPdf } from './lib/exportResult'
 
@@ -362,7 +364,9 @@ export default function App() {
             <button
               type="submit"
               disabled={loading}
-              className="rounded-lg bg-blue-600 px-6 py-3 font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+              className={`rounded-lg bg-blue-600 px-6 py-3 font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-80 ${
+                loading ? 'btn-busy' : ''
+              }`}
             >
               {loading ? t('searching') : t('searchButton')}
             </button>
@@ -402,10 +406,10 @@ export default function App() {
                   onChange={(e) => setSaveTeam(e.target.value)}
                   className="rounded-md border border-slate-300 bg-white px-2 py-1 text-slate-700 focus:border-blue-500 focus:outline-none"
                 >
-                  <option value="">👤 {t('personalLibrary')}</option>
+                  <option value=""><Icon name="user" className="mr-1" />{t('personalLibrary')}</option>
                   {teams.map((x) => (
                     <option key={x.id} value={x.id}>
-                      🧪 {x.name}
+                      {x.name}
                     </option>
                   ))}
                 </select>
@@ -422,6 +426,8 @@ export default function App() {
             </label>
           </div>
         </form>
+
+        {loading && <SearchProgress />}
 
         {error && (
           <div className="mb-6 rounded-lg border border-red-200 bg-red-50 p-4 text-red-800">
@@ -447,7 +453,7 @@ export default function App() {
           </div>
         )}
 
-        {result && (
+        {result && !loading && (
           <div
             className={
               wideSources
@@ -505,19 +511,19 @@ export default function App() {
                       disabled={trialsLoading}
                       className="rounded-md bg-teal-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-teal-700 disabled:opacity-50"
                     >
-                      {trialsLoading ? t('findingTrials') : `🧪 ${t('findTrials')}`}
+                      {trialsLoading ? t('findingTrials') : `${t('findTrials')}`}
                     </button>
                     <button
                       onClick={() => exportMarkdown(result)}
                       className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
                     >
-                      ⬇ {t('exportMd')}
+                      <Icon name="download" className="mr-1" />{t('exportMd')}
                     </button>
                     <button
                       onClick={exportPdf}
                       className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
                     >
-                      🖨 {t('exportPdf')}
+                      <Icon name="printer" className="mr-1" />{t('exportPdf')}
                     </button>
                   </div>
                 )}
@@ -580,7 +586,7 @@ export default function App() {
                       title={wideSources ? t('viewSplitHint') : t('viewWideHint')}
                       className="hidden rounded-md border border-slate-300 px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 lg:inline-flex"
                     >
-                      {wideSources ? `▥ ${t('viewSplit')}` : `▦ ${t('viewWide')}`}
+                      <>{wideSources ? <Icon name="columns" className="mr-1" /> : <Icon name="grid" className="mr-1" />}{wideSources ? t('viewSplit') : t('viewWide')}</>
                     </button>
                     <BulkExport
                       papers={sortedSources}

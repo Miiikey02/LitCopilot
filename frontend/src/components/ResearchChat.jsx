@@ -3,6 +3,8 @@ import { useTranslation } from 'react-i18next'
 import * as api from '../lib/api'
 import AnswerText from './AnswerText'
 import ConversationList from './ConversationList'
+import Icon from './Icon'
+import TypingDots from './TypingDots'
 
 // Conversational "deep-dive" thread shown under the main answer. Each turn shows
 // the researcher's follow-up and the agent's citation-strict reply; when the
@@ -54,15 +56,15 @@ export default function ResearchChat({
             <div key={i} className="space-y-2">
               {/* Researcher's follow-up */}
               <div className="flex justify-end">
-                <div className="max-w-[85%] rounded-2xl rounded-tr-sm bg-blue-600 px-4 py-2 text-sm text-white">
+                <div className="animate-from-right max-w-[85%] rounded-2xl rounded-tr-sm bg-blue-600 px-4 py-2 text-sm text-white">
                   {turn.question}
                 </div>
               </div>
               {/* Agent reply */}
-              <div className="rounded-2xl rounded-tl-sm bg-slate-50 px-4 py-3">
+              <div className="animate-from-left rounded-2xl rounded-tl-sm bg-slate-50 px-4 py-3">
                 {turn.searched && (
                   <div className="mb-2 inline-flex items-center gap-1 rounded-full bg-teal-50 px-2 py-0.5 text-xs text-teal-700">
-                    🔍 {t('agentSearched', { query: turn.searchQuery })}
+                    <Icon name="search" className="mr-1" />{t('agentSearched', { query: turn.searchQuery })}
                   </div>
                 )}
                 {turn.warning ? (
@@ -79,6 +81,14 @@ export default function ResearchChat({
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {loading && (
+        <div className="mt-4 flex">
+          <div className="animate-from-left rounded-2xl rounded-tl-sm bg-slate-50 px-4 py-3 text-slate-400">
+            <TypingDots />
+          </div>
         </div>
       )}
 

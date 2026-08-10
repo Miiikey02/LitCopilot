@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import CiteButton from './CiteButton'
+import Icon from './Icon'
 
 const sourceLabel = {
   pubmed: 'PubMed',
@@ -70,7 +71,7 @@ const SourceCard = React.forwardRef(function SourceCard({ paper, index, onSave }
           rel="noopener noreferrer"
           className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline"
         >
-          {t('viewSource')} →
+          {t('viewSource')} <Icon name="externalLink" className="ml-0.5" />
         </a>
         {paper.oa_url && (
           <a
@@ -79,7 +80,7 @@ const SourceCard = React.forwardRef(function SourceCard({ paper, index, onSave }
             rel="noopener noreferrer"
             className="text-sm font-medium text-green-700 hover:text-green-800 hover:underline"
           >
-            ⇩ {t('freeFullText')}
+            <Icon name="download" className="mr-1" />{t('freeFullText')}
           </a>
         )}
         <CiteButton paper={paper} />
@@ -94,7 +95,7 @@ const SourceCard = React.forwardRef(function SourceCard({ paper, index, onSave }
                 : 'ml-auto text-sm font-medium text-slate-600 hover:text-slate-900 disabled:opacity-50'
             }
           >
-            {saved ? `✓ ${t('saved')}` : `☆ ${t('save')}`}
+            {saved ? <><Icon name="check" className="mr-1" />{t('saved')}</> : <><Icon name="star" className="mr-1" />{t('save')}</>}
           </button>
         )}
       </div>

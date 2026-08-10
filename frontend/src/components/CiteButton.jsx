@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { CITATION_FORMATS, copyText } from '../lib/citation'
+import Icon from './Icon'
 
 // Per-paper "Cite" control: pick a format (BibTeX / RIS / APA) and copy it to
 // the clipboard, ready to paste into a reference manager.
@@ -37,10 +38,10 @@ export default function CiteButton({ paper }) {
             : 'text-sm font-medium text-slate-600 hover:text-slate-900'
         }
       >
-        {copied ? `✓ ${t('citeCopied')}` : `❝ ${t('cite')} ▾`}
+        {copied ? <><Icon name="check" className="mr-1" />{t('citeCopied')}</> : <><Icon name="quote" className="mr-1" />{t('cite')}<Icon name="chevronDown" className="ml-0.5" /></>}
       </button>
       {open && (
-        <div className="absolute left-0 z-20 mt-1 w-56 overflow-hidden rounded-md border border-slate-200 bg-white py-1 shadow-lg">
+        <div className="animate-expand absolute left-0 z-20 mt-1 w-56 overflow-hidden rounded-md border border-slate-200 bg-white py-1 shadow-lg">
           {CITATION_FORMATS.map((fmt) => (
             <button
               key={fmt.key}

@@ -147,6 +147,9 @@ const resources = {
       hoursAgo: '{{n}} 小时前',
       deleteConversationConfirm: '确定删除这条对话记录吗？',
       resumedNotice: '已载入历史对话，可继续追问。',
+      stageUnderstand: '理解问题并生成英文检索词',
+      stageRetrieve: '检索 PubMed / Semantic Scholar / OpenAlex / bioRxiv',
+      stageSynthesize: '综合文献并标注引用',
     },
   },
   en: {
@@ -292,6 +295,9 @@ const resources = {
       hoursAgo: '{{n}} h ago',
       deleteConversationConfirm: 'Delete this conversation?',
       resumedNotice: 'Reopened a saved conversation — keep asking.',
+      stageUnderstand: 'Understanding your question and building the search',
+      stageRetrieve: 'Searching PubMed / Semantic Scholar / OpenAlex / bioRxiv',
+      stageSynthesize: 'Synthesizing the answer with citations',
     },
   },
 }
