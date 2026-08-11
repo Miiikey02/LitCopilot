@@ -560,9 +560,16 @@ async def synthesize_deep(
             "gaps": [],
         }
     subs = "\n".join(f"- {s['question']}" for s in sub_questions)
+    # The citation rule is repeated here, not only in the system prompt: with a
+    # Chinese response the model otherwise drifts into prose citations like
+    # "Tribble 等人（2021）", which the UI cannot turn into a clickable link.
     user = (
         f"RESPONSE LANGUAGE: {_lang_name(lang)} — write everything in "
-        f"{_lang_name(lang)}.\n\n"
+        f"{_lang_name(lang)}.\n"
+        "CITATION FORMAT: cite only with the exact bracketed tokens shown below, "
+        "e.g. [Tribble, 2021]. Never write a citation as prose "
+        "(not 'Tribble 等人（2021）', not 'Tribble et al. (2021)') and never by "
+        "number.\n\n"
         f"Research question:\n{query}\n\n"
         f"Sub-questions investigated:\n{subs}\n\n"
         f"Sources:\n{_format_evidence_for_prompt(papers)}"
