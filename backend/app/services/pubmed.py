@@ -6,6 +6,7 @@ NCBI's rate policy (3/sec anonymous, 10/sec with an API key).
 from __future__ import annotations
 
 import asyncio
+import re
 import xml.etree.ElementTree as ET
 
 import httpx
@@ -253,7 +254,21 @@ def _extract_body(root: ET.Element) -> str:
             parts.append(f"{title}: {body}" if title else body)
     if not parts:  # some records have loose <p> with no <sec>
         parts = [_text(p) for p in root.iter("p")]
-    return " ".join(p for p in parts if p).strip()
+    return _tidy_citations(" ".join(p for p in parts if p).strip())
+
+
+# JATS wraps each reference marker in its own <xref>, so flattening the element
+# yields "[[1], [2], [3]]" where the paper prints "[1-3]". Left alone it reads
+# as broken markup in the reading pane and wastes tokens in the prompt.
+_XREF_GROUP = re.compile(r"\[\s*(?:\[\d+\][\s,;]*)+\]")
+_XREF_RUN = re.compile(r"\[\d+\](?:\s*[,;]\s*\[\d+\])+")
+
+
+def _tidy_citations(text: str) -> str:
+    def join(m: re.Match) -> str:
+        return "[" + ",".join(re.findall(r"\d+", m.group(0))) + "]"
+
+    return _XREF_RUN.sub(join, _XREF_GROUP.sub(join, text))
 
 
 def _blocks_from_body(body: ET.Element) -> list[dict]:
@@ -281,7 +296,7 @@ def _blocks_from_body(body: ET.Element) -> list[dict]:
                     out.append({"type": "heading", "text": title, "level": min(depth, 3)})
                 walk(child, depth + 1)
             elif tag == "p":
-                t = _text(child).strip()
+                t = _tidy_citations(_text(child).strip())
                 if t:
                     out.append({"type": "p", "text": t})
             elif tag in ("fig", "table-wrap"):
