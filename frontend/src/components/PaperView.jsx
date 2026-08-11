@@ -286,7 +286,15 @@ export default function PaperView({ identifier, onClose }) {
                       </div>
                     </div>
                     <div className="animate-from-left rounded-2xl rounded-tl-md bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-800">
-                      {tn.warning || tn.a}
+                      {tn.warning || (
+                        <AnswerText
+                          text={tn.a}
+                          citationKeys={(evidence.sources || []).map(
+                            (s) => s.citation_key
+                          )}
+                          inline
+                        />
+                      )}
                     </div>
                   </div>
                 ))}

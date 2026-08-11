@@ -491,8 +491,8 @@ export default function App() {
           </div>
         )}
 
-        {/* Deep research: the brief, disagreements, gaps and the notebook —
-            shown above the usual sources panel. */}
+        {/* Close reading of one paper: the read, the map of neighbouring work,
+            its entities, and evidence across that neighbourhood. */}
         {readingPaper && (
           <div className="mb-6">
             <PaperView

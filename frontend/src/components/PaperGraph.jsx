@@ -112,6 +112,17 @@ export default function PaperGraph({ nodes, edges, onOpen }) {
   const radius = (n) =>
     n.is_seed ? 15 : 6 + Math.sqrt((n.citations || 0) / maxCites) * 13
 
+  // Label the seed and the most-cited neighbours. Sizing the label off the node
+  // radius left almost everything anonymous whenever one paper dominated the
+  // citation counts — a fixed count always names the landmarks of the map, and
+  // caps how many labels can collide.
+  const labelled = new Set(
+    [...nodes]
+      .sort((a, b) => (b.citations || 0) - (a.citations || 0))
+      .slice(0, 12)
+      .map((n) => n.id)
+  )
+
   const pos = new Map(laid.map((p) => [p.id, p]))
 
   return (
@@ -169,7 +180,7 @@ export default function PaperGraph({ nodes, edges, onOpen }) {
                   stroke={n.retraction_status === 'retracted' ? '#dc2626' : '#fff'}
                   strokeWidth={n.retraction_status === 'retracted' ? 2.5 : 1.5}
                 />
-                {(n.is_seed || hover === n.id || radius(n) > 11) && (
+                {(n.is_seed || hover === n.id || labelled.has(n.id)) && (
                   <text
                     y={radius(n) + 12}
                     textAnchor="middle"

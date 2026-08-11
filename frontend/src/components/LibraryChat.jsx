@@ -1,3 +1,4 @@
+import AnswerText from './AnswerText'
 import React, { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import * as api from '../lib/api'
@@ -144,7 +145,7 @@ export default function LibraryChat({ folder, scopeLabel, paperCount, teamId }) 
                   </div>
                 ) : (
                   <div className="animate-from-left whitespace-pre-wrap rounded-2xl rounded-tl-md bg-slate-50 px-4 py-3.5 text-[15px] leading-7 text-slate-800">
-                    {tn.a}
+                    <AnswerText text={tn.a} citationKeys={tn.keys || []} inline />
                   </div>
                 )}
               </div>
