@@ -89,10 +89,20 @@ export default function ArticlePane({
   const [sel, setSel] = useState(null) // {text, x, y}
 
   // Bring the highlighted sentence into view when the right pane asks for it.
+  // The offset is computed rather than delegated to scrollIntoView: inside this
+  // nested flex scroller that call left scrollTop at 0 with the target 2800px
+  // down, so the highlight was correct and invisible.
   useEffect(() => {
     if (!activeId || !scroller.current) return
-    const el = scroller.current.querySelector(`[data-hl="${activeId}"]`)
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    const box = scroller.current
+    const el = box.querySelector(`[data-hl="${activeId}"]`)
+    if (!el) return
+    const top =
+      el.getBoundingClientRect().top -
+      box.getBoundingClientRect().top +
+      box.scrollTop -
+      box.clientHeight / 2
+    box.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
   }, [activeId])
 
   const captureSelection = () => {
