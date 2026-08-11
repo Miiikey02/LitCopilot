@@ -11,22 +11,12 @@ import Icon from './Icon'
 
 const collapse = (s) => (s || '').replace(/\s+/g, ' ').trim()
 
-// Scrolling a container is done by hand rather than with scrollIntoView or
-// `behavior: 'smooth'`: both are no-ops in some renderers (verified — a smooth
-// scrollTo left scrollTop at 0 while a direct assignment moved it), and a
-// highlight the reader never sees is the same as no highlight at all.
-function easeScroll(box, to, ms = 420) {
-  const from = box.scrollTop
-  const delta = Math.max(0, to) - from
-  if (Math.abs(delta) < 2) return
-  const t0 = performance.now()
-  const step = (now) => {
-    const p = Math.min((now - t0) / ms, 1)
-    box.scrollTop = from + delta * (1 - Math.pow(1 - p, 3))
-    if (p < 1) requestAnimationFrame(step)
-  }
-  requestAnimationFrame(step)
-}
+// Scrolling is a plain scrollTop assignment with CSS `scroll-behavior: smooth`
+// doing the easing, rather than scrollIntoView or a requestAnimationFrame
+// tween. Both of those were verified to do nothing in at least one renderer
+// (a smooth scrollTo left scrollTop at 0; rAF delivered no frames at all),
+// and a highlight the reader never scrolls to is the same as no highlight.
+// This way the position is always correct and the animation is a bonus.
 
 // Locate each quote in a block. The model is asked to copy the sentence
 // exactly, but it drops a trailing clause often enough that an all-or-nothing
@@ -121,7 +111,7 @@ export default function ArticlePane({
       box.getBoundingClientRect().top +
       box.scrollTop -
       box.clientHeight / 2
-    easeScroll(box, top)
+    box.scrollTop = Math.max(0, top)
   }, [activeId])
 
   const captureSelection = () => {
@@ -164,7 +154,7 @@ export default function ArticlePane({
     <div
       ref={scroller}
       onMouseUp={captureSelection}
-      className="relative h-full overflow-y-auto bg-white px-8 py-7"
+      className="relative h-full scroll-smooth overflow-y-auto bg-white px-8 py-7"
     >
       {warning && (
         <div className="mb-5 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm leading-6 text-amber-900">
