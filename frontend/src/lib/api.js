@@ -72,6 +72,16 @@ export const paperConnected = (identifier) =>
   jsonPost('/api/paper/connected', { identifier })
 export const paperEvidence = (identifier, lang, focus) =>
   jsonPost('/api/paper/evidence', { identifier, lang: lang || null, focus: focus || null })
+export const paperArticle = (identifier, lang) =>
+  jsonPost('/api/paper/article', { identifier, lang: lang || null })
+export const paperAsk = (identifier, selection, question, intent, lang) =>
+  jsonPost('/api/paper/ask', {
+    identifier,
+    selection,
+    question: question || '',
+    intent: intent || 'free',
+    lang: lang || null,
+  })
 
 // --- Research agent (multi-turn follow-ups) ---
 export const chat = (sessionId, message, lang, conversationId) =>

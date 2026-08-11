@@ -20,6 +20,9 @@ from .auth import current_user, optional_user
 from .config import MAX_RESULTS, has_llm_key
 from .routers import library
 from .schemas import (
+    ArticleResponse,
+    AskRequest,
+    AskResponse,
     ChatRequest,
     ConnectedResponse,
     DeepRead,
@@ -40,7 +43,12 @@ from .schemas import (
 from .services import llm_service, sessions
 from .services.openalex import connected_papers, resolve_work
 from .services.openalex import _to_paper as _oa_to_paper
-from .services.pubmed import fetch_by_doi, fetch_full_text
+from .services.pubmed import (
+    _pmcid_from,
+    fetch_article,
+    fetch_by_doi,
+    fetch_full_text,
+)
 from .services.retrieval import dedupe, looks_like_known_item, retrieve
 from .services.trials import find_trials
 
@@ -317,13 +325,88 @@ async def paper_read(req: PaperRequest) -> PaperReadResponse:
             else "Could not generate the deep read. Please retry."
         )
     entities = await llm_service.extract_entities(paper)
+    # A session scoped to this one paper, so the reader's follow-up questions
+    # answer from the article they are looking at and not a fresh search.
+    session_id = sessions.create_session([paper], [], lang)
     return PaperReadResponse(
         paper=SourceCard(**paper.to_card()),
         has_full_text=bool(paper.full_text),
         read=read,
         entities=entities,
+        session_id=session_id,
         warning=warning,
     )
+
+
+@app.post("/api/paper/article", response_model=ArticleResponse)
+async def paper_article(req: PaperRequest) -> ArticleResponse:
+    """The original article as reading blocks, for the left pane of 精读模式.
+
+    Deliberately separate from /api/paper/read: this returns in a couple of
+    seconds and the close reading takes far longer, so the reader can start
+    reading the paper while the appraisal is still being written.
+    """
+    work = await resolve_work(req.identifier)
+    if work is None:
+        raise HTTPException(status_code=404, detail="Paper not found")
+    paper = _oa_to_paper(work)
+    if paper.doi:
+        pm = await fetch_by_doi(paper.doi)
+        if pm is not None:
+            if not paper.abstract and pm.abstract:
+                paper.abstract = pm.abstract
+            if pm.oa_url and not paper.oa_url.startswith("https://pmc."):
+                paper.oa_url = pm.oa_url
+
+    article = await fetch_article(_pmcid_from(paper))
+    lang = req.lang or "zh"
+    if not article:
+        # No open-access full text. Show the abstract and say why, rather than
+        # an empty pane that looks broken.
+        blocks = (
+            [{"id": "b0", "type": "heading", "text": "Abstract", "level": 1},
+             {"id": "b1", "type": "p", "text": paper.abstract}]
+            if paper.abstract
+            else []
+        )
+        return ArticleResponse(
+            paper=SourceCard(**paper.to_card()),
+            blocks=blocks,
+            has_full_text=False,
+            warning=(
+                "这篇文献没有开放获取全文，此处仅显示摘要。可点击标题前往出版方阅读原文。"
+                if lang == "zh"
+                else "No open-access full text for this paper; showing the abstract only. Use the title link to read it at the publisher."
+            ),
+        )
+    return ArticleResponse(
+        paper=SourceCard(**paper.to_card()),
+        blocks=article["blocks"],
+        license=article.get("license", ""),
+        has_full_text=True,
+    )
+
+
+@app.post("/api/paper/ask", response_model=AskResponse)
+async def paper_ask(req: AskRequest) -> AskResponse:
+    """Answer a question about a passage the reader selected in the article."""
+    if not req.selection.strip() and not req.question.strip():
+        raise HTTPException(status_code=400, detail="Nothing to ask about")
+    lang = req.lang or llm_service.detect_language(req.question or req.selection)
+    if not has_llm_key():
+        return AskResponse(warning="DEEPSEEK_API_KEY is not configured.")
+    _work, paper = await _resolve_with_text(req.identifier)
+    if paper is None:
+        raise HTTPException(status_code=404, detail="Paper not found")
+    try:
+        answer = await llm_service.explain_selection(
+            paper, req.selection, req.question, req.intent, lang
+        )
+    except Exception:  # noqa: BLE001
+        return AskResponse(
+            warning="回答失败，请重试。" if lang == "zh" else "Could not answer. Please retry."
+        )
+    return AskResponse(answer=answer)
 
 
 @app.post("/api/paper/connected", response_model=ConnectedResponse)

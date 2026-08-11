@@ -620,16 +620,23 @@ statistic or a method that is not stated.
 the response language — do not guess at methodology.
 3. If the paper is marked retracted, lead with that.
 4. Write in the RESPONSE LANGUAGE stated in the user message.
-5. Paraphrase; do not reproduce sentences verbatim.
+5. Your prose must be your own — paraphrase, never summarise by quoting.
+6. Each finding, limitation and not-established item carries a "quote": the ONE
+sentence from the provided text that the item rests on, copied EXACTLY as it
+appears, in the paper's own language (do not translate it). This is a locator —
+the reader has the article open beside your reading and the quote is used to
+highlight the sentence you drew from. Copy it character for character or the
+highlight will miss; never invent or stitch together a sentence. Use "" if the
+item rests on the paper as a whole rather than any one sentence.
 
 Return ONLY a JSON object of this exact shape:
 {
   "question": "<what the paper set out to answer>",
   "design": "<study design and setting; 'not stated' if absent>",
   "sample": "<population/sample size/model; 'not stated' if absent>",
-  "findings": ["<key finding, with the number if the text gives one>"],
-  "limitations": ["<limitation the authors state, or that is evident>"],
-  "not_established": ["<what this paper does NOT show, that a reader might wrongly infer>"],
+  "findings": [{"text": "<key finding, with the number if the text gives one>", "quote": "<exact source sentence>"}],
+  "limitations": [{"text": "<limitation the authors state, or that is evident>", "quote": "<exact source sentence>"}],
+  "not_established": [{"text": "<what this paper does NOT show, that a reader might wrongly infer>", "quote": ""}],
   "evidence_type": "rct|cohort|case|preclinical|invitro|review|guideline|other",
   "takeaway": "<2-3 sentences: what a researcher should take from this>"
 }"""
@@ -658,9 +665,80 @@ async def read_paper(paper: Paper, lang: str) -> dict:
     )
     raw, _ = await _chat(_READ_SYSTEM, user, max_tokens=2500)
     data = _extract_json(raw)
+    # The model is asked for {text, quote} but sometimes returns bare strings.
+    # Normalise to the object shape so the reader has one thing to render.
     for key in ("findings", "limitations", "not_established"):
-        data[key] = [x for x in (data.get(key) or []) if x]
+        items = []
+        for x in data.get(key) or []:
+            if isinstance(x, str) and x.strip():
+                items.append({"text": x.strip(), "quote": ""})
+            elif isinstance(x, dict) and (x.get("text") or "").strip():
+                items.append(
+                    {"text": x["text"].strip(), "quote": (x.get("quote") or "").strip()}
+                )
+        data[key] = items
     return data
+
+
+_ASK_SYSTEM = """You are Gaze, sitting beside a researcher who is reading one
+paper. They have selected a word, a sentence, or a figure caption and asked
+about it. You can see the selection and the paper it came from.
+
+This is reading help, not literature synthesis. Rules:
+
+1. Answer the selection in front of you. Use the paper for context — what the
+study did, what the abbreviation stands for, what the figure shows — but never
+import findings from other papers as if this one showed them.
+2. When you draw on general biomedical background rather than this paper, say
+which is which. "本文中…" versus "一般而言…" (or "In this paper…" / "In general…").
+3. If the selection is a figure or table caption, explain what is being measured,
+what the comparison is, and what the reader should look for.
+4. If the paper does not settle the question, say so plainly. Do not fill a gap
+with a plausible-sounding guess — a wrong explanation of a method costs the
+reader more than an admitted gap.
+5. Be brief: 1-3 short paragraphs. No preamble, no restating the question.
+6. Write in the RESPONSE LANGUAGE stated in the user message. For a translation
+request, give the translation first, then a one-line note on any term of art.
+7. Plain prose. No citation brackets — there is only one paper here."""
+
+
+_ASK_INTENTS = {
+    "translate": {
+        "zh": "把这段文字翻译成中文，并简要说明其中的专业术语。",
+        "en": "Translate this passage into English and briefly gloss any terms of art.",
+    },
+    "explain": {
+        "zh": "用通俗的语言解释这段文字的意思。",
+        "en": "Explain what this passage means in plain language.",
+    },
+    "biology": {
+        "zh": "这段文字的生物学意义是什么？为什么重要？",
+        "en": "What is the biological meaning of this passage, and why does it matter?",
+    },
+}
+
+
+async def explain_selection(
+    paper: Paper, selection: str, question: str, intent: str, lang: str
+) -> str:
+    """Answer a question about a selected passage of the paper being read."""
+    if not has_llm_key():
+        raise RuntimeError("DEEPSEEK_API_KEY not configured")
+    ask = question.strip() or _ASK_INTENTS.get(intent, {}).get(
+        lang, _ASK_INTENTS["explain"]["en"]
+    )
+    # Send the whole paper as context where we have it: the answer to "what does
+    # ERK5 mean here" usually lives in a different section from the selection.
+    body = paper.full_text or paper.abstract or ""
+    user = (
+        f"RESPONSE LANGUAGE: {_lang_name(lang)}.\n\n"
+        f"Paper: {paper.title} ({paper.year}, {paper.venue})\n\n"
+        f"THE READER SELECTED:\n\"\"\"{selection[:2000]}\"\"\"\n\n"
+        f"THEIR QUESTION:\n{ask}\n\n"
+        f"PAPER TEXT FOR CONTEXT:\n{body[:18000]}"
+    )
+    out, _ = await _chat(_ASK_SYSTEM, user, max_tokens=900)
+    return out
 
 
 _ENTITY_SYSTEM = """Extract the biomedical entities this paper actually

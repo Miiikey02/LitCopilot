@@ -256,6 +256,84 @@ def _extract_body(root: ET.Element) -> str:
     return " ".join(p for p in parts if p).strip()
 
 
+def _blocks_from_body(body: ET.Element) -> list[dict]:
+    """Full text as ordered blocks, for a reading pane rather than a prompt.
+
+    `_extract_body` flattens an article into one string, which is all a model
+    needs. A person reading the paper needs the structure back: which heading
+    they are under, where a paragraph ends, and what Figure 1's caption says —
+    captions especially, since "what does Figure 1 show" is the question people
+    ask most and the caption is the only part of a figure we have as text.
+    """
+    out: list[dict] = []
+
+    def caption_of(el: ET.Element) -> tuple[str, str]:
+        return _text(el.find("label")).strip(), _text(el.find("caption")).strip()
+
+    def walk(el: ET.Element, depth: int) -> None:
+        for child in el:
+            tag = child.tag
+            if tag == "sec":
+                title = _text(child.find("title")).strip()
+                if title and any(k in title.lower() for k in _SKIP_SECTIONS):
+                    continue
+                if title:
+                    out.append({"type": "heading", "text": title, "level": min(depth, 3)})
+                walk(child, depth + 1)
+            elif tag == "p":
+                t = _text(child).strip()
+                if t:
+                    out.append({"type": "p", "text": t})
+            elif tag in ("fig", "table-wrap"):
+                label, cap = caption_of(child)
+                if label or cap:
+                    out.append({
+                        "type": "figure" if tag == "fig" else "table",
+                        "label": label or ("Figure" if tag == "fig" else "Table"),
+                        "text": cap,
+                    })
+            elif tag == "title":
+                continue
+            else:
+                walk(child, depth)
+
+    walk(body, 1)
+    for i, b in enumerate(out):
+        b["id"] = f"b{i}"
+    return out
+
+
+def _license_of(root: ET.Element) -> str:
+    """The article's stated licence, so the reader can show what it may show."""
+    lic = root.find(".//permissions/license")
+    if lic is None:
+        return ""
+    href = lic.get("{http://www.w3.org/1999/xlink}href", "")
+    return (_text(lic) or href).strip()[:300]
+
+
+async def fetch_article(pmcid: str) -> dict:
+    """One open-access article as reading blocks. Empty dict when unavailable."""
+    if not pmcid:
+        return {}
+    try:
+        await _limiter.acquire()
+        async with httpx.AsyncClient() as client:
+            params = _common_params() | {"db": "pmc", "id": pmcid, "retmode": "xml"}
+            r = await client.get(f"{EUTILS}/efetch.fcgi", params=params, timeout=30)
+            r.raise_for_status()
+            root = ET.fromstring(r.text)
+    except (httpx.HTTPError, ET.ParseError, ValueError):
+        return {}
+    body = root.find(".//body")
+    if body is None:
+        return {}
+    blocks = _blocks_from_body(body)
+    if sum(len(b.get("text", "")) for b in blocks) < 500:
+        return {}
+    return {"blocks": blocks, "license": _license_of(root)}
+
+
 async def fetch_full_text(papers: list[Paper], limit: int = 8) -> int:
     """Fill `full_text` for open-access papers. Returns how many were read.
 

@@ -11,7 +11,7 @@ const sourceLabel = {
 }
 
 const SourceCard = React.forwardRef(function SourceCard(
-  { paper, index, onSave, onRead },
+  { paper, index, onSave },
   ref
 ) {
   const { t } = useTranslation()
@@ -120,16 +120,6 @@ const SourceCard = React.forwardRef(function SourceCard(
           >
             <Icon name="download" className="mr-1" />{t('freeFullText')}
           </a>
-        )}
-        {onRead && (paper.doi || paper.source_id) && (
-          <button
-            type="button"
-            onClick={() => onRead(paper.doi || paper.source_id)}
-            className="text-sm font-medium text-slate-600 transition-colors hover:text-blue-700"
-          >
-            <Icon name="bookOpen" className="mr-1" />
-            {t('readPaper')}
-          </button>
         )}
         <CiteButton paper={paper} />
         {onSave && (

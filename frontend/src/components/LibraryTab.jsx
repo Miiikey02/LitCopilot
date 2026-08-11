@@ -193,6 +193,24 @@ function LibraryCard({ paper, folders = [], teamId, onChanged }) {
         >
           {t('viewSource')} <Icon name="externalLink" className="ml-0.5" />
         </a>
+        {/* Close reading belongs to papers you have kept, not to a list of
+            search hits — it opens the paper in its own window to read. */}
+        {(paper.doi || paper.source_id) && (
+          <button
+            type="button"
+            onClick={() =>
+              window.open(
+                `/read?id=${encodeURIComponent(paper.doi || paper.source_id)}`,
+                '_blank',
+                'noopener'
+              )
+            }
+            className="text-sm font-medium text-slate-600 transition-colors hover:text-blue-700"
+          >
+            <Icon name="bookOpen" className="mr-1" />
+            {t('openReader')}
+          </button>
+        )}
         <label className="flex items-center gap-1 text-xs text-slate-500">
           <Icon name="folder" />
           <select

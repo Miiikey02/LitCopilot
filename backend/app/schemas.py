@@ -242,21 +242,65 @@ class PaperRequest(BaseModel):
     lang: Optional[str] = None
 
 
+class ReadItem(BaseModel):
+    """One appraisal point, plus the source sentence it was drawn from.
+
+    `quote` is a locator: the reader highlights it in the article shown beside
+    the reading, so a claim can be traced to the sentence behind it. Empty when
+    the point rests on the paper as a whole.
+    """
+
+    text: str = ""
+    quote: str = ""
+
+
 class DeepRead(BaseModel):
     question: str = ""
     design: str = ""
     sample: str = ""
-    findings: list[str] = []
-    limitations: list[str] = []
-    not_established: list[str] = []
+    findings: list[ReadItem] = []
+    limitations: list[ReadItem] = []
+    not_established: list[ReadItem] = []
     evidence_type: str = ""
     takeaway: str = ""
+
+
+class ArticleBlock(BaseModel):
+    """One renderable piece of the original article."""
+
+    id: str = ""
+    type: str = "p"  # heading | p | figure | table
+    text: str = ""
+    label: str = ""
+    level: int = 1
+
+
+class ArticleResponse(BaseModel):
+    paper: SourceCard
+    blocks: list[ArticleBlock] = []
+    license: str = ""
+    has_full_text: bool = False
+    warning: Optional[str] = None
+
+
+class AskRequest(BaseModel):
+    identifier: str
+    selection: str = ""
+    question: str = ""
+    intent: str = ""  # translate | explain | biology | free
+    lang: Optional[str] = None
+
+
+class AskResponse(BaseModel):
+    answer: str = ""
+    warning: Optional[str] = None
 
 
 class PaperReadResponse(BaseModel):
     paper: SourceCard
     has_full_text: bool = False
     read: Optional[DeepRead] = None
+    session_id: str = ""
     entities: dict = {}
     warning: Optional[str] = None
 
