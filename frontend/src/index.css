@@ -148,6 +148,56 @@ body {
   }
 }
 
+/* Answer paragraphs reveal in sequence, so a long brief reads as arriving.
+   This is presentation only — the whole answer is already loaded. */
+.reveal > * {
+  animation: riseIn 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.reveal > *:nth-child(1) { animation-delay: 0.05s; }
+.reveal > *:nth-child(2) { animation-delay: 0.18s; }
+.reveal > *:nth-child(3) { animation-delay: 0.31s; }
+.reveal > *:nth-child(4) { animation-delay: 0.44s; }
+.reveal > *:nth-child(5) { animation-delay: 0.57s; }
+.reveal > *:nth-child(n+6) { animation-delay: 0.68s; }
+
+/* Sequenced entrance for a hero: each element arrives just after the last, so
+   the page assembles itself instead of appearing all at once. */
+@keyframes riseInSoft {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: none; }
+}
+.seq > * {
+  animation: riseInSoft 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.seq > *:nth-child(1) { animation-delay: 0.04s; }
+.seq > *:nth-child(2) { animation-delay: 0.14s; }
+.seq > *:nth-child(3) { animation-delay: 0.24s; }
+.seq > *:nth-child(4) { animation-delay: 0.34s; }
+.seq > *:nth-child(5) { animation-delay: 0.44s; }
+
+/* The accent phrase wipes in with its gradient after the line lands. */
+@keyframes accentIn {
+  from { opacity: 0; transform: translateY(6px) scale(0.98); }
+  to   { opacity: 1; transform: none; }
+}
+.accent-in { animation: accentIn 0.6s cubic-bezier(0.22, 1, 0.36, 1) 0.22s both; }
+
+/* Chips pop in one by one. */
+.pop > * {
+  animation: riseInSoft 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+.pop > *:nth-child(1) { animation-delay: 0.30s; }
+.pop > *:nth-child(2) { animation-delay: 0.38s; }
+.pop > *:nth-child(3) { animation-delay: 0.46s; }
+.pop > *:nth-child(4) { animation-delay: 0.54s; }
+
+/* A soft attention pulse for a newly arrived panel. */
+@keyframes glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
+  50%      { box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.10); }
+}
+.animate-glow { animation: glow 1.8s ease-in-out 1; }
+
 /* Cards lift slightly on hover so the list feels responsive to the cursor
    rather than static. Kept small — this is feedback, not decoration. */
 .card-hover {

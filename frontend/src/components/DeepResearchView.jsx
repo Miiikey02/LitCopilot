@@ -2,6 +2,7 @@ import React from 'react'
 import { useTranslation } from 'react-i18next'
 import AnswerText from './AnswerText'
 import Icon from './Icon'
+import CountUp from './CountUp'
 
 // The deep-research brief: a cited answer, the disagreements and gaps the
 // agent found, and an auditable notebook of what it searched and read.
@@ -11,16 +12,33 @@ export default function DeepResearchView({ result, citationKeys, onCite }) {
 
   return (
     <div className="animate-rise space-y-4">
-      <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+      <section className="animate-glow rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
         <div className="mb-3 flex flex-wrap items-center gap-2">
           <Icon name="sparkles" className="text-blue-600" />
           <h2 className="text-lg font-semibold text-slate-900">{t('deepBrief')}</h2>
-          <span className="text-xs text-slate-400">
-            {t('deepMeta', {
-              subs: result.sub_questions.length,
-              papers: result.sources.length,
-              full: result.full_text_read,
-            })}
+          {/* Real values returned by the run, counted up on arrival. */}
+          <span className="flex flex-wrap items-center gap-x-3 text-xs text-slate-500">
+            <span>
+              <CountUp
+                value={result.sub_questions.length}
+                className="font-semibold text-slate-800"
+              />{' '}
+              {t('metaSubs')}
+            </span>
+            <span>
+              <CountUp
+                value={result.sources.length}
+                className="font-semibold text-slate-800"
+              />{' '}
+              {t('metaPapers')}
+            </span>
+            <span>
+              <CountUp
+                value={result.full_text_read}
+                className="font-semibold text-green-700"
+              />{' '}
+              {t('metaFull')}
+            </span>
           </span>
         </div>
 
@@ -80,7 +98,7 @@ export default function DeepResearchView({ result, citationKeys, onCite }) {
           <Icon name="bookOpen" className="mr-2 text-slate-400" />
           {t('notebook')}
         </summary>
-        <ol className="mt-3 space-y-3">
+        <ol className="stagger mt-3 space-y-3">
           {result.sub_questions.map((s, i) => (
             <li key={i} className="border-l-2 border-slate-200 pl-3">
               <div className="text-sm font-medium text-slate-800">{s.question}</div>

@@ -39,10 +39,10 @@ export default function HeroEmpty({ onPick, onDeepPick }) {
           aria-hidden="true"
           className="pointer-events-none absolute inset-x-0 -top-24 h-64 bg-gradient-to-b from-blue-100/70 via-sky-50/50 to-transparent blur-2xl"
         />
-        <div className="relative">
+        <div className="seq relative">
           <h2 className="mx-auto max-w-2xl text-3xl font-bold leading-tight tracking-tight text-slate-900 sm:text-4xl">
             {t('heroTitle')}{' '}
-            <span className="bg-gradient-to-r from-blue-600 to-teal-500 bg-clip-text text-transparent">
+            <span className="accent-in inline-block bg-gradient-to-r from-blue-600 to-teal-500 bg-clip-text text-transparent">
               {t('heroTitleAccent')}
             </span>
           </h2>
@@ -55,12 +55,12 @@ export default function HeroEmpty({ onPick, onDeepPick }) {
             <p className="mb-2.5 text-xs font-medium uppercase tracking-wide text-slate-400">
               {t('tryOne')}
             </p>
-            <div className="flex flex-wrap justify-center gap-2">
+            <div className="pop flex flex-wrap justify-center gap-2">
               {examples.map((ex) => (
                 <button
                   key={ex}
                   onClick={() => onPick(ex)}
-                  className="group rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm transition-all hover:-translate-y-0.5 hover:border-blue-300 hover:text-blue-700 hover:shadow"
+                  className="group rounded-full border border-slate-200 bg-white px-4 py-2 text-sm text-slate-700 shadow-sm transition-all hover:-translate-y-0.5 hover:border-blue-300 hover:text-blue-700 hover:shadow active:translate-y-0 active:scale-[0.98]"
                 >
                   {ex}
                   <Icon
@@ -74,7 +74,7 @@ export default function HeroEmpty({ onPick, onDeepPick }) {
 
           <button
             onClick={() => onDeepPick(examples[0])}
-            className="mt-6 inline-flex items-center gap-1.5 rounded-full bg-slate-900 px-5 py-2.5 text-sm font-medium text-white transition-all hover:-translate-y-0.5 hover:bg-slate-800 hover:shadow-lg"
+            className="mt-6 inline-flex items-center gap-1.5 rounded-full bg-slate-900 px-5 py-2.5 text-sm font-medium text-white transition-all hover:-translate-y-0.5 hover:bg-slate-800 hover:shadow-lg active:translate-y-0 active:scale-[0.98]"
           >
             <Icon name="sparkles" />
             {t('tryDeep')}
@@ -83,7 +83,7 @@ export default function HeroEmpty({ onPick, onDeepPick }) {
       </div>
 
       {/* What it actually does, in four claims that are all verifiable. */}
-      <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="stagger mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {features.map((f) => (
           <div
             key={f.key}

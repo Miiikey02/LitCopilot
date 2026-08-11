@@ -60,5 +60,5 @@ export default function AnswerText({ text, citationKeys, onCite, inline = false 
   }
 
   if (inline) return <>{paragraphs.map(renderParagraph)}</>
-  return <div>{paragraphs.map(renderParagraph)}</div>
+  return <div className="reveal">{paragraphs.map(renderParagraph)}</div>
 }

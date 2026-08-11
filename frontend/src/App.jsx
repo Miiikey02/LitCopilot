@@ -12,6 +12,7 @@ import AuthPanel from './components/AuthPanel'
 import Icon from './components/Icon'
 import SearchProgress from './components/SearchProgress'
 import HeroEmpty from './components/HeroEmpty'
+import SegmentedControl from './components/SegmentedControl'
 import DeepResearchView from './components/DeepResearchView'
 import { supabase, authEnabled } from './lib/supabase'
 import { exportMarkdown, exportPdf } from './lib/exportResult'
@@ -311,24 +312,14 @@ export default function App() {
                 {t('tagline')}
               </span>
             </h1>
-            <nav className="flex gap-1">
-              {[
-                ['search', t('tabSearch')],
-                ['library', t('tabLibrary')],
-              ].map(([key, label]) => (
-                <button
-                  key={key}
-                  onClick={() => setTab(key)}
-                  className={`rounded-md px-3 py-1.5 text-sm font-medium ${
-                    tab === key
-                      ? 'bg-blue-50 text-blue-700'
-                      : 'text-slate-600 hover:bg-slate-50'
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
-            </nav>
+            <SegmentedControl
+              value={tab}
+              onChange={setTab}
+              options={[
+                { value: 'search', label: t('tabSearch'), icon: 'search' },
+                { value: 'library', label: t('tabLibrary'), icon: 'library' },
+              ]}
+            />
           </div>
           <div className="flex items-center gap-3">
             {authEnabled && session && (
@@ -386,7 +377,7 @@ export default function App() {
             <button
               type="submit"
               disabled={loading}
-              className={`rounded-xl bg-blue-600 px-7 py-3.5 font-medium text-white transition-all hover:bg-blue-700 hover:shadow-md disabled:opacity-80 ${
+              className={`rounded-xl bg-blue-600 px-7 py-3.5 font-medium text-white transition-all hover:bg-blue-700 hover:shadow-md active:scale-[0.98] disabled:opacity-80 ${
                 loading ? 'btn-busy' : ''
               }`}
             >
@@ -396,26 +387,14 @@ export default function App() {
           <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-slate-500">
             {/* Quick search answers from abstracts; deep research plans
                 sub-questions and reads open-access full text. */}
-            <div className="mr-1 inline-flex rounded-lg border border-slate-300 bg-white p-0.5">
-              {[
-                [false, t('quickMode'), 'search'],
-                [true, t('deepMode'), 'sparkles'],
-              ].map(([mode, label, icon]) => (
-                <button
-                  key={String(mode)}
-                  type="button"
-                  onClick={() => setDeepMode(mode)}
-                  className={`rounded-md px-2.5 py-1 text-sm font-medium transition-colors ${
-                    deepMode === mode
-                      ? 'bg-blue-600 text-white'
-                      : 'text-slate-600 hover:bg-slate-50'
-                  }`}
-                >
-                  <Icon name={icon} className="mr-1" />
-                  {label}
-                </button>
-              ))}
-            </div>
+            <SegmentedControl
+              value={deepMode}
+              onChange={setDeepMode}
+              options={[
+                { value: false, label: t('quickMode'), icon: 'search' },
+                { value: true, label: t('deepMode'), icon: 'sparkles' },
+              ]}
+            />
             <label htmlFor="result-limit">{t('resultsCount')}</label>
             <select
               id="result-limit"
@@ -472,7 +451,7 @@ export default function App() {
         </form>
 
         {deepMode && !result && !loading && (
-          <p className="mb-4 flex items-start gap-1.5 rounded-lg bg-blue-50/70 px-3 py-2 text-xs leading-5 text-blue-800">
+          <p className="animate-expand mb-4 flex items-start gap-1.5 rounded-lg bg-blue-50/70 px-3 py-2 text-xs leading-5 text-blue-800">
             <Icon name="sparkles" className="mt-0.5 shrink-0" />
             {t('deepModeHint')}
           </p>
