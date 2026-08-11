@@ -642,7 +642,9 @@ Return ONLY a JSON object of this exact shape:
 }"""
 
 
-_SENT_SPLIT = re.compile(r"(?<=[.!?])\s+")
+# Require a sentence to start with a capital or bracket, so numbered section
+# headings ("3.1 Protective effects…") are not split at the "3.".
+_SENT_SPLIT = re.compile(r"(?<=[.!?])\s+(?=[A-Z(\[])")
 _WORD = re.compile(r"[a-z0-9]+")
 
 
@@ -678,7 +680,10 @@ def _snap_quote(body: str, quote: str) -> str:
     # The prompt text prefixes each section's first sentence with its heading
     # ("Results: In diabetic animals…"), which never appears in the rendered
     # article. Strip it or the highlight misses exactly those sentences.
-    return re.sub(r"^[A-Z][A-Za-z0-9 \-]{0,40}: (?=[A-Z(])", "", best)
+    # Cap is generous because section headings run long. Over-stripping is
+    # safe: what remains is still a substring of the rendered paragraph, so
+    # the highlight lands either way — under-stripping is what breaks it.
+    return re.sub(r"^[0-9A-Z][A-Za-z0-9 \-.,()]{0,120}: (?=[A-Z(])", "", best)
 
 
 async def read_paper(paper: Paper, lang: str) -> dict:
