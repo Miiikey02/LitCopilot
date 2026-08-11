@@ -103,6 +103,7 @@ async def search_openalex(
                 first_author_family=first_family,
                 pub_date=item.get("publication_date") or "",
                 oa_url=_oa_pdf(item),
+                retraction_status="retracted" if item.get("is_retracted") else "",
             )
         )
     return papers

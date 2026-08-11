@@ -117,8 +117,13 @@ def _format_sources_for_prompt(papers: list[Paper]) -> str:
     # bracketed token shown is the exact [citation_key] it must cite with.
     blocks = []
     for i, p in enumerate(papers, 1):
+        flag = ""
+        if p.retraction_status == "retracted":
+            flag = "\n    ⚠ INTEGRITY: this paper has been RETRACTED."
+        elif p.retraction_status == "concern":
+            flag = "\n    ⚠ INTEGRITY: this paper carries an editorial expression of concern."
         blocks.append(
-            f"Source {i} (index={i}) — cite this source as [{p.citation_key()}]\n"
+            f"Source {i} (index={i}) — cite this source as [{p.citation_key()}]{flag}\n"
             f"    title: {p.title}\n"
             f"    authors: {', '.join(p.authors[:6])}\n"
             f"    year: {p.year}\n"
@@ -145,6 +150,10 @@ explicitly in the answer rather than guessing.
 or English). Write naturally and fluently in that language directly — do NOT \
 translate a literal draft from the other language. 3-5 paragraphs.
 5. Do NOT reproduce abstract text verbatim — paraphrase in your own words.
+6. A source marked RETRACTED or with an expression of concern must NOT be used
+to support a claim as if it were sound evidence. If you mention it at all, say
+plainly that it has been retracted (or questioned) and advise against relying
+on it.
 
 Then, for EACH source, provide (ALL in the RESPONSE LANGUAGE):
   - title_localized: the paper's title translated into the response language. If \

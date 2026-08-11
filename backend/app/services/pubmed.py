@@ -125,6 +125,18 @@ def _parse_article(art: ET.Element) -> Paper | None:
 
     venue = _text(article.find("Journal/Title"))
 
+    # PubMed marks the retracted article itself as "Retracted Publication";
+    # "Retraction of Publication" is the notice announcing someone else's
+    # retraction, which is a normal citable item and must not be flagged.
+    pub_types = {
+        (_text(t) or "").lower() for t in article.findall("PublicationTypeList/PublicationType")
+    }
+    retraction_status = ""
+    if "retracted publication" in pub_types:
+        retraction_status = "retracted"
+    elif "expression of concern" in pub_types:
+        retraction_status = "concern"
+
     doi = ""
     pmcid = ""
     for eid in art.findall(".//ArticleId"):
@@ -148,6 +160,7 @@ def _parse_article(art: ET.Element) -> Paper | None:
         pub_date=pub_date,
         # A PMC id means the full text is free to read there.
         oa_url=f"https://pmc.ncbi.nlm.nih.gov/articles/{pmcid}/" if pmcid else "",
+        retraction_status=retraction_status,
     )
 
 

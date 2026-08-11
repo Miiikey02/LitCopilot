@@ -62,6 +62,7 @@ CREATE TABLE IF NOT EXISTS saved_papers (
     relevance_zh TEXT,
     pub_date     TEXT,
     oa_url       TEXT,
+    retraction_status TEXT NOT NULL DEFAULT '',
     notes        TEXT NOT NULL DEFAULT '',
     folder_id    BIGINT REFERENCES folders(id) ON DELETE SET NULL,
     dedup_key    TEXT NOT NULL,
@@ -138,6 +139,10 @@ def init_db() -> None:
         conn.execute(
             "ALTER TABLE saved_papers ADD COLUMN IF NOT EXISTS notes TEXT NOT NULL DEFAULT ''"
         )
+        conn.execute(
+            "ALTER TABLE saved_papers ADD COLUMN IF NOT EXISTS retraction_status "
+            "TEXT NOT NULL DEFAULT ''"
+        )
         # A row belongs to a team workspace when team_id is set, otherwise to
         # the personal library of user_id. user_id always records who added it.
         for table in ("saved_papers", "folders"):
@@ -188,6 +193,7 @@ def _row_to_paper(row: dict, tags: list[str]) -> dict:
         "relevance_zh": row["relevance_zh"] or "",
         "pub_date": row["pub_date"] or "",
         "oa_url": row["oa_url"] or "",
+        "retraction_status": row["retraction_status"] or "",
         "notes": row["notes"] or "",
         "folder_id": row["folder_id"],
         "tags": tags,
@@ -430,8 +436,8 @@ def save_paper(
                 """INSERT INTO saved_papers
                    (user_id, team_id, source, source_id, title, title_zh, authors,
                     year, venue, url, doi, citation_key, relevance_zh, pub_date,
-                    oa_url, folder_id, dedup_key)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                    oa_url, retraction_status, folder_id, dedup_key)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                 (
                     user_id,
                     team_id,
@@ -448,6 +454,7 @@ def save_paper(
                     card.get("relevance_zh", ""),
                     card.get("pub_date", ""),
                     card.get("oa_url", ""),
+                    card.get("retraction_status", ""),
                     folder_id,
                     key,
                 ),

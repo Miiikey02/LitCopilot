@@ -33,6 +33,10 @@ def _merge(existing: Paper, other: Paper) -> Paper:
         existing.pub_date = other.pub_date
     if not existing.oa_url and other.oa_url:
         existing.oa_url = other.oa_url
+    # If any source knows the work is retracted, that finding wins — a missing
+    # flag elsewhere only means that source lacks the metadata.
+    if other.retraction_status and existing.retraction_status != "retracted":
+        existing.retraction_status = other.retraction_status
     return existing
 
 

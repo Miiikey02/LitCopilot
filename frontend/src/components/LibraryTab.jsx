@@ -63,6 +63,26 @@ function LibraryCard({ paper, folders = [], teamId, onChanged }) {
         <span className="text-xs font-medium text-blue-700">[{paper.citation_key}]</span>
       </div>
 
+      {paper.retraction_status && (
+        <div
+          className={`mb-2 flex items-start gap-1.5 rounded-md border px-2 py-1.5 text-xs ${
+            paper.retraction_status === 'retracted'
+              ? 'border-red-200 bg-red-50 text-red-800'
+              : 'border-amber-200 bg-amber-50 text-amber-900'
+          }`}
+        >
+          <Icon name="alert" className="mt-0.5 shrink-0" />
+          <span>
+            <span className="font-semibold">
+              {paper.retraction_status === 'retracted'
+                ? t('retracted')
+                : t('concernRaised')}
+            </span>
+            {' · '}
+            {t('retractedHint')}
+          </span>
+        </div>
+      )}
       {paper.title_zh && (
         <h3 className="mb-0.5 font-semibold leading-6 text-slate-900">{paper.title_zh}</h3>
       )}

@@ -37,6 +37,8 @@ class SourceCard(BaseModel):
     pub_date: str = ""
     # Direct link to a legally free full text, when one exists.
     oa_url: str = ""
+    # "" | "retracted" | "concern" — research-integrity warning for the card.
+    retraction_status: str = ""
 
 
 class SearchResponse(BaseModel):

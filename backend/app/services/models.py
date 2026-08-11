@@ -30,6 +30,10 @@ class Paper:
     # Direct link to a legally free full text (PMC, OpenAlex/S2 open access,
     # bioRxiv PDF). Empty when the paper is paywalled.
     oa_url: str = ""
+    # Research-integrity status: "" (nothing known), "retracted", or "concern"
+    # (an editorial expression of concern). Citing retracted work is a real
+    # hazard in a thesis or grant, so this is surfaced prominently.
+    retraction_status: str = ""
 
     # Populated later by the synthesis/translation step:
     title_zh: str = ""  # Chinese translation of the title
@@ -94,4 +98,5 @@ class Paper:
             "relevance_zh": self.relevance_zh,
             "pub_date": self.pub_date,
             "oa_url": self.oa_url,
+            "retraction_status": self.retraction_status,
         }
