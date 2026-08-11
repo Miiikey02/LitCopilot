@@ -331,6 +331,26 @@ async def fetch_article(pmcid: str) -> dict:
     blocks = _blocks_from_body(body)
     if sum(len(b.get("text", "")) for b in blocks) < 500:
         return {}
+
+    # Many publishers deposit figures in <floats-group>, outside <body>, so
+    # walking the body alone finds none of them even though the text says
+    # "(Fig. 1)" throughout. Collect what the body missed and append it — a
+    # caption at the end is far better than a caption the reader cannot reach.
+    seen = {b.get("label", "") for b in blocks if b["type"] in ("figure", "table")}
+    extra: list[dict] = []
+    for tag, kind in (("fig", "figure"), ("table-wrap", "table")):
+        for el in root.iter(tag):
+            label = _text(el.find("label")).strip()
+            cap = _text(el.find("caption")).strip()
+            if not (label or cap) or label in seen:
+                continue
+            seen.add(label)
+            extra.append({"type": kind, "label": label or kind.title(), "text": cap})
+    if extra:
+        blocks.append({"type": "heading", "text": "Figures and tables", "level": 1})
+        blocks.extend(extra)
+    for i, b in enumerate(blocks):
+        b["id"] = f"b{i}"
     return {"blocks": blocks, "license": _license_of(root)}
 
 
