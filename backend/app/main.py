@@ -10,6 +10,8 @@ import asyncio
 import os
 from pathlib import Path
 
+from collections import OrderedDict
+from time import monotonic
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -273,6 +275,47 @@ async def deep_research(
     )
 
 
+_RESOLVE_CACHE: "OrderedDict[str, tuple[float, tuple]]" = OrderedDict()
+_RESOLVE_INFLIGHT: dict[str, asyncio.Task] = {}
+_RESOLVE_TTL = 1800.0
+_RESOLVE_MAX = 64
+
+
+async def _resolve_cached(identifier: str):
+    """`_resolve_with_text`, shared between concurrent callers.
+
+    精读模式 asks for the article and the close reading at the same instant and
+    both resolve the same paper — several rate-limited NCBI calls each. When one
+    side lost that race it silently produced an abstract-only reading with no
+    highlights. Callers that arrive while a resolution is in flight await the
+    same task instead of starting a second one.
+    """
+    key = (identifier or "").strip().lower()
+    hit = _RESOLVE_CACHE.get(key)
+    if hit and monotonic() - hit[0] <= _RESOLVE_TTL:
+        _RESOLVE_CACHE.move_to_end(key)
+        return hit[1]
+    _RESOLVE_CACHE.pop(key, None)
+
+    running = _RESOLVE_INFLIGHT.get(key)
+    if running is not None:
+        return await running
+
+    task = asyncio.ensure_future(_resolve_with_text(identifier))
+    _RESOLVE_INFLIGHT[key] = task
+    try:
+        result = await task
+    finally:
+        _RESOLVE_INFLIGHT.pop(key, None)
+    # Only worth caching a resolution that actually found the paper.
+    if result[1] is not None:
+        _RESOLVE_CACHE[key] = (monotonic(), result)
+        _RESOLVE_CACHE.move_to_end(key)
+        while len(_RESOLVE_CACHE) > _RESOLVE_MAX:
+            _RESOLVE_CACHE.popitem(last=False)
+    return result
+
+
 async def _resolve_with_text(identifier: str):
     """Resolve an identifier to a Paper, preferring a version with full text.
 
@@ -307,7 +350,7 @@ async def _resolve_with_text(identifier: str):
 @app.post("/api/paper/read", response_model=PaperReadResponse)
 async def paper_read(req: PaperRequest) -> PaperReadResponse:
     """A close reading of one paper, from its full text where that is open."""
-    work, paper = await _resolve_with_text(req.identifier)
+    work, paper = await _resolve_cached(req.identifier)
     if paper is None:
         raise HTTPException(status_code=404, detail="Paper not found")
     lang = req.lang or llm_service.detect_language(req.identifier)
@@ -354,18 +397,9 @@ async def paper_article(req: PaperRequest) -> ArticleResponse:
     seconds and the close reading takes far longer, so the reader can start
     reading the paper while the appraisal is still being written.
     """
-    work = await resolve_work(req.identifier)
-    if work is None:
+    _work, paper = await _resolve_cached(req.identifier)
+    if paper is None:
         raise HTTPException(status_code=404, detail="Paper not found")
-    paper = _oa_to_paper(work)
-    if paper.doi:
-        pm = await fetch_by_doi(paper.doi)
-        if pm is not None:
-            if not paper.abstract and pm.abstract:
-                paper.abstract = pm.abstract
-            if pm.oa_url and not paper.oa_url.startswith("https://pmc."):
-                paper.oa_url = pm.oa_url
-
     article = await fetch_article(_pmcid_from(paper))
     lang = req.lang or "zh"
     if not article:
@@ -403,7 +437,7 @@ async def paper_ask(req: AskRequest) -> AskResponse:
     lang = req.lang or llm_service.detect_language(req.question or req.selection)
     if not has_llm_key():
         return AskResponse(warning="DEEPSEEK_API_KEY is not configured.")
-    _work, paper = await _resolve_with_text(req.identifier)
+    _work, paper = await _resolve_cached(req.identifier)
     if paper is None:
         raise HTTPException(status_code=404, detail="Paper not found")
     try:
@@ -439,7 +473,7 @@ async def paper_evidence(
     The corpus is the seed plus its graph neighbours, so the answer is about
     this line of work rather than a fresh topical search.
     """
-    work, seed = await _resolve_with_text(req.identifier)
+    work, seed = await _resolve_cached(req.identifier)
     if seed is None:
         raise HTTPException(status_code=404, detail="Paper not found")
     lang = req.lang or "zh"
