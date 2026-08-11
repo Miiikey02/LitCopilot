@@ -642,6 +642,45 @@ Return ONLY a JSON object of this exact shape:
 }"""
 
 
+_SENT_SPLIT = re.compile(r"(?<=[.!?])\s+")
+_WORD = re.compile(r"[a-z0-9]+")
+
+
+def _snap_quote(body: str, quote: str) -> str:
+    """Replace a locator quote with the real sentence it refers to.
+
+    Asking a model to copy a sentence exactly works most of the time and
+    paraphrases the rest, and the reader cannot tell the difference — the
+    highlight simply fails to appear, at random, on a different subset of
+    findings every run. So the quote is treated as a search key, not as text:
+    find the sentence in the body it best matches and return that verbatim.
+    A quote matching nothing well enough returns "" and is shown without a
+    highlight, which is the honest outcome for a claim we cannot locate.
+    """
+    q = set(_WORD.findall(quote.lower()))
+    if len(q) < 4:
+        return ""
+    best, best_score = "", 0.0
+    for sent in _SENT_SPLIT.split(body):
+        sent = sent.strip()
+        if len(sent) < 25:
+            continue
+        w = set(_WORD.findall(sent.lower()))
+        if not w:
+            continue
+        # Containment, not Jaccard: a faithful quote of part of a long sentence
+        # should still match the sentence that contains it.
+        score = len(q & w) / len(q)
+        if score > best_score:
+            best, best_score = sent, score
+    if best_score < 0.6:
+        return ""
+    # The prompt text prefixes each section's first sentence with its heading
+    # ("Results: In diabetic animals…"), which never appears in the rendered
+    # article. Strip it or the highlight misses exactly those sentences.
+    return re.sub(r"^[A-Z][A-Za-z0-9 \-]{0,40}: (?=[A-Z(])", "", best)
+
+
 async def read_paper(paper: Paper, lang: str) -> dict:
     """A close structured reading of a single paper."""
     if not has_llm_key():
@@ -666,15 +705,17 @@ async def read_paper(paper: Paper, lang: str) -> dict:
     raw, _ = await _chat(_READ_SYSTEM, user, max_tokens=2500)
     data = _extract_json(raw)
     # The model is asked for {text, quote} but sometimes returns bare strings.
-    # Normalise to the object shape so the reader has one thing to render.
+    # Normalise to the object shape so the reader has one thing to render, and
+    # snap every quote onto a real sentence so the highlight cannot miss.
     for key in ("findings", "limitations", "not_established"):
         items = []
         for x in data.get(key) or []:
             if isinstance(x, str) and x.strip():
                 items.append({"text": x.strip(), "quote": ""})
             elif isinstance(x, dict) and (x.get("text") or "").strip():
+                raw = (x.get("quote") or "").strip()
                 items.append(
-                    {"text": x["text"].strip(), "quote": (x.get("quote") or "").strip()}
+                    {"text": x["text"].strip(), "quote": _snap_quote(body, raw) if raw else ""}
                 )
         data[key] = items
     return data
