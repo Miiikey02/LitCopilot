@@ -11,12 +11,13 @@ import Icon from './Icon'
 
 const collapse = (s) => (s || '').replace(/\s+/g, ' ').trim()
 
-// Scrolling is a plain scrollTop assignment with CSS `scroll-behavior: smooth`
-// doing the easing, rather than scrollIntoView or a requestAnimationFrame
-// tween. Both of those were verified to do nothing in at least one renderer
-// (a smooth scrollTo left scrollTop at 0; rAF delivered no frames at all),
-// and a highlight the reader never scrolls to is the same as no highlight.
-// This way the position is always correct and the animation is a bonus.
+// Jumping to a highlight is an instant scrollTop assignment. Everything that
+// eases — scrollIntoView, scrollTo({behavior:'smooth'}), a requestAnimationFrame
+// tween, even CSS scroll-behavior — was verified to leave the pane at scrollTop
+// 0 in a renderer that delivers no animation frames, silently stranding the
+// reader away from the sentence they clicked. Landing on it is the feature;
+// gliding there is not worth making the feature conditional. An instant jump is
+// also what "go to definition" does in an editor, which is the same gesture.
 
 // Locate each quote in a block. The model is asked to copy the sentence
 // exactly, but it drops a trailing clause often enough that an all-or-nothing
@@ -154,7 +155,7 @@ export default function ArticlePane({
     <div
       ref={scroller}
       onMouseUp={captureSelection}
-      className="relative h-full scroll-smooth overflow-y-auto bg-white px-8 py-7"
+      className="relative h-full overflow-y-auto bg-white px-8 py-7"
     >
       {warning && (
         <div className="mb-5 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm leading-6 text-amber-900">
