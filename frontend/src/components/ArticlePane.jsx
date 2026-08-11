@@ -11,6 +11,23 @@ import Icon from './Icon'
 
 const collapse = (s) => (s || '').replace(/\s+/g, ' ').trim()
 
+// Scrolling a container is done by hand rather than with scrollIntoView or
+// `behavior: 'smooth'`: both are no-ops in some renderers (verified — a smooth
+// scrollTo left scrollTop at 0 while a direct assignment moved it), and a
+// highlight the reader never sees is the same as no highlight at all.
+function easeScroll(box, to, ms = 420) {
+  const from = box.scrollTop
+  const delta = Math.max(0, to) - from
+  if (Math.abs(delta) < 2) return
+  const t0 = performance.now()
+  const step = (now) => {
+    const p = Math.min((now - t0) / ms, 1)
+    box.scrollTop = from + delta * (1 - Math.pow(1 - p, 3))
+    if (p < 1) requestAnimationFrame(step)
+  }
+  requestAnimationFrame(step)
+}
+
 // Locate each quote in a block. The model is asked to copy the sentence
 // exactly, but it drops a trailing clause often enough that an all-or-nothing
 // match would leave most findings unanchored; falling back to the opening of
@@ -89,9 +106,6 @@ export default function ArticlePane({
   const [sel, setSel] = useState(null) // {text, x, y}
 
   // Bring the highlighted sentence into view when the right pane asks for it.
-  // The offset is computed rather than delegated to scrollIntoView: inside this
-  // nested flex scroller that call left scrollTop at 0 with the target 2800px
-  // down, so the highlight was correct and invisible.
   useEffect(() => {
     if (!activeId || !scroller.current) return
     const box = scroller.current
@@ -102,7 +116,7 @@ export default function ArticlePane({
       box.getBoundingClientRect().top +
       box.scrollTop -
       box.clientHeight / 2
-    box.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
+    easeScroll(box, top)
   }, [activeId])
 
   const captureSelection = () => {

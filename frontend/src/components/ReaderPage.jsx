@@ -64,8 +64,11 @@ export default function ReaderPage() {
       : t('readerMode')
   }, [article, t])
 
+  // Same reason as the article pane: scrollIntoView is unreliable inside these
+  // nested scrollers, so pin the conversation to the bottom directly.
   useEffect(() => {
-    chatEnd.current?.scrollIntoView({ behavior: 'smooth' })
+    const box = chatEnd.current?.parentElement?.parentElement
+    if (box) box.scrollTop = box.scrollHeight
   }, [turns, chatting])
 
   // Every appraisal point that carries a source sentence becomes a highlight.
