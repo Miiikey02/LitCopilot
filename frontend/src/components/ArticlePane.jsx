@@ -64,13 +64,18 @@ const KIND_STYLE = {
 }
 
 function Marked({ text, highlights, activeId, onMarkClick }) {
-  const ranges = useMemo(() => findRanges(text, highlights), [text, highlights])
-  if (!ranges.length) return text
+  // Match against the same string that is rendered, with whitespace collapsed
+  // on both sides. Quotes are collapsed by the snapper, so leaving the XML's
+  // line breaks in the block made every multi-line sentence fail to match —
+  // silently, since a missing highlight looks exactly like "no source given".
+  const body = useMemo(() => collapse(text), [text])
+  const ranges = useMemo(() => findRanges(body, highlights), [body, highlights])
+  if (!ranges.length) return body
 
   const parts = []
   let last = 0
   ranges.forEach((r, i) => {
-    if (r.start > last) parts.push(text.slice(last, r.start))
+    if (r.start > last) parts.push(body.slice(last, r.start))
     const active = activeId === r.id
     parts.push(
       <mark
@@ -82,12 +87,12 @@ function Marked({ text, highlights, activeId, onMarkClick }) {
           KIND_STYLE[r.kind] || KIND_STYLE.finding
         } ${active ? 'ring-2 ring-blue-400 ring-offset-1' : ''}`}
       >
-        {text.slice(r.start, r.end)}
+        {body.slice(r.start, r.end)}
       </mark>
     )
     last = r.end
   })
-  if (last < text.length) parts.push(text.slice(last))
+  if (last < body.length) parts.push(body.slice(last))
   return parts
 }
 
