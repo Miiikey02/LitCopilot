@@ -521,6 +521,10 @@ applies inside contradictions and gaps as well as the answer.
 size, design specifics) you cannot see. Say what is unknown.
 4. A source flagged RETRACTED must not support a claim; if mentioned, state
 plainly that it is retracted.
+4b. Full text carries its own reference list. Studies mentioned INSIDE a source
+are not sources you may cite — you have not seen them. Attribute such a claim to
+the source you were actually given ("[Tribble, 2021] reports a completed trial"),
+never to the study it cites ("[Hui et al., 2020]").
 5. Write in the RESPONSE LANGUAGE stated in the user message, naturally.
 6. Do not reproduce source text verbatim — paraphrase.
 
