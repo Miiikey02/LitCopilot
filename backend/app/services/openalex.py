@@ -287,11 +287,33 @@ async def connected_papers(seed: dict, limit: int = 28) -> dict:
             }
         )
 
-    edges = []
+    # Bibliographic-coupling Jaccard is small in absolute terms — two papers
+    # citing 40 works each rarely overlap by much — so a fixed threshold leaves
+    # the map almost edgeless. Keep each paper's few strongest links instead,
+    # which is what makes the clusters legible.
+    scored: list[tuple[float, str, str]] = []
     for i, a in enumerate(all_ids):
         for b in all_ids[i + 1 :]:
-            s = similarity(a, b)
-            if s >= 0.06:  # below this the link is noise, not a relationship
-                edges.append({"source": a, "target": b, "weight": round(s, 3)})
+            sim = similarity(a, b)
+            if sim > 0:
+                scored.append((sim, a, b))
+
+    keep: dict[tuple[str, str], float] = {}
+    per_node: dict[str, int] = {}
+    TOP_PER_NODE = 3
+    for sim, a, b in sorted(scored, key=lambda x: -x[0]):
+        if per_node.get(a, 0) >= TOP_PER_NODE and per_node.get(b, 0) >= TOP_PER_NODE:
+            continue
+        keep[(a, b)] = sim
+        per_node[a] = per_node.get(a, 0) + 1
+        per_node[b] = per_node.get(b, 0) + 1
+
+    # Normalise weights to 0-1 across this graph so edge thickness is readable
+    # even when every absolute similarity is small.
+    top = max(keep.values(), default=1.0) or 1.0
+    edges = [
+        {"source": a, "target": b, "weight": round(min(sim / top, 1.0), 3)}
+        for (a, b), sim in keep.items()
+    ]
 
     return {"nodes": nodes, "edges": edges}
