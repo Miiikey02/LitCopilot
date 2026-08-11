@@ -10,7 +10,10 @@ const sourceLabel = {
   biorxiv: 'bioRxiv',
 }
 
-const SourceCard = React.forwardRef(function SourceCard({ paper, index, onSave }, ref) {
+const SourceCard = React.forwardRef(function SourceCard(
+  { paper, index, onSave, onRead },
+  ref
+) {
   const { t } = useTranslation()
   const [saved, setSaved] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -117,6 +120,16 @@ const SourceCard = React.forwardRef(function SourceCard({ paper, index, onSave }
           >
             <Icon name="download" className="mr-1" />{t('freeFullText')}
           </a>
+        )}
+        {onRead && (paper.doi || paper.source_id) && (
+          <button
+            type="button"
+            onClick={() => onRead(paper.doi || paper.source_id)}
+            className="text-sm font-medium text-slate-600 transition-colors hover:text-blue-700"
+          >
+            <Icon name="bookOpen" className="mr-1" />
+            {t('readPaper')}
+          </button>
         )}
         <CiteButton paper={paper} />
         {onSave && (

@@ -65,6 +65,14 @@ export const deepResearch = (query, lang, includePreprints = true) =>
     include_preprints: includePreprints,
   })
 
+// --- Single paper: deep read, graph, entities, evidence ---
+export const paperRead = (identifier, lang) =>
+  jsonPost('/api/paper/read', { identifier, lang: lang || null })
+export const paperConnected = (identifier) =>
+  jsonPost('/api/paper/connected', { identifier })
+export const paperEvidence = (identifier, lang, focus) =>
+  jsonPost('/api/paper/evidence', { identifier, lang: lang || null, focus: focus || null })
+
 // --- Research agent (multi-turn follow-ups) ---
 export const chat = (sessionId, message, lang, conversationId) =>
   jsonPost('/api/chat', {

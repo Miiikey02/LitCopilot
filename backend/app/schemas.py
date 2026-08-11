@@ -233,6 +233,74 @@ class DeepResearchResponse(BaseModel):
     warning: Optional[str] = None
 
 
+# --- Single paper: deep read, graph, entities ---
+
+
+class PaperRequest(BaseModel):
+    # DOI, PMID, OpenAlex id, or an exact title.
+    identifier: str
+    lang: Optional[str] = None
+
+
+class DeepRead(BaseModel):
+    question: str = ""
+    design: str = ""
+    sample: str = ""
+    findings: list[str] = []
+    limitations: list[str] = []
+    not_established: list[str] = []
+    evidence_type: str = ""
+    takeaway: str = ""
+
+
+class PaperReadResponse(BaseModel):
+    paper: SourceCard
+    has_full_text: bool = False
+    read: Optional[DeepRead] = None
+    entities: dict = {}
+    warning: Optional[str] = None
+
+
+class GraphNode(BaseModel):
+    id: str
+    title: str
+    authors: list[str] = []
+    year: Optional[int] = None
+    venue: str = ""
+    doi: str = ""
+    url: str = ""
+    citations: int = 0
+    is_seed: bool = False
+    retraction_status: str = ""
+    similarity: float = 0.0
+
+
+class GraphEdge(BaseModel):
+    source: str
+    target: str
+    weight: float
+
+
+class ConnectedResponse(BaseModel):
+    nodes: list[GraphNode] = []
+    edges: list[GraphEdge] = []
+    warning: Optional[str] = None
+
+
+class GraphEvidenceRequest(BaseModel):
+    identifier: str
+    lang: Optional[str] = None
+    # Restrict the synthesis to a question, e.g. clinical evidence only.
+    focus: Optional[str] = None
+
+
+class GraphEvidenceResponse(BaseModel):
+    answer: str = ""
+    sources: list[SourceCard] = []
+    session_id: str = ""
+    warning: Optional[str] = None
+
+
 # --- Clinical trials ---
 
 

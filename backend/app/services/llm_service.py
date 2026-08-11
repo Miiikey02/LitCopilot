@@ -593,3 +593,99 @@ async def synthesize_deep(
         "contradictions": [c for c in data.get("contradictions", []) if c],
         "gaps": [g for g in data.get("gaps", []) if g],
     }
+
+
+# --- Single-paper deep read (文章精读) --------------------------------------
+
+
+_READ_SYSTEM = """You are Gaze, reading ONE paper closely for a researcher.
+
+You are given the paper's text. It is either FULL TEXT (methods, results,
+limitations visible) or ABSTRACT ONLY. Follow these rules WITHOUT EXCEPTION:
+
+1. Report only what the provided text supports. Never infer a sample size, a
+statistic or a method that is not stated.
+2. When the text is ABSTRACT ONLY, say so in the fields you cannot fill, using
+the response language — do not guess at methodology.
+3. If the paper is marked retracted, lead with that.
+4. Write in the RESPONSE LANGUAGE stated in the user message.
+5. Paraphrase; do not reproduce sentences verbatim.
+
+Return ONLY a JSON object of this exact shape:
+{
+  "question": "<what the paper set out to answer>",
+  "design": "<study design and setting; 'not stated' if absent>",
+  "sample": "<population/sample size/model; 'not stated' if absent>",
+  "findings": ["<key finding, with the number if the text gives one>"],
+  "limitations": ["<limitation the authors state, or that is evident>"],
+  "not_established": ["<what this paper does NOT show, that a reader might wrongly infer>"],
+  "evidence_type": "rct|cohort|case|preclinical|invitro|review|guideline|other",
+  "takeaway": "<2-3 sentences: what a researcher should take from this>"
+}"""
+
+
+async def read_paper(paper: Paper, lang: str) -> dict:
+    """A close structured reading of a single paper."""
+    if not has_llm_key():
+        raise RuntimeError("DEEPSEEK_API_KEY not configured")
+    body = paper.full_text or paper.abstract
+    if not body:
+        raise ValueError("no text available for this paper")
+    kind = "FULL TEXT" if paper.full_text else "ABSTRACT ONLY"
+    flag = ""
+    if paper.retraction_status == "retracted":
+        flag = "\nNOTE: This paper has been RETRACTED."
+    elif paper.retraction_status == "concern":
+        flag = "\nNOTE: This paper carries an expression of concern."
+    user = (
+        f"RESPONSE LANGUAGE: {_lang_name(lang)}.{flag}\n\n"
+        f"Title: {paper.title}\n"
+        f"Authors: {', '.join(paper.authors[:8])}\n"
+        f"Year: {paper.year}    Venue: {paper.venue}\n"
+        f"Text available: {kind}\n\n"
+        f"{body[:24000]}"
+    )
+    raw, _ = await _chat(_READ_SYSTEM, user, max_tokens=2500)
+    data = _extract_json(raw)
+    for key in ("findings", "limitations", "not_established"):
+        data[key] = [x for x in (data.get(key) or []) if x]
+    return data
+
+
+_ENTITY_SYSTEM = """Extract the biomedical entities this paper actually
+discusses. Only entities named in the text — never inferred or expanded.
+
+Return ONLY a JSON object of this exact shape:
+{
+  "genes": ["<official symbol where possible, e.g. TP53>"],
+  "proteins": ["..."],
+  "pathways": ["<named pathway or signalling cascade>"],
+  "drugs": ["..."],
+  "diseases": ["..."],
+  "methods": ["<key experimental method>"]
+}
+Every list may be empty. Cap each list at 12 of the most central entities."""
+
+
+async def extract_entities(paper: Paper) -> dict:
+    """Genes/proteins/pathways/drugs named in the paper.
+
+    Extraction only — this is NOT statistical pathway enrichment, and the UI
+    says so. It gives a researcher fast links into the reference databases.
+    """
+    if not has_llm_key():
+        return {}
+    body = paper.full_text or paper.abstract
+    if not body:
+        return {}
+    try:
+        raw, _ = await _chat(
+            _ENTITY_SYSTEM,
+            f"Title: {paper.title}\n\n{body[:18000]}",
+            max_tokens=1200,
+        )
+        data = _extract_json(raw)
+    except Exception:  # noqa: BLE001 - entities are a bonus, never fatal
+        return {}
+    keys = ("genes", "proteins", "pathways", "drugs", "diseases", "methods")
+    return {k: [x for x in (data.get(k) or []) if x][:12] for k in keys}

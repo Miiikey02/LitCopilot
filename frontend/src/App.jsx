@@ -13,6 +13,7 @@ import Icon from './components/Icon'
 import SearchProgress from './components/SearchProgress'
 import HeroEmpty from './components/HeroEmpty'
 import SegmentedControl from './components/SegmentedControl'
+import PaperView from './components/PaperView'
 import DeepResearchView from './components/DeepResearchView'
 import { supabase, authEnabled } from './lib/supabase'
 import { exportMarkdown, exportPdf } from './lib/exportResult'
@@ -41,6 +42,7 @@ export default function App() {
   const [conversationId, setConversationId] = useState(null)
   const [deepMode, setDeepMode] = useState(false)
   const [deep, setDeep] = useState(null) // the deep-research brief, when run
+  const [readingPaper, setReadingPaper] = useState(null) // identifier under 精读
   // null while we're still restoring a persisted session on first paint.
   const [session, setSession] = useState(authEnabled ? null : 'disabled')
   const [teams, setTeams] = useState([])
@@ -491,6 +493,15 @@ export default function App() {
 
         {/* Deep research: the brief, disagreements, gaps and the notebook —
             shown above the usual sources panel. */}
+        {readingPaper && (
+          <div className="mb-6">
+            <PaperView
+              identifier={readingPaper}
+              onClose={() => setReadingPaper(null)}
+            />
+          </div>
+        )}
+
         {deep && !loading && (
           <div className="mb-6">
             <DeepResearchView
@@ -646,6 +657,7 @@ export default function App() {
                       paper={p}
                       index={i}
                       onSave={onSavePaper}
+                      onRead={setReadingPaper}
                       ref={(el) => {
                         if (el) cardRefs.current[p.citation_key] = el
                       }}

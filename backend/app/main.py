@@ -21,6 +21,12 @@ from .config import MAX_RESULTS, has_llm_key
 from .routers import library
 from .schemas import (
     ChatRequest,
+    ConnectedResponse,
+    DeepRead,
+    GraphEvidenceRequest,
+    GraphEvidenceResponse,
+    PaperReadResponse,
+    PaperRequest,
     ChatResponse,
     DeepResearchRequest,
     DeepResearchResponse,
@@ -32,7 +38,9 @@ from .schemas import (
     TrialsResponse,
 )
 from .services import llm_service, sessions
-from .services.pubmed import fetch_full_text
+from .services.openalex import connected_papers, resolve_work
+from .services.openalex import _to_paper as _oa_to_paper
+from .services.pubmed import fetch_by_doi, fetch_full_text
 from .services.retrieval import dedupe, looks_like_known_item, retrieve
 from .services.trials import find_trials
 
@@ -251,6 +259,150 @@ async def deep_research(
         sources=cards,
         sub_questions=notebook,
         full_text_read=read,
+        session_id=session_id,
+        warning=warning,
+    )
+
+
+async def _resolve_with_text(identifier: str):
+    """Resolve an identifier to a Paper, preferring a version with full text.
+
+    OpenAlex resolves almost anything and gives the graph fields; PubMed is then
+    asked for the same DOI because it carries curated abstracts and the PMC link
+    that makes open-access full text reachable.
+    """
+    work = await resolve_work(identifier)
+    if work is None:
+        return None, None
+    paper = _oa_to_paper(work)
+    if paper.doi:
+        pm = await fetch_by_doi(paper.doi)
+        if pm is not None:
+            if not paper.abstract and pm.abstract:
+                paper.abstract = pm.abstract
+            if pm.oa_url and not paper.oa_url.startswith("https://pmc."):
+                paper.oa_url = pm.oa_url
+            if pm.retraction_status and not paper.retraction_status:
+                paper.retraction_status = pm.retraction_status
+    await fetch_full_text([paper], limit=1)
+    return work, paper
+
+
+@app.post("/api/paper/read", response_model=PaperReadResponse)
+async def paper_read(req: PaperRequest) -> PaperReadResponse:
+    """A close reading of one paper, from its full text where that is open."""
+    work, paper = await _resolve_with_text(req.identifier)
+    if paper is None:
+        raise HTTPException(status_code=404, detail="Paper not found")
+    lang = req.lang or llm_service.detect_language(req.identifier)
+
+    if not has_llm_key():
+        return PaperReadResponse(
+            paper=SourceCard(**paper.to_card()),
+            has_full_text=bool(paper.full_text),
+            warning=(
+                "未配置 DEEPSEEK_API_KEY，无法生成精读。"
+                if lang == "zh"
+                else "DEEPSEEK_API_KEY is not configured; deep read is unavailable."
+            ),
+        )
+    read = None
+    warning = None
+    try:
+        read = DeepRead(**await llm_service.read_paper(paper, lang))
+    except Exception:  # noqa: BLE001
+        warning = (
+            "精读生成失败，请稍后重试。"
+            if lang == "zh"
+            else "Could not generate the deep read. Please retry."
+        )
+    entities = await llm_service.extract_entities(paper)
+    return PaperReadResponse(
+        paper=SourceCard(**paper.to_card()),
+        has_full_text=bool(paper.full_text),
+        read=read,
+        entities=entities,
+        warning=warning,
+    )
+
+
+@app.post("/api/paper/connected", response_model=ConnectedResponse)
+async def paper_connected(req: PaperRequest) -> ConnectedResponse:
+    """The similarity graph around one paper (bibliographic coupling)."""
+    work = await resolve_work(req.identifier)
+    if work is None:
+        raise HTTPException(status_code=404, detail="Paper not found")
+    try:
+        graph = await connected_papers(work)
+    except Exception:  # noqa: BLE001
+        return ConnectedResponse(nodes=[], edges=[], warning="graph unavailable")
+    return ConnectedResponse(**graph)
+
+
+@app.post("/api/paper/evidence", response_model=GraphEvidenceResponse)
+async def paper_evidence(
+    req: GraphEvidenceRequest, user: str | None = Depends(optional_user)
+) -> GraphEvidenceResponse:
+    """Synthesise what the papers around this one actually establish.
+
+    The corpus is the seed plus its graph neighbours, so the answer is about
+    this line of work rather than a fresh topical search.
+    """
+    work, seed = await _resolve_with_text(req.identifier)
+    if seed is None:
+        raise HTTPException(status_code=404, detail="Paper not found")
+    lang = req.lang or "zh"
+
+    graph = await connected_papers(work, limit=18)
+    ids = [n["id"] for n in graph["nodes"] if not n["is_seed"]][:14]
+    neighbours = []
+    if ids:
+        from .services.openalex import _batch_works  # local: graph-only helper
+
+        import httpx as _httpx
+
+        try:
+            async with _httpx.AsyncClient() as client:
+                neighbours = [_oa_to_paper(w) for w in await _batch_works(client, ids)]
+        except Exception:  # noqa: BLE001
+            neighbours = []
+
+    papers = dedupe([seed] + neighbours)
+    await fetch_full_text(papers, limit=4)
+
+    if not has_llm_key():
+        return GraphEvidenceResponse(
+            sources=[SourceCard(**p.to_card()) for p in papers],
+            warning="DEEPSEEK_API_KEY is not configured.",
+        )
+
+    focus = req.focus or (
+        "这些文献中有哪些临床证据（人体研究/随机对照试验），哪些仍停留在临床前？"
+        if lang == "zh"
+        else "What clinical evidence (human studies/RCTs) exists across these papers, and what remains preclinical?"
+    )
+    warning = None
+    try:
+        brief = await llm_service.synthesize_deep(
+            focus, lang, papers, [{"question": focus, "search": ""}]
+        )
+        answer = brief["answer"]
+    except Exception:  # noqa: BLE001
+        answer = ""
+        warning = (
+            "证据综合失败，请稍后重试。"
+            if lang == "zh"
+            else "Could not synthesise the evidence. Please retry."
+        )
+
+    seed_msgs = [{"role": "user", "content": focus}]
+    if answer:
+        seed_msgs.append({"role": "assistant", "content": answer})
+    session_id = sessions.create_session(papers, seed_msgs, lang)
+
+    return GraphEvidenceResponse(
+        answer=answer,
+        sources=[SourceCard(**p.to_card()) for p in papers],
         session_id=session_id,
         warning=warning,
     )
