@@ -48,6 +48,7 @@ from .services.pubmed import (
     fetch_article,
     fetch_by_doi,
     fetch_full_text,
+    text_from_blocks,
 )
 from .services.retrieval import dedupe, looks_like_known_item, retrieve
 from .services.trials import find_trials
@@ -292,7 +293,14 @@ async def _resolve_with_text(identifier: str):
                 paper.oa_url = pm.oa_url
             if pm.retraction_status and not paper.retraction_status:
                 paper.retraction_status = pm.retraction_status
-    await fetch_full_text([paper], limit=1)
+    # Prefer the article the reading pane renders, so a sentence the model
+    # quotes is a sentence that exists on screen — and so the two requests
+    # 精读模式 fires in parallel share one PMC fetch instead of racing for it.
+    article = await fetch_article(_pmcid_from(paper))
+    if article.get("blocks"):
+        paper.full_text = text_from_blocks(article["blocks"])[:20000]
+    else:
+        await fetch_full_text([paper], limit=1)
     return work, paper
 
 

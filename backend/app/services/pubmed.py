@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import asyncio
 import re
+from collections import OrderedDict
+from time import monotonic
 import xml.etree.ElementTree as ET
 
 import httpx
@@ -327,10 +329,53 @@ def _license_of(root: ET.Element) -> str:
     return (_text(lic) or href).strip()[:300]
 
 
+# 精读模式 asks for the article and the close reading at the same moment, and
+# both need the same PMC record. Fetching it twice doubles the load on a
+# rate-limited endpoint and, when the second request loses, the reading quietly
+# falls back to the abstract — which also silently drops every highlight. One
+# short-lived cache means whichever request arrives first pays for both.
+_ARTICLE_CACHE: "OrderedDict[str, tuple[float, dict]]" = OrderedDict()
+_ARTICLE_TTL = 1800.0
+_ARTICLE_MAX = 64
+
+
+def _cache_get(pmcid: str) -> dict | None:
+    hit = _ARTICLE_CACHE.get(pmcid)
+    if not hit:
+        return None
+    stamp, value = hit
+    if monotonic() - stamp > _ARTICLE_TTL:
+        _ARTICLE_CACHE.pop(pmcid, None)
+        return None
+    _ARTICLE_CACHE.move_to_end(pmcid)
+    return value
+
+
+def text_from_blocks(blocks: list[dict]) -> str:
+    """The reading blocks as one string, for prompting.
+
+    Deliberately the same text the reader sees, so a sentence the model quotes
+    is a sentence that exists in the pane. Headings are kept on their own line
+    rather than glued to the following paragraph, so sentence splitting never
+    produces a heading-prefixed sentence that cannot be found on screen.
+    """
+    parts = []
+    for b in blocks:
+        t = b.get("text", "").strip()
+        if not t:
+            continue
+        label = b.get("label", "")
+        parts.append(f"{label}. {t}" if label else t)
+    return "\n\n".join(parts)
+
+
 async def fetch_article(pmcid: str) -> dict:
     """One open-access article as reading blocks. Empty dict when unavailable."""
     if not pmcid:
         return {}
+    cached = _cache_get(pmcid)
+    if cached is not None:
+        return cached
     try:
         await _limiter.acquire()
         async with httpx.AsyncClient() as client:
@@ -366,7 +411,12 @@ async def fetch_article(pmcid: str) -> dict:
         blocks.extend(extra)
     for i, b in enumerate(blocks):
         b["id"] = f"b{i}"
-    return {"blocks": blocks, "license": _license_of(root)}
+    result = {"blocks": blocks, "license": _license_of(root)}
+    _ARTICLE_CACHE[pmcid] = (monotonic(), result)
+    _ARTICLE_CACHE.move_to_end(pmcid)
+    while len(_ARTICLE_CACHE) > _ARTICLE_MAX:
+        _ARTICLE_CACHE.popitem(last=False)
+    return result
 
 
 async def fetch_full_text(papers: list[Paper], limit: int = 8) -> int:
