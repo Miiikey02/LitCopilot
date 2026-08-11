@@ -12,16 +12,25 @@ const STAGES = [
   { key: 'stageSynthesize', icon: 'quote', at: 7000 },
 ]
 
-export default function SearchProgress() {
+const DEEP_STAGES = [
+  { key: 'stagePlan', icon: 'sparkles', at: 0 },
+  { key: 'stageRetrieve', icon: 'search', at: 6000 },
+  { key: 'stageReadFull', icon: 'bookOpen', at: 16000 },
+  { key: 'stageSynthesize', icon: 'quote', at: 26000 },
+]
+
+export default function SearchProgress({ deep = false }) {
   const { t } = useTranslation()
   const [stage, setStage] = useState(0)
+  const stages = deep ? DEEP_STAGES : STAGES
 
   useEffect(() => {
-    const timers = STAGES.slice(1).map((s, i) =>
+    setStage(0)
+    const timers = stages.slice(1).map((s, i) =>
       setTimeout(() => setStage(i + 1), s.at)
     )
     return () => timers.forEach(clearTimeout)
-  }, [])
+  }, [deep])
 
   return (
     <div className="animate-rise">
@@ -32,7 +41,7 @@ export default function SearchProgress() {
         </div>
 
         <ul className="space-y-2">
-          {STAGES.map((s, i) => {
+          {stages.map((s, i) => {
             const done = i < stage
             const active = i === stage
             return (

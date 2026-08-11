@@ -37,8 +37,23 @@ const SourceCard = React.forwardRef(function SourceCard({ paper, index, onSave }
         <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
           {index + 1} · {sourceLabel[paper.source] || paper.source}
         </span>
-        <span className="text-xs font-medium text-blue-700">
-          [{paper.citation_key}]
+        <span className="flex items-center gap-1.5">
+          {paper.evidence_type && (
+            <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-xs text-indigo-700">
+              {t(`ev_${paper.evidence_type}`, paper.evidence_type)}
+            </span>
+          )}
+          {paper.has_full_text && (
+            <span
+              className="rounded-full bg-green-50 px-2 py-0.5 text-xs text-green-700"
+              title={t('fullTextRead')}
+            >
+              <Icon name="bookOpen" />
+            </span>
+          )}
+          <span className="text-xs font-medium text-blue-700">
+            [{paper.citation_key}]
+          </span>
         </span>
       </div>
 

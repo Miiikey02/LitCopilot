@@ -39,6 +39,10 @@ class SourceCard(BaseModel):
     oa_url: str = ""
     # "" | "retracted" | "concern" — research-integrity warning for the card.
     retraction_status: str = ""
+    # Study design assigned during deep research ("rct", "cohort", ...).
+    evidence_type: str = ""
+    # Whether the brief was written from this paper's full text or its abstract.
+    has_full_text: bool = False
 
 
 class SearchResponse(BaseModel):
@@ -196,6 +200,37 @@ class HistoryItem(BaseModel):
     english_query: str
     result_count: int
     created_at: str
+
+
+# --- Deep research ---
+
+
+class DeepResearchRequest(BaseModel):
+    query: str
+    lang: Optional[str] = None
+    include_preprints: bool = True
+    # Papers to retrieve per sub-question; the merged set is capped separately.
+    per_question: int = 8
+
+
+class SubQuestion(BaseModel):
+    question: str
+    search: str
+    found: int = 0  # papers retrieved for this sub-question
+
+
+class DeepResearchResponse(BaseModel):
+    original_query: str
+    detected_lang: str
+    answer: str
+    contradictions: list[str] = []
+    gaps: list[str] = []
+    sources: list[SourceCard] = []
+    # The auditable notebook: what was asked, searched and read.
+    sub_questions: list[SubQuestion] = []
+    full_text_read: int = 0
+    session_id: str = ""
+    warning: Optional[str] = None
 
 
 # --- Clinical trials ---

@@ -11,6 +11,7 @@ import BulkExport from './components/BulkExport'
 import AuthPanel from './components/AuthPanel'
 import Icon from './components/Icon'
 import SearchProgress from './components/SearchProgress'
+import DeepResearchView from './components/DeepResearchView'
 import { supabase, authEnabled } from './lib/supabase'
 import { exportMarkdown, exportPdf } from './lib/exportResult'
 
@@ -36,6 +37,8 @@ export default function App() {
   const [chatTurns, setChatTurns] = useState([]) // follow-up research thread
   const [chatLoading, setChatLoading] = useState(false)
   const [conversationId, setConversationId] = useState(null)
+  const [deepMode, setDeepMode] = useState(false)
+  const [deep, setDeep] = useState(null) // the deep-research brief, when run
   // null while we're still restoring a persisted session on first paint.
   const [session, setSession] = useState(authEnabled ? null : 'disabled')
   const [teams, setTeams] = useState([])
@@ -125,7 +128,25 @@ export default function App() {
       setTrials(null) // clear trials from any previous search
       setChatTurns([]) // start a fresh research thread for the new search
       setConversationId(null)
+      setDeep(null)
       try {
+        if (overrides.deep ?? deepMode) {
+          // Deep research returns a brief plus its notebook; reuse the same
+          // sources panel and follow-up session as a quick search.
+          const d = await api.deepResearch(text, lang, includePreprints)
+          setDeep(d)
+          setResult({
+            original_query: d.original_query,
+            detected_lang: d.detected_lang,
+            english_query: d.sub_questions.map((x) => x.search).join(' ; '),
+            answer: d.answer,
+            sources: d.sources,
+            session_id: d.session_id,
+            warning: d.warning,
+          })
+          loadHistory()
+          return
+        }
         const data = await api.search(text, lang, limit, includePreprints, sort)
         setResult(data)
         loadHistory()
@@ -136,7 +157,7 @@ export default function App() {
         setLoading(false)
       }
     },
-    [loading, loadHistory, limit, includePreprints, sortBy, t, i18n]
+    [loading, loadHistory, limit, includePreprints, sortBy, deepMode, t, i18n]
   )
 
   const onFindTrials = async () => {
@@ -372,6 +393,28 @@ export default function App() {
             </button>
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-slate-500">
+            {/* Quick search answers from abstracts; deep research plans
+                sub-questions and reads open-access full text. */}
+            <div className="mr-1 inline-flex rounded-lg border border-slate-300 bg-white p-0.5">
+              {[
+                [false, t('quickMode'), 'search'],
+                [true, t('deepMode'), 'sparkles'],
+              ].map(([mode, label, icon]) => (
+                <button
+                  key={String(mode)}
+                  type="button"
+                  onClick={() => setDeepMode(mode)}
+                  className={`rounded-md px-2.5 py-1 text-sm font-medium transition-colors ${
+                    deepMode === mode
+                      ? 'bg-blue-600 text-white'
+                      : 'text-slate-600 hover:bg-slate-50'
+                  }`}
+                >
+                  <Icon name={icon} className="mr-1" />
+                  {label}
+                </button>
+              ))}
+            </div>
             <label htmlFor="result-limit">{t('resultsCount')}</label>
             <select
               id="result-limit"
@@ -427,7 +470,14 @@ export default function App() {
           </div>
         </form>
 
-        {loading && <SearchProgress />}
+        {deepMode && !result && !loading && (
+          <p className="mb-4 flex items-start gap-1.5 rounded-lg bg-blue-50/70 px-3 py-2 text-xs leading-5 text-blue-800">
+            <Icon name="sparkles" className="mt-0.5 shrink-0" />
+            {t('deepModeHint')}
+          </p>
+        )}
+
+        {loading && <SearchProgress deep={deepMode} />}
 
         {error && (
           <div className="mb-6 rounded-lg border border-red-200 bg-red-50 p-4 text-red-800">
@@ -450,6 +500,18 @@ export default function App() {
                 onClear={onClearHistory}
               />
             </div>
+          </div>
+        )}
+
+        {/* Deep research: the brief, disagreements, gaps and the notebook —
+            shown above the usual sources panel. */}
+        {deep && !loading && (
+          <div className="mb-6">
+            <DeepResearchView
+              result={deep}
+              citationKeys={citationKeys}
+              onCite={onCite}
+            />
           </div>
         )}
 

@@ -5,6 +5,7 @@ NCBI's rate policy (3/sec anonymous, 10/sec with an API key).
 """
 from __future__ import annotations
 
+import asyncio
 import xml.etree.ElementTree as ET
 
 import httpx
@@ -219,3 +220,71 @@ async def fetch_by_doi(doi: str) -> Paper | None:
             return papers[0] if papers else None
     except (httpx.HTTPError, ValueError, KeyError):
         return None
+
+
+# --- Open-access full text (PMC) ------------------------------------------
+
+# Sections that carry the findings. Skip references/acknowledgements, which are
+# long and add nothing the model can reason from.
+_SKIP_SECTIONS = ("reference", "acknowledg", "author contribution",
+                  "competing interest", "supplementary", "funding")
+
+
+def _pmcid_from(paper: Paper) -> str:
+    """PMC id, recovered from the oa_url we stored at parse time."""
+    if "pmc.ncbi.nlm.nih.gov/articles/" not in (paper.oa_url or ""):
+        return ""
+    tail = paper.oa_url.rstrip("/").rsplit("/", 1)[-1]
+    return tail if tail.upper().startswith("PMC") else ""
+
+
+def _extract_body(root: ET.Element) -> str:
+    """Plain text of an article body, section by section."""
+    parts: list[str] = []
+    for sec in root.iter():
+        if sec.tag != "sec":
+            continue
+        title = _text(sec.find("title")).strip()
+        if title and any(s in title.lower() for s in _SKIP_SECTIONS):
+            continue
+        paras = [_text(p) for p in sec.findall("p")]
+        body = " ".join(t for t in paras if t)
+        if body:
+            parts.append(f"{title}: {body}" if title else body)
+    if not parts:  # some records have loose <p> with no <sec>
+        parts = [_text(p) for p in root.iter("p")]
+    return " ".join(p for p in parts if p).strip()
+
+
+async def fetch_full_text(papers: list[Paper], limit: int = 8) -> int:
+    """Fill `full_text` for open-access papers. Returns how many were read.
+
+    Only PMC-hosted open-access articles are fetched — that is the text NCBI
+    serves freely through E-utilities. Paywalled papers keep their abstract.
+    Bounded because each paper is a separate rate-limited request, and fails
+    soft so a slow or missing article never breaks a run.
+    """
+    targets = [p for p in papers if not p.full_text and _pmcid_from(p)][:limit]
+    if not targets:
+        return 0
+
+    async def one(paper: Paper) -> bool:
+        pmcid = _pmcid_from(paper)
+        try:
+            await _limiter.acquire()
+            async with httpx.AsyncClient() as client:
+                params = _common_params() | {"db": "pmc", "id": pmcid, "retmode": "xml"}
+                r = await client.get(f"{EUTILS}/efetch.fcgi", params=params, timeout=30)
+                r.raise_for_status()
+                body = _extract_body(ET.fromstring(r.text))
+        except (httpx.HTTPError, ET.ParseError, ValueError):
+            return False
+        # Very short bodies mean the OA text wasn't actually served; the
+        # abstract we already have is better than a stub.
+        if len(body) < 500:
+            return False
+        paper.full_text = body[:20000]
+        return True
+
+    results = await asyncio.gather(*[one(p) for p in targets], return_exceptions=True)
+    return sum(1 for r in results if r is True)

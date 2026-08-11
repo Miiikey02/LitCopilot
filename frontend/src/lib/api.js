@@ -57,6 +57,14 @@ export const search = (
     sort,
   })
 
+// --- Deep research (planned multi-step review) ---
+export const deepResearch = (query, lang, includePreprints = true) =>
+  jsonPost('/api/deep-research', {
+    query,
+    lang: lang || null,
+    include_preprints: includePreprints,
+  })
+
 // --- Research agent (multi-turn follow-ups) ---
 export const chat = (sessionId, message, lang, conversationId) =>
   jsonPost('/api/chat', {

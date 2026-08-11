@@ -438,3 +438,158 @@ async def localize_papers(papers: list[Paper], question: str, lang: str) -> None
         idx = s.get("index", 0) - 1
         if 0 <= idx < len(papers):
             _set_localized(papers[idx], s.get("title_localized", ""), s.get("relevance", ""))
+
+
+# --- Deep research: plan, evidence typing, contradictions ------------------
+
+
+_PLAN_SYSTEM = """You plan a biomedical literature review.
+
+Given one research question, break it into 3-5 focused sub-questions that
+together cover it, the way a careful reviewer would: mechanism, evidence in
+humans, comparative effectiveness, safety, gaps — whichever actually apply.
+A complex question searched as one keyword string misses most of the literature.
+
+For each sub-question also give a concise ENGLISH search string (medical
+terminology, MeSH-style where natural, under 20 words) — PubMed and OpenAlex are
+English-only.
+
+Return ONLY a JSON object of this exact shape:
+{"sub_questions": [{"question": "<in the response language>",
+                    "search": "<english search string>"}]}"""
+
+
+async def plan_subquestions(query: str, lang: str) -> list[dict]:
+    """Decompose a research question into searchable sub-questions."""
+    if not has_llm_key():
+        return [{"question": query, "search": query}]
+    user = (
+        f"RESPONSE LANGUAGE: {_lang_name(lang)}.\n\n"
+        f"Research question:\n{query}"
+    )
+    try:
+        raw, _ = await _chat(_PLAN_SYSTEM, user, max_tokens=800)
+        data = _extract_json(raw)
+    except Exception:  # noqa: BLE001 - fall back to a single pass
+        return [{"question": query, "search": await expand_query(query, lang)}]
+    subs = []
+    for s in data.get("sub_questions", [])[:5]:
+        q = (s.get("question") or "").strip()
+        search = (s.get("search") or "").strip()
+        if q and search:
+            subs.append({"question": q, "search": search})
+    return subs or [{"question": query, "search": await expand_query(query, lang)}]
+
+
+def _format_evidence_for_prompt(papers: list[Paper]) -> str:
+    """Like the synthesis block, but prefers full text when we have it."""
+    blocks = []
+    for i, p in enumerate(papers, 1):
+        flag = ""
+        if p.retraction_status == "retracted":
+            flag = "\n    ⚠ INTEGRITY: RETRACTED — do not treat as evidence."
+        elif p.retraction_status == "concern":
+            flag = "\n    ⚠ INTEGRITY: expression of concern."
+        body = p.full_text or p.abstract
+        kind = "FULL TEXT" if p.full_text else "ABSTRACT ONLY"
+        blocks.append(
+            f"--- Source {i} of {len(papers)} — cite this ONLY as "
+            f"[{p.citation_key()}]{flag}\n"
+            f"    title: {p.title}\n"
+            f"    authors: {', '.join(p.authors[:6])}\n"
+            f"    year: {p.year}    venue: {p.venue}\n"
+            f"    evidence available: {kind}\n"
+            f"    text: {body[:9000]}"
+        )
+    return "\n\n".join(blocks)
+
+
+_DEEP_SYSTEM = """You are Gaze, writing a research brief for a biomedical
+researcher who is accountable for getting it right.
+
+You are given the researcher's question, the sub-questions it was broken into,
+and numbered sources. Some sources include FULL TEXT (methods, sample sizes,
+limitations); others are ABSTRACT ONLY. Follow these rules WITHOUT EXCEPTION:
+
+1. Use ONLY the provided sources. Never invent findings, numbers or papers.
+2. Cite every substantive claim inline using the exact [citation_key] token
+shown for that source, e.g. [Smith, 2021]. NEVER cite by number such as [1],
+[3], [1,2,7] or [[3]] — the source numbers are for your reference only and a
+numeric citation is unusable. Always write the [Surname, Year] token. This
+applies inside contradictions and gaps as well as the answer.
+3. Where a source is ABSTRACT ONLY, do not assert methodological detail (sample
+size, design specifics) you cannot see. Say what is unknown.
+4. A source flagged RETRACTED must not support a claim; if mentioned, state
+plainly that it is retracted.
+5. Write in the RESPONSE LANGUAGE stated in the user message, naturally.
+6. Do not reproduce source text verbatim — paraphrase.
+
+Produce a structured brief. For evidence_type use exactly one of:
+"rct" (randomised trial), "cohort" (observational/cohort/case-control),
+"case" (case report/series), "preclinical" (animal/in vivo model),
+"invitro" (cell/molecular), "review" (review/meta-analysis/synthesis),
+"guideline", or "other".
+
+Return ONLY a JSON object of this exact shape:
+{
+  "answer": "<the cited brief, 3-6 paragraphs, in the response language>",
+  "contradictions": ["<where studies disagree, with citations>"],
+  "gaps": ["<what the evidence does not yet answer>"],
+  "sources": [
+    {"index": 1, "title_localized": "...", "relevance": "...",
+     "evidence_type": "rct"}
+  ]
+}
+contradictions and gaps may be empty lists, but only if genuinely none apply."""
+
+
+async def synthesize_deep(
+    query: str, lang: str, papers: list[Paper], sub_questions: list[dict]
+) -> dict:
+    """Write the structured brief: answer, contradictions, gaps, typed sources."""
+    if not has_llm_key():
+        raise RuntimeError("DEEPSEEK_API_KEY not configured")
+    if not papers:
+        return {
+            "answer": (
+                "未能检索到相关文献，无法给出有依据的回答。"
+                if lang == "zh"
+                else "No relevant literature was retrieved, so no grounded answer can be given."
+            ),
+            "contradictions": [],
+            "gaps": [],
+        }
+    subs = "\n".join(f"- {s['question']}" for s in sub_questions)
+    user = (
+        f"RESPONSE LANGUAGE: {_lang_name(lang)} — write everything in "
+        f"{_lang_name(lang)}.\n\n"
+        f"Research question:\n{query}\n\n"
+        f"Sub-questions investigated:\n{subs}\n\n"
+        f"Sources:\n{_format_evidence_for_prompt(papers)}"
+    )
+    data = None
+    last_err: Exception | None = None
+    for max_tokens in (5000, 7000):
+        raw, finish = await _chat(_DEEP_SYSTEM, user, max_tokens=max_tokens)
+        try:
+            candidate = _extract_json(raw)
+        except (ValueError, json.JSONDecodeError) as e:
+            last_err = e
+            continue
+        data = candidate
+        if finish != "length":
+            break
+    if data is None:
+        raise last_err or RuntimeError("deep synthesis returned no parseable JSON")
+
+    for s in data.get("sources", []):
+        idx = s.get("index", 0) - 1
+        if 0 <= idx < len(papers):
+            _set_localized(papers[idx], s.get("title_localized", ""), s.get("relevance", ""))
+            papers[idx].evidence_type = (s.get("evidence_type") or "").strip().lower()
+
+    return {
+        "answer": (data.get("answer") or "").strip(),
+        "contradictions": [c for c in data.get("contradictions", []) if c],
+        "gaps": [g for g in data.get("gaps", []) if g],
+    }

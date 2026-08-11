@@ -2,7 +2,7 @@ import React from 'react'
 
 // Renders the synthesized answer, turning [Author, Year] citations that match a
 // known source into clickable buttons that highlight the matching source card.
-export default function AnswerText({ text, citationKeys, onCite }) {
+export default function AnswerText({ text, citationKeys, onCite, inline = false }) {
   if (!text) return null
 
   const keySet = new Set(citationKeys)
@@ -49,6 +49,9 @@ export default function AnswerText({ text, citationKeys, onCite }) {
       last = m.index + m[0].length
     }
     if (last < para.length) parts.push(para.slice(last))
+    // `inline` renders inside an existing list item or sentence, so it must
+    // not introduce block-level paragraphs or bottom margin.
+    if (inline) return <span key={pIdx}>{parts}</span>
     return (
       <p key={pIdx} className="mb-4 leading-8 text-slate-800">
         {parts}
@@ -56,5 +59,6 @@ export default function AnswerText({ text, citationKeys, onCite }) {
     )
   }
 
+  if (inline) return <>{paragraphs.map(renderParagraph)}</>
   return <div>{paragraphs.map(renderParagraph)}</div>
 }

@@ -6,6 +6,7 @@ strict citations -> return answer + display-safe source cards.
 """
 from __future__ import annotations
 
+import asyncio
 import os
 from pathlib import Path
 
@@ -21,6 +22,9 @@ from .routers import library
 from .schemas import (
     ChatRequest,
     ChatResponse,
+    DeepResearchRequest,
+    DeepResearchResponse,
+    SubQuestion,
     SearchRequest,
     SearchResponse,
     SourceCard,
@@ -28,7 +32,8 @@ from .schemas import (
     TrialsResponse,
 )
 from .services import llm_service, sessions
-from .services.retrieval import looks_like_known_item, retrieve
+from .services.pubmed import fetch_full_text
+from .services.retrieval import dedupe, looks_like_known_item, retrieve
 from .services.trials import find_trials
 
 app = FastAPI(title="Gaze API", version="0.1.0")
@@ -144,6 +149,108 @@ async def search(
         english_query=english_query,
         answer=answer,
         sources=cards,
+        session_id=session_id,
+        warning=warning,
+    )
+
+
+@app.post("/api/deep-research", response_model=DeepResearchResponse)
+async def deep_research(
+    req: DeepResearchRequest, user: str | None = Depends(optional_user)
+) -> DeepResearchResponse:
+    """A planned, multi-step review rather than a single keyword search.
+
+    Plan sub-questions -> search each -> dedupe -> read open-access full text
+    -> write a brief with evidence types, contradictions and gaps. Returns an
+    auditable notebook of what was searched and read.
+    """
+    query = req.query.strip()
+    if not query:
+        raise HTTPException(status_code=422, detail="Empty query")
+    lang = req.lang or llm_service.detect_language(query)
+
+    if not has_llm_key():
+        return DeepResearchResponse(
+            original_query=query,
+            detected_lang=lang,
+            answer="",
+            warning=(
+                "未配置 DEEPSEEK_API_KEY，无法进行深度研究。"
+                if lang == "zh"
+                else "DEEPSEEK_API_KEY is not configured; deep research is unavailable."
+            ),
+        )
+
+    # 1. Plan.
+    subs = await llm_service.plan_subquestions(query, lang)
+
+    # 2. Search every sub-question concurrently, then merge into one corpus.
+    per_q = max(3, min(req.per_question, 15))
+    results = await asyncio.gather(
+        *[
+            retrieve(s["search"], limit=per_q, include_preprints=req.include_preprints)
+            for s in subs
+        ],
+        return_exceptions=True,
+    )
+    notebook: list[SubQuestion] = []
+    collected: list = []
+    for sub, res in zip(subs, results):
+        found = res if isinstance(res, list) else []
+        collected.extend(found)
+        notebook.append(
+            SubQuestion(question=sub["question"], search=sub["search"], found=len(found))
+        )
+    papers = dedupe(collected)[:24]  # bound the synthesis prompt
+
+    # 3. Read open-access full text where it exists — methods and sample sizes
+    #    are what an abstract cannot give.
+    read = 0
+    try:
+        read = await fetch_full_text(papers, limit=8)
+    except Exception:  # noqa: BLE001 - abstracts still give a usable brief
+        read = 0
+
+    # 4. Write the brief.
+    warning = None
+    contradictions: list[str] = []
+    gaps: list[str] = []
+    try:
+        brief = await llm_service.synthesize_deep(query, lang, papers, subs)
+        answer = brief["answer"]
+        contradictions = brief["contradictions"]
+        gaps = brief["gaps"]
+    except Exception:  # noqa: BLE001
+        answer = ""
+        warning = (
+            "深度研究生成失败（可能是密钥无效、额度不足或网络问题），请稍后重试。"
+            if lang == "zh"
+            else "Deep research failed (invalid key, quota, or network). Please retry."
+        )
+
+    cards = [SourceCard(**p.to_card()) for p in papers]
+    if user:
+        try:
+            db.add_history(user, query, lang, "; ".join(s["search"] for s in subs), len(cards))
+        except Exception:  # noqa: BLE001
+            pass
+
+    seed = [{"role": "user", "content": query}]
+    if answer:
+        seed.append({"role": "assistant", "content": answer})
+    session_id = sessions.create_session(
+        papers, seed, lang, include_preprints=req.include_preprints
+    )
+
+    return DeepResearchResponse(
+        original_query=query,
+        detected_lang=lang,
+        answer=answer,
+        contradictions=contradictions,
+        gaps=gaps,
+        sources=cards,
+        sub_questions=notebook,
+        full_text_read=read,
         session_id=session_id,
         warning=warning,
     )

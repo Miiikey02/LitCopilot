@@ -34,6 +34,12 @@ class Paper:
     # (an editorial expression of concern). Citing retracted work is a real
     # hazard in a thesis or grant, so this is surfaced prominently.
     retraction_status: str = ""
+    # Open-access full text, fetched on demand for deep research. In memory
+    # only, exactly like `abstract` — never stored or returned to the client.
+    full_text: str = ""
+    # Study design label assigned during deep research: "rct" | "cohort" |
+    # "case" | "preclinical" | "invitro" | "review" | "guideline" | "other".
+    evidence_type: str = ""
 
     # Populated later by the synthesis/translation step:
     title_zh: str = ""  # Chinese translation of the title
@@ -99,4 +105,6 @@ class Paper:
             "pub_date": self.pub_date,
             "oa_url": self.oa_url,
             "retraction_status": self.retraction_status,
+            "evidence_type": self.evidence_type,
+            "has_full_text": bool(self.full_text),
         }
