@@ -148,6 +148,15 @@ body {
   }
 }
 
+/* Cards lift slightly on hover so the list feels responsive to the cursor
+   rather than static. Kept small — this is feedback, not decoration. */
+.card-hover {
+  @apply transition-all duration-200;
+}
+.card-hover:hover {
+  @apply -translate-y-0.5 shadow-md;
+}
+
 /* Print / export-to-PDF: show only the answer + reference material. */
 @media print {
   .no-print {

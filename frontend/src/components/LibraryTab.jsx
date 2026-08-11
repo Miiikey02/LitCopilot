@@ -55,7 +55,7 @@ function LibraryCard({ paper, folders = [], teamId, onChanged }) {
   }
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+    <div className="card-hover rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
       <div className="mb-2 flex items-center justify-between gap-2">
         <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
           {sourceLabel[paper.source] || paper.source}

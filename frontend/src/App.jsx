@@ -11,6 +11,7 @@ import BulkExport from './components/BulkExport'
 import AuthPanel from './components/AuthPanel'
 import Icon from './components/Icon'
 import SearchProgress from './components/SearchProgress'
+import HeroEmpty from './components/HeroEmpty'
 import DeepResearchView from './components/DeepResearchView'
 import { supabase, authEnabled } from './lib/supabase'
 import { exportMarkdown, exportPdf } from './lib/exportResult'
@@ -380,12 +381,12 @@ export default function App() {
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder={t('searchPlaceholder')}
-              className="flex-1 rounded-lg border border-slate-300 px-4 py-3 text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="flex-1 rounded-xl border border-slate-300 px-5 py-3.5 text-[15px] text-slate-900 shadow-sm transition-shadow focus:border-blue-500 focus:shadow-md focus:outline-none focus:ring-1 focus:ring-blue-500"
             />
             <button
               type="submit"
               disabled={loading}
-              className={`rounded-lg bg-blue-600 px-6 py-3 font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-80 ${
+              className={`rounded-xl bg-blue-600 px-7 py-3.5 font-medium text-white transition-all hover:bg-blue-700 hover:shadow-md disabled:opacity-80 ${
                 loading ? 'btn-busy' : ''
               }`}
             >
@@ -487,12 +488,18 @@ export default function App() {
 
         {!result && !loading && !error && (
           <div className="space-y-4">
-            <div className="rounded-lg border border-dashed border-slate-300 bg-white p-10 text-center">
-              <h2 className="mb-2 text-lg font-semibold text-slate-800">
-                {t('emptyStateTitle')}
-              </h2>
-              <p className="mx-auto max-w-xl text-slate-500">{t('emptyStateBody')}</p>
-            </div>
+            <HeroEmpty
+              onPick={(q) => {
+                setQuery(q)
+                setDeepMode(false)
+                runSearch(q, { deep: false })
+              }}
+              onDeepPick={(q) => {
+                setQuery(q)
+                setDeepMode(true)
+                runSearch(q, { deep: true })
+              }}
+            />
             <div className="rounded-lg border border-slate-200 bg-white p-5">
               <HistoryList
                 history={history}

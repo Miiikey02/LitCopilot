@@ -31,7 +31,7 @@ const SourceCard = React.forwardRef(function SourceCard({ paper, index, onSave }
     <div
       ref={ref}
       data-cite={paper.citation_key}
-      className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm transition-colors"
+      className="card-hover rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
     >
       <div className="mb-2 flex items-center justify-between gap-2">
         <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
