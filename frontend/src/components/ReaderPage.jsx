@@ -322,7 +322,12 @@ export default function ReaderPage() {
             {leftView === 'pdf' && article?.has_pdf ? (
               <iframe
                 title={t('viewPdf')}
-                src={`/api/paper/pdf?id=${encodeURIComponent(identifier)}`}
+                // A frame cannot send the auth header, so it uses the signed,
+                // short-lived link the article response issued for this file.
+                src={
+                  article.pdf_embed ||
+                  `/api/paper/pdf?id=${encodeURIComponent(identifier)}`
+                }
                 className="h-full w-full border-0 bg-slate-100"
               />
             ) : (

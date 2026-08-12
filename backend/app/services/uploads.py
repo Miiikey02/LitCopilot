@@ -13,17 +13,19 @@ Getting it wrong costs the reader a paragraph break, never a paragraph.
 """
 from __future__ import annotations
 
+import hashlib
+import hmac
 import re
 import secrets
 import tempfile
 from collections import Counter, OrderedDict
 from pathlib import Path
-from time import monotonic
+from time import monotonic, time
 
 import pypdfium2 as pdfium
 
 from .. import db
-from ..config import has_db
+from ..config import DATABASE_URL, SUPABASE_JWT_SECRET, has_db
 
 _DIR = Path(tempfile.gettempdir()) / "gaze-uploads"
 _INDEX: "OrderedDict[str, dict]" = OrderedDict()
@@ -265,6 +267,61 @@ async def save_stream(chunks) -> dict:
         path.unlink(missing_ok=True)
         raise
     return _finish(uid, path)
+
+
+def owner_of(uid: str) -> str | None:
+    """Who uploaded this file, or None if nobody was signed in."""
+    if not has_db():
+        return None
+    try:
+        return db.upload_owner(uid)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def may_read(uid: str, user_id: str | None) -> bool:
+    """Whether this requester may read this upload.
+
+    An upload made while signed out has no owner and stays reachable by its
+    unguessable id — that is the only way an anonymous reader could ever get
+    back to their own file. An upload with an owner is theirs alone.
+    """
+    owner = owner_of(uid)
+    return owner is None or owner == user_id
+
+
+# The PDF pane is an <iframe>, and a frame cannot send an Authorization header,
+# so the JWT that protects every other route is unavailable there. Instead the
+# article response — which IS authenticated — hands out a short-lived grant tied
+# to that one file, signed with a server secret. The reader's frame carries it;
+# a stranger with the id alone cannot mint one.
+_GRANT_TTL = 6 * 3600
+
+
+def _grant_secret() -> bytes:
+    seed = SUPABASE_JWT_SECRET or DATABASE_URL or "gaze-local-only"
+    return hashlib.sha256(f"gaze-upload-grant:{seed}".encode()).digest()
+
+
+def make_grant(uid: str, ttl: int = _GRANT_TTL) -> str:
+    expiry = int(time()) + ttl
+    payload = f"{uid}:{expiry}".encode()
+    sig = hmac.new(_grant_secret(), payload, hashlib.sha256).hexdigest()[:32]
+    return f"{expiry}.{sig}"
+
+
+def check_grant(uid: str, grant: str) -> bool:
+    try:
+        expiry_s, sig = (grant or "").split(".", 1)
+        expiry = int(expiry_s)
+    except (ValueError, AttributeError):
+        return False
+    if expiry < time():
+        return False
+    expected = hmac.new(
+        _grant_secret(), f"{uid}:{expiry}".encode(), hashlib.sha256
+    ).hexdigest()[:32]
+    return hmac.compare_digest(expected, sig)
 
 
 def persist(record: dict, user_id: str | None) -> None:

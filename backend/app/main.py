@@ -11,6 +11,7 @@ import os
 
 import httpx
 from pathlib import Path
+from urllib.parse import quote
 
 from collections import OrderedDict
 from time import monotonic
@@ -21,7 +22,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import db
 from .auth import current_user, optional_user
-from .config import MAX_RESULTS, has_llm_key
+from .config import MAX_RESULTS, has_llm_key, redact
 from .routers import library
 from .schemas import (
     ArticleBlock,
@@ -71,7 +72,7 @@ def _startup() -> None:
     try:
         db.init_db()
     except Exception as exc:  # noqa: BLE001
-        print(f"[startup] database unavailable: {type(exc).__name__}: {exc}")
+        print(redact(f"[startup] database unavailable: {type(exc).__name__}: {exc}"))
 
 
 app.include_router(library.router)
@@ -370,8 +371,14 @@ async def _resolve_with_text(identifier: str):
 
 
 @app.post("/api/paper/read", response_model=PaperReadResponse)
-async def paper_read(req: PaperRequest) -> PaperReadResponse:
+async def paper_read(
+    req: PaperRequest, user: str | None = Depends(optional_user)
+) -> PaperReadResponse:
     """A close reading of one paper, from its full text where that is open."""
+    if req.identifier.startswith(UPLOAD_PREFIX) and not uploads.may_read(
+        req.identifier[len(UPLOAD_PREFIX):], user
+    ):
+        raise HTTPException(status_code=404, detail="Upload not found or expired")
     work, paper = await _resolve_cached(req.identifier)
     if paper is None:
         raise HTTPException(status_code=404, detail="Paper not found")
@@ -440,7 +447,9 @@ async def paper_resolve(req: PaperRequest) -> ResolveResponse:
 
 
 @app.post("/api/paper/article", response_model=ArticleResponse)
-async def paper_article(req: PaperRequest) -> ArticleResponse:
+async def paper_article(
+    req: PaperRequest, user: str | None = Depends(optional_user)
+) -> ArticleResponse:
     """The original article as reading blocks, for the left pane of 精读模式.
 
     Deliberately separate from /api/paper/read: this returns in a couple of
@@ -448,7 +457,10 @@ async def paper_article(req: PaperRequest) -> ArticleResponse:
     reading the paper while the appraisal is still being written.
     """
     if req.identifier.startswith(UPLOAD_PREFIX):
-        record = uploads.get(req.identifier[len(UPLOAD_PREFIX):])
+        uid = req.identifier[len(UPLOAD_PREFIX):]
+        if not uploads.may_read(uid, user):
+            raise HTTPException(status_code=404, detail="Upload not found or expired")
+        record = uploads.get(uid)
         if record is None:
             raise HTTPException(status_code=404, detail="Upload not found or expired")
         card = Paper(
@@ -460,7 +472,10 @@ async def paper_article(req: PaperRequest) -> ArticleResponse:
             has_full_text=True,
             # The only PDF we can reliably display is one the reader gave us.
             has_pdf=True,
-            pdf_link=f"/api/paper/upload/{record['id']}/file",
+            pdf_embed=(
+                f"/api/paper/upload/{record['id']}/file"
+                f"?g={uploads.make_grant(record['id'])}"
+            ),
         )
 
     _work, paper = await _resolve_cached(req.identifier)
@@ -496,6 +511,7 @@ async def paper_article(req: PaperRequest) -> ArticleResponse:
         has_full_text=True,
         has_pdf=await _serves_a_pdf(_pdf_url_for(paper)),
         pdf_link=_pdf_url_for(paper),
+        pdf_embed=f"/api/paper/pdf?id={quote(req.identifier, safe='')}",
     )
 
 
@@ -583,8 +599,17 @@ async def paper_upload(
 
 
 @app.get("/api/paper/upload/{uid}/file")
-async def paper_upload_file(uid: str):
-    """The uploaded PDF itself — this is the one PDF the reader can display."""
+async def paper_upload_file(
+    uid: str, g: str = "", user: str | None = Depends(optional_user)
+):
+    """The uploaded PDF itself — this is the one PDF the reader can display.
+
+    A frame cannot send an Authorization header, so access is proven either by
+    the short-lived grant the article response issued, or by the owner's own
+    token when something other than a frame asks.
+    """
+    if not (uploads.check_grant(uid, g) or uploads.may_read(uid, user)):
+        raise HTTPException(status_code=404, detail="Upload not found or expired")
     data = uploads.file_bytes(uid)
     if data is None:
         raise HTTPException(status_code=404, detail="Upload not found or expired")
@@ -596,10 +621,10 @@ async def paper_upload_file(uid: str):
 
 
 @app.get("/api/paper/pdf")
-async def paper_pdf(id: str):
+async def paper_pdf(id: str, g: str = "", user: str | None = Depends(optional_user)):
     """Stream the paper's open-access PDF, so it can be shown in the reader."""
     if id.startswith(UPLOAD_PREFIX):
-        return await paper_upload_file(id[len(UPLOAD_PREFIX):])
+        return await paper_upload_file(id[len(UPLOAD_PREFIX):], g=g, user=user)
     _work, paper = await _resolve_cached(id)
     if paper is None:
         raise HTTPException(status_code=404, detail="Paper not found")
@@ -637,13 +662,19 @@ async def paper_pdf(id: str):
 
 
 @app.post("/api/paper/ask", response_model=AskResponse)
-async def paper_ask(req: AskRequest) -> AskResponse:
+async def paper_ask(
+    req: AskRequest, user: str | None = Depends(optional_user)
+) -> AskResponse:
     """Answer a question about a passage the reader selected in the article."""
     if not req.selection.strip() and not req.question.strip():
         raise HTTPException(status_code=400, detail="Nothing to ask about")
     lang = req.lang or llm_service.detect_language(req.question or req.selection)
     if not has_llm_key():
         return AskResponse(warning="DEEPSEEK_API_KEY is not configured.")
+    if req.identifier.startswith(UPLOAD_PREFIX) and not uploads.may_read(
+        req.identifier[len(UPLOAD_PREFIX):], user
+    ):
+        raise HTTPException(status_code=404, detail="Upload not found or expired")
     _work, paper = await _resolve_cached(req.identifier)
     if paper is None:
         raise HTTPException(status_code=404, detail="Paper not found")

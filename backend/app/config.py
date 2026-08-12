@@ -4,6 +4,7 @@ Keys never hardcoded — everything comes from the process environment or the
 gitignored backend/.env file (see .env.example).
 """
 import os
+import re
 
 from dotenv import load_dotenv
 
@@ -52,3 +53,21 @@ def has_db() -> bool:
 
 def has_auth() -> bool:
     return bool(SUPABASE_URL or SUPABASE_JWT_SECRET)
+
+
+_URL_CREDENTIALS = re.compile(r"(?i)(://[^:/@\s]+:)[^@\s]+(@)")
+
+
+def redact(text: str) -> str:
+    """Strip credentials from text before it reaches a log.
+
+    psycopg echoes the connection string verbatim when it cannot parse it —
+    verified: a DATABASE_URL with a bad scheme puts the password straight into
+    the exception message, and from there into the deploy log, which is visible
+    in the hosting dashboard and easy to paste into a chat.
+    """
+    text = _URL_CREDENTIALS.sub(r"\1***\2", text)
+    for secret in (DATABASE_URL, DEEPSEEK_API_KEY, SUPABASE_JWT_SECRET, NCBI_API_KEY):
+        if secret and len(secret) > 6:
+            text = text.replace(secret, "***")
+    return text

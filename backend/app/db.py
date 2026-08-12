@@ -952,3 +952,10 @@ def purge_uploads(older_than_hours: int = 72) -> int:
             (older_than_hours,),
         )
         return cur.rowcount or 0
+
+
+def upload_owner(uid: str) -> str | None:
+    """The user id that uploaded this file, or None when it has no owner."""
+    with _get_pool().connection() as conn:
+        row = conn.execute("SELECT user_id FROM uploads WHERE id = %s", (uid,)).fetchone()
+    return str(row["user_id"]) if row and row["user_id"] else None

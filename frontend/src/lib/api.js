@@ -80,11 +80,13 @@ export const paperUpload = async (file) => {
   // Sent as the raw body, not multipart: the server parses multipart in pure
   // Python, which costs seconds per megabyte on a small instance, and there is
   // only ever one field.
-  const r = await fetch('/api/paper/upload', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/pdf' },
-    body: file,
-  })
+  //
+  // The token matters here: an upload sent without it is recorded with no
+  // owner, and an ownerless upload is readable by anyone holding its id.
+  const token = await getAccessToken()
+  const headers = { 'Content-Type': 'application/pdf' }
+  if (token) headers.Authorization = `Bearer ${token}`
+  const r = await fetch('/api/paper/upload', { method: 'POST', headers, body: file })
   if (!r.ok) {
     const detail = await r.json().catch(() => ({}))
     throw new Error(detail.detail || 'upload failed')
