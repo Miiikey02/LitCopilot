@@ -235,14 +235,42 @@ export default function FolderTree({
     setDropTarget,
   }
 
-  const rowClass = (on) =>
-    `flex w-full items-center gap-1.5 rounded-lg px-2 py-1.5 text-sm transition-colors ${
+  // Views and folders are different things and now look it. Previously the
+  // "Folders" heading sat above 全部文献, and folder rows were indented past it
+  // by the width of their chevron — so a new top-level folder read as a child
+  // of 全部文献 rather than a sibling of it.
+  const viewClass = (on) =>
+    `flex w-full items-center gap-1.5 rounded-lg py-1.5 pl-2 pr-2 text-sm transition-colors ${
       on ? 'bg-blue-50 font-medium text-blue-700' : 'text-slate-600 hover:bg-slate-100'
     }`
 
   return (
     <div>
-      <div className="mb-1 flex items-center justify-between px-2">
+      <ul className="mb-2">
+        <li>
+          <button onClick={() => onPick(null)} className={viewClass(active === null)}>
+            {/* Matches the chevron the folder rows carry, so the labels of
+                views and top-level folders start on the same line. */}
+            <span className="w-[18px] shrink-0" aria-hidden="true" />
+            <Icon name="library" />
+            <span className="flex-1 text-left">{t('allPapers')}</span>
+            <span className="text-xs text-slate-400">{totalCount}</span>
+          </button>
+        </li>
+        <li>
+          <button
+            onClick={() => onPick('unfiled')}
+            className={viewClass(active === 'unfiled')}
+          >
+            <span className="w-[18px] shrink-0" aria-hidden="true" />
+            <Icon name="inbox" />
+            <span className="flex-1 text-left">{t('unfiled')}</span>
+            <span className="text-xs text-slate-400">{unfiledCount}</span>
+          </button>
+        </li>
+      </ul>
+
+      <div className="mb-1 flex items-center justify-between border-t border-slate-100 px-2 pt-2">
         <span className="text-xs font-medium uppercase tracking-wide text-slate-400">
           {t('folders')}
         </span>
@@ -256,28 +284,17 @@ export default function FolderTree({
       </div>
 
       <ul>
-        <li>
-          <button onClick={() => onPick(null)} className={rowClass(active === null)}>
-            <Icon name="library" />
-            <span className="flex-1 text-left">{t('allPapers')}</span>
-            <span className="text-xs text-slate-400">{totalCount}</span>
-          </button>
-        </li>
         {childrenOf(null).map((f) => (
           <Node key={f.id} folder={f} all={all} childrenOf={childrenOf} depth={0} ctx={ctx} />
         ))}
-        <li>
-          <button onClick={() => onPick('unfiled')} className={rowClass(active === 'unfiled')}>
-            <Icon name="inbox" />
-            <span className="flex-1 text-left">{t('unfiled')}</span>
-            <span className="text-xs text-slate-400">{unfiledCount}</span>
-          </button>
-        </li>
       </ul>
 
+      {all.length === 0 && (
+        <p className="px-2 py-1 text-xs leading-5 text-slate-400">{t('noFoldersYet')}</p>
+      )}
+
       {/* A named target for "out of every folder", shown only while dragging.
-          Dropping on ambient empty space is not a thing anyone can be expected
-          to guess. */}
+          Dropping on ambient empty space is not a thing anyone can guess. */}
       {dragging && (
         <div
           onDragOver={(e) => {
