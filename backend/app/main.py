@@ -59,6 +59,7 @@ from .services.pubmed import (
     _pmcid_from,
     fetch_article,
     fetch_by_doi,
+    fetch_by_title,
     fetch_full_text,
     text_from_blocks,
 )
@@ -438,7 +439,22 @@ async def _resolve_with_text(identifier: str):
 
     work = await resolve_work(identifier)
     if work is None:
-        return None, None
+        # One index refusing us is not the paper failing to exist. PubMed can
+        # answer a DOI or a title too, so the reader still gets their paper —
+        # only the citation map, which needs OpenAlex, is unavailable.
+        fallback = (
+            await fetch_by_doi(identifier)
+            if identifier.lower().startswith("10.")
+            else await fetch_by_title(identifier)
+        )
+        if fallback is None:
+            return None, None
+        article = await fetch_article(_pmcid_from(fallback))
+        if article.get("blocks"):
+            fallback.full_text = text_from_blocks(article["blocks"])[:20000]
+        else:
+            await fetch_full_text([fallback], limit=1)
+        return None, fallback
     paper = _oa_to_paper(work)
     if paper.doi:
         pm = await fetch_by_doi(paper.doi)

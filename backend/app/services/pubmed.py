@@ -200,6 +200,43 @@ async def search_pubmed(
         return await _efetch(client, pmids)
 
 
+async def fetch_by_title(title: str) -> Paper | None:
+    """Find one paper by its exact title, as a second opinion to OpenAlex.
+
+    Title lookup used to depend on a single index, so when that index rate-
+    limited us the reader was told a paper plainly in the literature did not
+    exist. PubMed indexes titles as a field, which makes it a good check rather
+    than merely a second guess.
+    """
+    title = (title or "").strip()
+    if len(title) < 12:
+        return None
+    try:
+        async with httpx.AsyncClient() as client:
+            ids = await _esearch(client, f"{title}[Title]", 5)
+            if not ids:
+                ids = await _esearch(client, title, 5)
+            if not ids:
+                return None
+            papers = await _efetch(client, ids)
+    except (httpx.HTTPError, ET.ParseError, ValueError):
+        return None
+
+    want = _norm_title(title)
+    for paper in papers:
+        if _norm_title(paper.title) == want:
+            return paper
+    for paper in papers:
+        got = _norm_title(paper.title)
+        if got and (got.startswith(want) or want.startswith(got)):
+            return paper
+    return papers[0] if papers else None
+
+
+def _norm_title(text: str) -> str:
+    return " ".join(re.sub(r"[^a-z0-9]+", " ", (text or "").lower()).split())
+
+
 async def fetch_by_doi(doi: str) -> Paper | None:
     """Look one paper up by DOI, for filling in a missing abstract.
 
