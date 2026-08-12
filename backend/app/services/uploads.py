@@ -153,47 +153,21 @@ def _title_from(meta_title: str, blocks: list[dict]) -> str:
     return "Uploaded PDF"
 
 
-def save(source, user_id: str | None = None) -> dict:
-    """Store an uploaded PDF and return what the reader needs to show it.
-
-    `source` is either the bytes or a readable file object. Streaming is
-    preferred: a 25MB upload otherwise sits in memory as the request body, as a
-    bytes copy, and again on the way to disk, on an instance with little to
-    spare.
-
-    Raises ValueError when the bytes are not a usable PDF.
-    """
+def _new_path() -> tuple[str, Path]:
     _DIR.mkdir(parents=True, exist_ok=True)
     uid = secrets.token_hex(16)  # unguessable: the id is the only credential
-    path = _DIR / f"{uid}.pdf"
+    return uid, _DIR / f"{uid}.pdf"
 
-    if isinstance(source, (bytes, bytearray)):
-        if not bytes(source[:5]) == b"%PDF-":
-            raise ValueError("not a PDF")
-        if len(source) > MAX_BYTES:
-            raise ValueError("file too large")
-        path.write_bytes(source)
-    else:
-        written = 0
-        try:
-            with path.open("wb") as out:
-                while True:
-                    chunk = source.read(1024 * 1024)
-                    if not chunk:
-                        break
-                    if written == 0 and chunk[:5] != b"%PDF-":
-                        raise ValueError("not a PDF")
-                    written += len(chunk)
-                    if written > MAX_BYTES:
-                        raise ValueError("file too large")
-                    out.write(chunk)
-        except ValueError:
-            path.unlink(missing_ok=True)
-            raise
-        if written == 0:
-            path.unlink(missing_ok=True)
-            raise ValueError("empty file")
 
+def _check_chunk(first: bool, chunk: bytes, written: int) -> None:
+    if first and chunk[:5] != b"%PDF-":
+        raise ValueError("not a PDF")
+    if written > MAX_BYTES:
+        raise ValueError("file too large")
+
+
+def _finish(uid: str, path: Path) -> dict:
+    """Extract text from a written file and build the record for the reader."""
     # PDFium rather than a pure-Python parser: a 24-page paper took 6.3s to
     # extract with pypdf locally and 143s on the deployed instance, whose CPU is
     # far slower. PDFium does the same work in 0.3s for the same text, and its
@@ -239,8 +213,58 @@ def save(source, user_id: str | None = None) -> dict:
     _INDEX[uid] = record
     _INDEX.move_to_end(uid)
     _sweep()
-
     return record
+
+
+def save(source, user_id: str | None = None) -> dict:
+    """Store an uploaded PDF from bytes or a readable file object."""
+    uid, path = _new_path()
+    try:
+        if isinstance(source, (bytes, bytearray)):
+            _check_chunk(True, bytes(source), len(source))
+            path.write_bytes(source)
+        else:
+            written = 0
+            with path.open("wb") as out:
+                while True:
+                    chunk = source.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    written += len(chunk)
+                    _check_chunk(written == len(chunk), chunk, written)
+                    out.write(chunk)
+            if written == 0:
+                raise ValueError("empty file")
+    except ValueError:
+        path.unlink(missing_ok=True)
+        raise
+    return _finish(uid, path)
+
+
+async def save_stream(chunks) -> dict:
+    """Store an uploaded PDF straight from the request body.
+
+    The file arrives as the raw body rather than multipart/form-data because
+    python-multipart parses the whole payload in Python, which costs seconds of
+    the reader's time for an 8MB paper on a slow instance. Nothing is gained by
+    it here: there is exactly one field.
+    """
+    uid, path = _new_path()
+    written = 0
+    try:
+        with path.open("wb") as out:
+            async for chunk in chunks:
+                if not chunk:
+                    continue
+                written += len(chunk)
+                _check_chunk(written == len(chunk), chunk, written)
+                out.write(chunk)
+        if written == 0:
+            raise ValueError("empty file")
+    except ValueError:
+        path.unlink(missing_ok=True)
+        raise
+    return _finish(uid, path)
 
 
 def persist(record: dict, user_id: str | None) -> None:
@@ -249,10 +273,9 @@ def persist(record: dict, user_id: str | None) -> None:
     The local copy is only a cache: the instance's filesystem is wiped on every
     restart — routine on a free tier — and an upload that disappears minutes
     after the reader opened it is worse than one that never worked. Writing 8MB
-    to Postgres took about ten seconds of the caller's time, though, and the
-    reader is served from the cache either way, so it happens after the
-    response. The exposure is a crash in those few seconds, which costs a
-    re-upload rather than a wrong answer.
+    to Postgres costs seconds, though, and the reader is served from the cache
+    either way, so it happens after the response. The exposure is a crash in
+    those few seconds, which costs a re-upload rather than a wrong answer.
     """
     if not has_db():
         return

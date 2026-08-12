@@ -77,9 +77,14 @@ export const paperResolve = (identifier, lang) =>
 export const paperArticle = (identifier, lang) =>
   jsonPost('/api/paper/article', { identifier, lang: lang || null })
 export const paperUpload = async (file) => {
-  const body = new FormData()
-  body.append('file', file)
-  const r = await fetch('/api/paper/upload', { method: 'POST', body })
+  // Sent as the raw body, not multipart: the server parses multipart in pure
+  // Python, which costs seconds per megabyte on a small instance, and there is
+  // only ever one field.
+  const r = await fetch('/api/paper/upload', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/pdf' },
+    body: file,
+  })
   if (!r.ok) {
     const detail = await r.json().catch(() => ({}))
     throw new Error(detail.detail || 'upload failed')

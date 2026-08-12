@@ -14,7 +14,7 @@ from pathlib import Path
 
 from collections import OrderedDict
 from time import monotonic
-from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -555,8 +555,8 @@ UPLOAD_PREFIX = "upload:"
 
 @app.post("/api/paper/upload", response_model=UploadResponse)
 async def paper_upload(
+    request: Request,
     background: BackgroundTasks,
-    file: UploadFile = File(...),
     user: str | None = Depends(optional_user),
 ) -> UploadResponse:
     """Take a PDF the reader already has and open 精读模式 on it.
@@ -564,10 +564,13 @@ async def paper_upload(
     The route exists because most biomedical PDFs cannot be fetched by a
     server — publishers answer automated requests with a bot check — while the
     reader's own institutional access has no such problem.
+
+    The file comes as the raw request body: there is one field, and parsing it
+    as multipart costs seconds of pure-Python work per megabyte on a slow
+    instance for no benefit.
     """
     try:
-        # Stream from the spooled request body rather than reading it all in.
-        record = uploads.save(file.file)
+        record = await uploads.save_stream(request.stream())
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     background.add_task(uploads.persist, record, user)
