@@ -244,6 +244,9 @@ class DeepResearchRequest(BaseModel):
     include_preprints: bool = True
     sources: Optional[list[str]] = None
     conversation_id: Optional[int] = None
+    # How many papers to show. Deep research gathers more than this across its
+    # sub-questions; this is what survives into the result.
+    limit: Optional[int] = None
     # Papers to retrieve per sub-question; the merged set is capped separately.
     per_question: int = 8
 

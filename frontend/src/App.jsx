@@ -174,7 +174,7 @@ export default function App() {
         if (overrides.deep ?? deepMode) {
           // Deep research returns a brief plus its notebook; reuse the same
           // sources panel and follow-up session as a quick search.
-          const d = await api.deepResearch(text, lang, includePreprints, dbs, keepThread)
+          const d = await api.deepResearch(text, lang, includePreprints, dbs, keepThread, limit)
           setDeep(d)
           if (d.conversation_id) setConversationId(d.conversation_id)
           setResult({
@@ -660,7 +660,7 @@ export default function App() {
               <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
                 <div className="mb-4 flex items-center justify-between">
                   <h2 className="text-lg font-semibold text-slate-900">
-                    {t('answerTitle')}
+                    {deep ? t('deepActionsTitle') : t('answerTitle')}
                   </h2>
                   <span className="text-xs text-slate-400">
                     {t('detectedLang')}:{' '}
@@ -674,7 +674,11 @@ export default function App() {
                   </div>
                 )}
 
-                {result.answer ? (
+                {/* Deep research already shows this text as 研究简报 above,
+                    with its sub-questions, contradictions and gaps. Repeating
+                    it here as 综合回答 was the same brief twice, which invites
+                    reading one as a summary of the other. */}
+                {deep ? null : result.answer ? (
                   <>
                     <p className="mb-3 text-xs text-slate-400">
                       {t('citationHint')}
@@ -690,7 +694,11 @@ export default function App() {
                 )}
 
                 {result.answer && (
-                  <div className="no-print mt-5 flex flex-wrap gap-2 border-t border-slate-100 pt-4">
+                  <div
+                    className={`no-print flex flex-wrap gap-2 ${
+                      deep ? '' : 'mt-5 border-t border-slate-100 pt-4'
+                    }`}
+                  >
                     <button
                       onClick={onFindTrials}
                       disabled={trialsLoading}

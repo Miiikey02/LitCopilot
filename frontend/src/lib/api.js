@@ -67,7 +67,8 @@ export const deepResearch = (
   lang,
   includePreprints = true,
   sources = null,
-  conversationId = null
+  conversationId = null,
+  limit = null
 ) =>
   jsonPost('/api/deep-research', {
     query,
@@ -75,6 +76,7 @@ export const deepResearch = (
     include_preprints: includePreprints,
     sources,
     conversation_id: conversationId,
+    limit,
   })
 
 // --- Single paper: deep read, graph, entities, evidence ---

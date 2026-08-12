@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 
 import httpx
 from pathlib import Path
@@ -242,6 +243,19 @@ async def search(
     )
 
 
+def _cited_keys(*texts: object) -> set[str]:
+    """Every [Surname, Year] token the brief actually used."""
+    found: set[str] = set()
+    for text in texts:
+        blob = " ".join(text) if isinstance(text, list) else str(text or "")
+        for inner in re.findall(r"\[([^\]]{2,60})\]", blob):
+            for token in re.split(r"[;；]", inner):
+                token = token.strip()
+                if token:
+                    found.add(token)
+    return found
+
+
 @app.post("/api/deep-research", response_model=DeepResearchResponse)
 async def deep_research(
     req: DeepResearchRequest, user: str | None = Depends(optional_user)
@@ -294,7 +308,10 @@ async def deep_research(
         notebook.append(
             SubQuestion(question=sub["question"], search=sub["search"], found=len(found))
         )
-    papers = dedupe(collected)[:24]  # bound the synthesis prompt
+    # Enough to write from, but the reader's chosen count decides what they are
+    # finally shown — see the trim after synthesis.
+    wanted = max(3, min(req.limit or MAX_RESULTS, 40))
+    papers = dedupe(collected)[: max(wanted, 24)]  # bound the synthesis prompt
 
     # 3. Read open-access full text where it exists — methods and sample sizes
     #    are what an abstract cannot give.
@@ -320,6 +337,16 @@ async def deep_research(
             if lang == "zh"
             else "Deep research failed (invalid key, quota, or network). Please retry."
         )
+
+    # Searching several sub-questions gathers more than any one of them needed,
+    # and a sub-question about proteomics methods can legitimately surface a
+    # paper about marine ecology. Keep what the brief actually cited, fill up to
+    # the requested count with the rest, and drop the tail — showing a paper the
+    # brief never used, with a note explaining that it is irrelevant, is worse
+    # than not showing it.
+    cited = {key for key in _cited_keys(answer, contradictions, gaps)}
+    ranked = sorted(papers, key=lambda p: 0 if p.citation_key() in cited else 1)
+    papers = ranked[:wanted]
 
     cards = [SourceCard(**p.to_card()) for p in papers]
     if user:
