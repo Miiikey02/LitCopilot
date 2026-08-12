@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import Icon from './Icon'
+import scrollToOffset from '../lib/scrollTo'
 
 // The original article, on the left of 精读模式.
 //
@@ -10,14 +11,6 @@ import Icon from './Icon'
 // take on trust — you can always see the sentence it came from.
 
 const collapse = (s) => (s || '').replace(/\s+/g, ' ').trim()
-
-// Jumping to a highlight is an instant scrollTop assignment. Everything that
-// eases — scrollIntoView, scrollTo({behavior:'smooth'}), a requestAnimationFrame
-// tween, even CSS scroll-behavior — was verified to leave the pane at scrollTop
-// 0 in a renderer that delivers no animation frames, silently stranding the
-// reader away from the sentence they clicked. Landing on it is the feature;
-// gliding there is not worth making the feature conditional. An instant jump is
-// also what "go to definition" does in an editor, which is the same gesture.
 
 // Locate each quote in a block. The model is asked to copy the sentence
 // exactly, but it drops a trailing clause often enough that an all-or-nothing
@@ -112,7 +105,7 @@ export default function ArticlePane({
       box.getBoundingClientRect().top +
       box.scrollTop -
       box.clientHeight / 2
-    box.scrollTop = Math.max(0, top)
+    scrollToOffset(box, top)
   }, [activeId])
 
   const captureSelection = () => {
