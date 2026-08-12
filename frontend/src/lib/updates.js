@@ -50,13 +50,18 @@ export const UPDATES = [
       },
       {
         kind: 'feature',
-        zh: '新增「更新日志」与「反馈」：随时可以看每次更新做了什么，也可以直接说哪里不好用——不用登录。',
-        en: 'An update log and a feedback button: see what changed in each release, and say what is not working — no account needed.',
+        zh: '新增「反馈」：左侧栏点一下就能写——问题、想要的功能、觉得不对的结论都行。不用登录，邮箱可留可不留；会附带你当时所在的页面，方便复现。',
+        en: 'Feedback: one click in the left rail — bugs, missing features, an answer that looked wrong. No account needed, email optional, and the screen you were on is attached so a report can be reproduced.',
+      },
+      {
+        kind: 'feature',
+        zh: '新增「更新日志」：每次更新做了什么，按日期排列，中英文都有。',
+        en: 'An update log: what changed in each release, by date, in both languages.',
       },
       {
         kind: 'fix',
-        zh: '深度研究会遵守你选择的文献数量，并且不再把自己标注为「不相关」的文献放进来源列表。',
-        en: 'Deep research honours the number of papers you asked for, and no longer includes sources its own note admits are irrelevant.',
+        zh: '深度研究的来源列表不再混入无关文献。你设置的篇数是上限而非配额——宁可少给几篇，也不会用检索时顺带捞到的文献凑数。',
+        en: 'Deep research no longer mixes unrelated papers into its sources. The number you choose is a ceiling, not a quota — it would rather show fewer papers than pad the list with whatever the sub-question searches happened to turn up.',
       },
     ],
   },
