@@ -170,8 +170,46 @@ export default function ArticlePane({
           ) : b.type === 'figure' || b.type === 'table' ? (
             <figure
               key={b.id}
-              className="my-4 rounded-lg border border-slate-200 bg-slate-50/70 p-4"
+              className="my-5 rounded-lg border border-slate-200 bg-slate-50/70 p-4"
             >
+              {/* The artwork itself, served by PMC. If it fails to load the
+                  figure quietly becomes caption-only rather than showing a
+                  broken image — the caption is still worth reading. */}
+              {b.image && (
+                <a href={b.image} target="_blank" rel="noopener noreferrer">
+                  <img
+                    src={b.image}
+                    alt={b.label}
+                    loading="lazy"
+                    onError={(e) => {
+                      e.currentTarget.parentElement.style.display = 'none'
+                    }}
+                    className="mb-3 w-full rounded-md border border-slate-200 bg-white"
+                  />
+                </a>
+              )}
+              {b.rows?.length > 0 && (
+                <div className="mb-3 overflow-x-auto rounded-md border border-slate-200 bg-white">
+                  <table className="w-full border-collapse text-xs">
+                    <tbody>
+                      {b.rows.map((row, ri) => (
+                        <tr key={ri} className={ri === 0 ? 'bg-slate-50' : ''}>
+                          {row.map((cell, ci) => (
+                            <td
+                              key={ci}
+                              className={`border-b border-slate-100 px-2.5 py-1.5 align-top leading-5 ${
+                                ri === 0 ? 'font-semibold text-slate-800' : 'text-slate-600'
+                              }`}
+                            >
+                              {cell}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
               <figcaption className="text-sm leading-7 text-slate-600">
                 <span className="mr-1.5 font-semibold text-slate-800">{b.label}</span>
                 <Marked
@@ -181,14 +219,23 @@ export default function ArticlePane({
                   onMarkClick={onMarkClick}
                 />
               </figcaption>
-              {/* Figures are the most-asked-about part of a paper and we only
-                  have the caption, so make asking about one a single click. */}
+              {/* Figures are the most-asked-about part of a paper, so make
+                  asking about one a single click. */}
               <button
-                onClick={() => onAsk?.(`${b.label}. ${b.text}`, 'explain')}
+                onClick={() =>
+                  onAsk?.(
+                    `${b.label}. ${b.text}${
+                      b.rows?.length
+                        ? `\n${b.rows.map((r) => r.join(' | ')).join('\n')}`
+                        : ''
+                    }`,
+                    'explain'
+                  )
+                }
                 className="mt-2 inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-600 transition-colors hover:border-blue-300 hover:text-blue-700"
               >
                 <Icon name="sparkles" />
-                {t('askAboutFigure')}
+                {t(b.type === 'table' ? 'askAboutTable' : 'askAboutFigure')}
               </button>
             </figure>
           ) : (
