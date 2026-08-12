@@ -56,6 +56,12 @@ export default function LookupResult({ result, identifier, onSave, saving, saved
             {t('concern')}
           </div>
         )}
+        {result.exact === false && (
+          <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+            <Icon name="alert" className="mr-1" />
+            {t('lookupInexact')}
+          </div>
+        )}
         {result.warning && (
           <p className="mt-3 rounded-md bg-slate-50 p-2.5 text-xs leading-5 text-slate-500">
             {result.warning}

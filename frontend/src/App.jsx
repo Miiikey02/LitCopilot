@@ -405,7 +405,18 @@ export default function App() {
                 sub-questions and reads open-access full text. */}
             <SegmentedControl
               value={mode}
-              onChange={setMode}
+              // Switching mode is a request for a different answer to the same
+              // question, so it re-runs rather than leaving the previous mode's
+              // results sitting under a control that now says something else.
+              onChange={(next) => {
+                setMode(next)
+                if (query.trim() && !loading) {
+                  runSearch(query, {
+                    deep: next === 'deep',
+                    lookup: next === 'lookup',
+                  })
+                }
+              }}
               options={[
                 { value: 'quick', label: t('quickMode'), icon: 'search' },
                 { value: 'deep', label: t('deepMode'), icon: 'sparkles' },

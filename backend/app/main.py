@@ -50,7 +50,7 @@ from .schemas import (
 )
 from .services import llm_service, sessions, uploads
 from .services.models import Paper
-from .services.openalex import connected_papers, resolve_work
+from .services.openalex import _norm_title, connected_papers, resolve_work
 from .services.openalex import _to_paper as _oa_to_paper
 from .services.pubmed import (
     _pmcid_from,
@@ -439,6 +439,20 @@ async def paper_resolve(req: PaperRequest) -> ResolveResponse:
     if paper is None:
         raise HTTPException(status_code=404, detail="Paper not found")
     warning = None
+    # A title lookup that lands on a different paper is worse than no result:
+    # the reader would go on to read the wrong article believing it was theirs.
+    looks_like_title = " " in req.identifier.strip() and not req.identifier.strip().lower().startswith("10.")
+    if looks_like_title and _norm_title(paper.title) != _norm_title(req.identifier):
+        return ResolveResponse(
+            paper=SourceCard(**paper.to_card()),
+            has_full_text=bool(paper.full_text),
+            exact=False,
+            warning=(
+                "没有找到标题完全匹配的文献。以下是最接近的结果，请确认是否是你要找的那一篇。"
+                if lang == "zh"
+                else "No exact title match. This is the closest result — check it is the paper you meant."
+            ),
+        )
     if not paper.full_text:
         warning = (
             "这篇文献没有开放获取全文，精读将只基于摘要。你可以在精读模式中上传自己有权限的 PDF。"

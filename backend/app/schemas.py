@@ -292,6 +292,7 @@ class ArticleResponse(BaseModel):
 class ResolveResponse(BaseModel):
     paper: SourceCard
     has_full_text: bool = False
+    exact: bool = True  # False when the title did not match and this is a guess
     warning: Optional[str] = None
 
 

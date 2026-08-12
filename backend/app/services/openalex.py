@@ -10,6 +10,8 @@ identify themselves with a `mailto`. We pass one when an email is configured.
 """
 from __future__ import annotations
 
+import re
+
 import httpx
 
 from ..config import MAX_RESULTS, NCBI_EMAIL
@@ -180,6 +182,48 @@ def _to_paper(item: dict) -> Paper:
     )
 
 
+def _norm_title(text: str) -> str:
+    """A title reduced to comparable words: case, punctuation and spacing gone."""
+    return " ".join(re.sub(r"[^a-z0-9]+", " ", (text or "").lower()).split())
+
+
+async def _resolve_title(client: httpx.AsyncClient, ident: str) -> dict | None:
+    """Find the work whose title this is — not merely the best topical match.
+
+    Asking for the single top relevance hit gave the wrong paper: searching a
+    2026 paper's exact title returned a 2020 review of the same subject,
+    because relevance ranking rewards a heavily cited review over the paper you
+    actually named. So several candidates are fetched and their titles compared,
+    and only if none matches does the best relevance hit stand.
+    """
+    want = _norm_title(ident)
+    # Commas and colons separate clauses in OpenAlex's filter syntax, so a title
+    # containing them cannot be passed through raw.
+    safe = re.sub(r"[,:|]+", " ", ident).strip()
+    attempts = (
+        {"filter": f"title.search:{safe}", "per-page": "25", "select": _OA_FIELDS},
+        {"search": ident, "per-page": "25", "select": _OA_FIELDS},
+    )
+    fallback = None
+    for params in attempts:
+        try:
+            data = await _get(client, OPENALEX_WORKS, params)
+        except (httpx.HTTPError, ValueError):
+            continue
+        results = data.get("results") or []
+        if fallback is None and results:
+            fallback = results[0]
+        for item in results:
+            if _norm_title(item.get("display_name")) == want:
+                return item
+        # A near match covers a subtitle the user left off, or a trailing period.
+        for item in results:
+            got = _norm_title(item.get("display_name"))
+            if got and len(want) > 30 and (got.startswith(want) or want.startswith(got)):
+                return item
+    return fallback
+
+
 async def resolve_work(identifier: str) -> dict | None:
     """Find one OpenAlex work by DOI, OpenAlex id, PMID, or exact title."""
     ident = (identifier or "").strip()
@@ -199,13 +243,7 @@ async def resolve_work(identifier: str) -> dict | None:
                 return await _get(
                     client, f"{OPENALEX_WORKS}/pmid:{ident}", {"select": _OA_FIELDS}
                 )
-            data = await _get(
-                client,
-                OPENALEX_WORKS,
-                {"search": ident, "per-page": "1", "select": _OA_FIELDS},
-            )
-            results = data.get("results") or []
-            return results[0] if results else None
+            return await _resolve_title(client, ident)
     except (httpx.HTTPError, ValueError):
         return None
 
