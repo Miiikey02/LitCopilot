@@ -10,11 +10,12 @@ identify themselves with a `mailto`. We pass one when an email is configured.
 """
 from __future__ import annotations
 
+import asyncio
 import re
 
 import httpx
 
-from ..config import MAX_RESULTS, NCBI_EMAIL
+from ..config import MAX_RESULTS, OPENALEX_MAILTO
 from .models import Paper
 
 OPENALEX_WORKS = "https://api.openalex.org/works"
@@ -77,13 +78,11 @@ async def search_openalex(
     }
     if sort == "date":
         params["sort"] = "publication_date:desc"
-    if NCBI_EMAIL:
-        params["mailto"] = NCBI_EMAIL
+    if OPENALEX_MAILTO:
+        params["mailto"] = OPENALEX_MAILTO
     try:
         async with httpx.AsyncClient() as client:
-            r = await client.get(OPENALEX_WORKS, params=params, timeout=20)
-            r.raise_for_status()
-            results = r.json().get("results", [])
+            results = (await _get(client, OPENALEX_WORKS, params)).get("results", [])
     except (httpx.HTTPError, ValueError):
         # Fail soft — the other sources still yield a usable answer.
         return []
@@ -144,15 +143,28 @@ _OA_FIELDS = (
 
 def _params(extra: dict) -> dict:
     p = dict(extra)
-    if NCBI_EMAIL:
-        p["mailto"] = NCBI_EMAIL
+    if OPENALEX_MAILTO:
+        p["mailto"] = OPENALEX_MAILTO
     return p
 
 
-async def _get(client: httpx.AsyncClient, url: str, params: dict) -> dict:
-    r = await client.get(url, params=_params(params), timeout=25)
-    r.raise_for_status()
-    return r.json()
+async def _get(client: httpx.AsyncClient, url: str, params: dict, tries: int = 3) -> dict:
+    """One OpenAlex request, retried when the index asks us to slow down.
+
+    A 429 here is not a failed lookup — it is the same lookup, later. Treating
+    it as "no such paper" is how a title search came to report that a paper
+    plainly in the index did not exist.
+    """
+    delay = 0.6
+    for attempt in range(tries):
+        r = await client.get(url, params=_params(params), timeout=25)
+        if r.status_code in (429, 500, 502, 503, 504) and attempt < tries - 1:
+            await asyncio.sleep(delay)
+            delay *= 2
+            continue
+        r.raise_for_status()
+        return r.json()
+    raise httpx.HTTPError("OpenAlex did not answer")
 
 
 def _to_paper(item: dict) -> Paper:

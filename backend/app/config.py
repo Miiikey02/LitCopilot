@@ -26,6 +26,12 @@ NCBI_API_KEY = os.getenv("NCBI_API_KEY", "")
 # NCBI asks callers to identify themselves via tool + email params.
 NCBI_TOOL = os.getenv("NCBI_TOOL", "Gaze")
 NCBI_EMAIL = os.getenv("NCBI_EMAIL", "")
+# OpenAlex serves a "polite pool" with far higher limits to callers who identify
+# themselves. Anonymous callers share one pool per IP, and on shared hosting
+# that pool is exhausted by strangers — which shows up as lookups failing for
+# reasons that have nothing to do with the query. Falls back to NCBI_EMAIL so
+# one address configured once covers both.
+OPENALEX_MAILTO = os.getenv("OPENALEX_MAILTO", "") or NCBI_EMAIL
 
 # --- Retrieval tuning ---
 MAX_RESULTS = int(os.getenv("MAX_RESULTS", "18"))  # target 15-20 abstracts
