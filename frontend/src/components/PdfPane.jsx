@@ -44,6 +44,11 @@ export default function PdfPane({ src, onAsk }) {
   // beats leaving the reader dragging across a page that will never highlight.
   const [selectable, setSelectable] = useState(true)
   const [detail, setDetail] = useState('')
+  // Drawing the pages ourselves is what makes them selectable, but it is an
+  // enhancement, not a requirement. If it cannot produce a page — an exception,
+  // or an environment whose rendering never completes — the browser's own
+  // viewer still shows the document. Losing selection beats losing the paper.
+  const [fallback, setFallback] = useState(false)
   // Re-render when the split is dragged: a canvas does not reflow, so a wider
   // pane would otherwise keep showing the page drawn for the narrower one.
   const [width, setWidth] = useState(0)
@@ -70,7 +75,12 @@ export default function PdfPane({ src, onAsk }) {
     setStatus('loading')
     setSelectable(true)
     setDetail('')
+    setFallback(false)
     let selectable = true
+    let firstPageDrawn = false
+    const giveUp = setTimeout(() => {
+      if (!firstPageDrawn && !cancelled) setFallback(true)
+    }, 20000)
     ;(async () => {
       try {
         const pdfjs = await loadPdfjs()
@@ -122,7 +132,11 @@ export default function PdfPane({ src, onAsk }) {
             transform: dpr === 1 ? null : [dpr, 0, 0, dpr, 0, 0],
           }).promise
           if (cancelled) return
-          if (n === 1) setStatus('ready')
+          if (n === 1) {
+            firstPageDrawn = true
+            clearTimeout(giveUp)
+            setStatus('ready')
+          }
 
           // The page image is the content; the text layer only adds selection.
           // Building it depends on the browser reporting real font metrics, and
@@ -153,13 +167,17 @@ export default function PdfPane({ src, onAsk }) {
         if (!cancelled) setStatus('ready')
       } catch (err) {
         if (!cancelled) {
-          setStatus('failed')
+          clearTimeout(giveUp)
           setDetail(String(err?.message || err))
+          // Show the document through the browser instead of showing nothing.
+          if (firstPageDrawn) setStatus('failed')
+          else setFallback(true)
         }
       }
     })()
     return () => {
       cancelled = true
+      clearTimeout(giveUp)
     }
   }, [src, width])
 
@@ -182,6 +200,21 @@ export default function PdfPane({ src, onAsk }) {
     onAsk?.(sel.text, intent)
     setSel(null)
     window.getSelection()?.removeAllRanges()
+  }
+
+  if (fallback) {
+    return (
+      <div className="flex h-full flex-col">
+        <div className="shrink-0 border-b border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          {t('pdfFallback')}
+        </div>
+        <iframe
+          title={t('viewPdf')}
+          src={src}
+          className="min-h-0 flex-1 border-0 bg-slate-100"
+        />
+      </div>
+    )
   }
 
   return (
