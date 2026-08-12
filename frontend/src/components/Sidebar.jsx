@@ -33,6 +33,7 @@ export default function Sidebar({
   onTab,
   history,
   onOpenThread,
+  onDeleteThread,
   onClearHistory,
   onNewSearch,
   session,
@@ -121,13 +122,22 @@ export default function Sidebar({
             )}
             <ul>
               {(history || []).map((h) => (
-                <li key={h.id}>
+                <li key={h.id} className="group relative">
                   <button
                     onClick={() => onOpenThread(h)}
                     title={h.seed_query || h.title}
-                    className="block w-full truncate rounded-lg px-2 py-1.5 text-left text-sm text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900"
+                    className="block w-full truncate rounded-lg py-1.5 pl-2 pr-7 text-left text-sm text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900"
                   >
                     {h.title || h.seed_query}
+                  </button>
+                  {/* Per-thread delete: clearing everything is a blunt tool
+                      when one stray search is what you want gone. */}
+                  <button
+                    onClick={() => onDeleteThread(h)}
+                    title={t('deleteThread')}
+                    className="absolute right-1 top-1/2 hidden -translate-y-1/2 rounded p-1 text-slate-400 transition-colors hover:bg-slate-200 hover:text-red-600 group-hover:block"
+                  >
+                    <Icon name="trash" />
                   </button>
                 </li>
               ))}

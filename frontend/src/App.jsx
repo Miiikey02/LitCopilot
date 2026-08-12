@@ -362,6 +362,19 @@ export default function App() {
     }
   }
 
+  // Removing one thread, rather than the whole rail.
+  const onDeleteThread = async (conv) => {
+    try {
+      await api.deleteConversation(conv.id)
+    } catch {
+      /* it may already be gone; the reload below settles it either way */
+    }
+    // Deleting the thread you are reading should clear the screen with it,
+    // otherwise the results stay up with nothing behind them.
+    if (conv.id === conversationId) onNewSearch()
+    loadHistory()
+  }
+
   const onClearHistory = async () => {
     // The rail lists threads now, so clearing has to remove those.
     try {
@@ -434,6 +447,7 @@ export default function App() {
         onTab={setTab}
         history={history}
         onOpenThread={onOpenThread}
+        onDeleteThread={onDeleteThread}
         onClearHistory={onClearHistory}
         onNewSearch={onNewSearch}
         session={session}

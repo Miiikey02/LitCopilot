@@ -121,6 +121,11 @@ class TeamMember(BaseModel):
     user_id: str
     email: str
     role: str
+    papers_added: int = 0  # what this person has contributed to the shelf
+
+
+class MemberRole(BaseModel):
+    role: str  # "owner" | "member"
 
 
 class NotesUpdate(BaseModel):

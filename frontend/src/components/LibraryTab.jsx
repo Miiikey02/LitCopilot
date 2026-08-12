@@ -158,7 +158,14 @@ function LibraryCard({ paper, folders = [], teamId, onChanged }) {
   }
 
   const remove = async () => {
-    await api.deletePaper(paper.id, teamId)
+    try {
+      await api.deletePaper(paper.id, teamId)
+    } catch (err) {
+      // A shared shelf refuses removals that are not yours; say why rather
+      // than appearing to do nothing.
+      window.alert(err?.status === 403 ? t('ownerOnlyDelete') : t('errorNetwork'))
+      return
+    }
     onChanged()
   }
 

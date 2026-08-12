@@ -82,6 +82,15 @@ export default function WorkspaceBar({ teams, activeTeam, onSwitch, onTeamsChang
     onTeamsChanged()
   }
 
+  const setRole = async (memberId, role) => {
+    try {
+      await api.setMemberRole(team.id, memberId, role)
+      setMembers(await api.listMembers(team.id))
+    } catch (err) {
+      window.alert(err?.status === 403 ? t('ownerOnlyRole') : t('errorNetwork'))
+    }
+  }
+
   const kick = async (memberId) => {
     if (!team) return
     await api.removeMember(team.id, memberId)
@@ -186,16 +195,33 @@ export default function WorkspaceBar({ teams, activeTeam, onSwitch, onTeamsChang
             <ul className="mt-1 space-y-1">
               {members.map((m) => (
                 <li key={m.user_id} className="flex items-center gap-2 text-sm text-slate-600">
-                  <span className="truncate">{m.email || m.user_id.slice(0, 8)}</span>
+                  <span className="min-w-0 flex-1 truncate">
+                    {m.email || m.user_id.slice(0, 8)}
+                    {/* What each person has put on the shelf: the question a
+                        PI actually asks of a shared library. */}
+                    <span className="ml-1.5 text-xs text-slate-400">
+                      {t('papersAdded', { n: m.papers_added ?? 0 })}
+                    </span>
+                  </span>
                   {m.role === 'owner' && (
-                    <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-xs text-amber-800">
+                    <span className="shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-xs text-amber-800">
                       {t('owner')}
                     </span>
+                  )}
+                  {/* Admin is shareable and handed over, so a lab outlives the
+                      account that created it. */}
+                  {team.role === 'owner' && (
+                    <button
+                      onClick={() => setRole(m.user_id, m.role === 'owner' ? 'member' : 'owner')}
+                      className="shrink-0 text-xs text-slate-500 hover:text-blue-700"
+                    >
+                      {m.role === 'owner' ? t('makeMember') : t('makeOwner')}
+                    </button>
                   )}
                   {team.role === 'owner' && m.role !== 'owner' && (
                     <button
                       onClick={() => kick(m.user_id)}
-                      className="text-xs text-red-500 hover:text-red-700"
+                      className="shrink-0 text-xs text-red-500 hover:text-red-700"
                     >
                       {t('removeMember')}
                     </button>

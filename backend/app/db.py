@@ -252,6 +252,10 @@ def _tags_for(conn, paper_id: int) -> list[str]:
 # --- Teams ----------------------------------------------------------------
 
 
+class NotPermitted(Exception):
+    """The caller is a member, but this action is the workspace owner's."""
+
+
 class NotAMember(Exception):
     """Raised when a user touches a team workspace they don't belong to."""
 
@@ -356,7 +360,10 @@ def list_members(user_id: str, team_id: int) -> list[dict]:
     with _get_pool().connection() as conn:
         _assert_member(conn, user_id, team_id)
         rows = conn.execute(
-            """SELECT m.user_id, m.role, u.email
+            """SELECT m.user_id, m.role, u.email,
+                      (SELECT COUNT(*) FROM saved_papers p
+                        WHERE p.team_id = m.team_id AND p.user_id = m.user_id)
+                        AS papers_added
                FROM team_members m
                LEFT JOIN auth.users u ON u.id = m.user_id
                WHERE m.team_id = %s
@@ -364,7 +371,12 @@ def list_members(user_id: str, team_id: int) -> list[dict]:
             (team_id,),
         ).fetchall()
     return [
-        {"user_id": str(r["user_id"]), "email": r["email"] or "", "role": r["role"]}
+        {
+            "user_id": str(r["user_id"]),
+            "email": r["email"] or "",
+            "role": r["role"],
+            "papers_added": r["papers_added"] or 0,
+        }
         for r in rows
     ]
 
@@ -562,11 +574,33 @@ def _accessible_paper(conn, user_id: str, paper_id: int, team_id: int | None) ->
     )
 
 
+def _is_owner(conn, user_id: str, team_id: int) -> bool:
+    row = conn.execute(
+        "SELECT role FROM team_members WHERE team_id = %s AND user_id = %s",
+        (team_id, user_id),
+    ).fetchone()
+    return bool(row and row["role"] == "owner")
+
+
 def delete_saved(user_id: str, paper_id: int, team_id: int | None = None) -> bool:
+    """Remove a saved paper.
+
+    In a shared library anyone could previously delete anything, so a student
+    could clear the group's collection — including papers they had never seen.
+    Removing is now limited to whoever saved the paper, plus the workspace
+    owner, who needs to be able to tidy up after people who have left.
+    """
     with _get_pool().connection() as conn:
         _assert_member(conn, user_id, team_id)
         if not _accessible_paper(conn, user_id, paper_id, team_id):
             return False
+        if team_id is not None:
+            row = conn.execute(
+                "SELECT user_id FROM saved_papers WHERE id = %s", (paper_id,)
+            ).fetchone()
+            saved_by = str(row["user_id"]) if row else ""
+            if saved_by != user_id and not _is_owner(conn, user_id, team_id):
+                raise NotPermitted("only the person who saved it, or the owner")
         cur = conn.execute("DELETE FROM saved_papers WHERE id = %s", (paper_id,))
         return cur.rowcount > 0
 
@@ -1053,3 +1087,35 @@ def replace_conversation_result(
                 (conversation_id, role, content),
             )
         return True
+
+
+def set_member_role(user_id: str, team_id: int, member_id: str, role: str) -> bool:
+    """Promote or demote a member. Only an owner may, and never the last one.
+
+    A lab outlives any one person's account, so ownership has to be shareable
+    and transferable — otherwise a graduating PI takes the group's library with
+    them. Demoting the last owner is refused, because a workspace nobody can
+    administer cannot be repaired.
+    """
+    if role not in ("owner", "member"):
+        return False
+    with _get_pool().connection() as conn:
+        _assert_member(conn, user_id, team_id)
+        if not _is_owner(conn, user_id, team_id):
+            raise NotPermitted("only an owner can change roles")
+        if role == "member":
+            owners = conn.execute(
+                "SELECT COUNT(*) AS n FROM team_members WHERE team_id = %s AND role = 'owner'",
+                (team_id,),
+            ).fetchone()["n"]
+            current = conn.execute(
+                "SELECT role FROM team_members WHERE team_id = %s AND user_id = %s",
+                (team_id, member_id),
+            ).fetchone()
+            if owners <= 1 and current and current["role"] == "owner":
+                raise NotPermitted("a workspace needs at least one owner")
+        cur = conn.execute(
+            "UPDATE team_members SET role = %s WHERE team_id = %s AND user_id = %s",
+            (role, team_id, member_id),
+        )
+        return cur.rowcount > 0

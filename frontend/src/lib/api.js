@@ -225,6 +225,12 @@ export const renameTeam = (teamId, name) =>
     body: JSON.stringify({ name }),
   })
 export const deleteTeam = (teamId) => req(`/api/teams/${teamId}`, { method: 'DELETE' })
+export const setMemberRole = (teamId, memberId, role) =>
+  req(`/api/teams/${teamId}/members/${memberId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ role }),
+  })
 export const removeMember = (teamId, memberId) =>
   req(`/api/teams/${teamId}/members/${memberId}`, { method: 'DELETE' })
 

@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from .. import db
 from ..auth import current_user
 from ..schemas import (
+    MemberRole,
     Conversation,
     ConversationRename,
     ConversationSummary,
@@ -36,6 +37,8 @@ def _guard(fn, *args, **kwargs):
         return fn(*args, **kwargs)
     except db.NotAMember:
         raise HTTPException(status_code=403, detail="Not a member of this team")
+    except db.NotPermitted as exc:
+        raise HTTPException(status_code=403, detail=str(exc))
 
 
 # --- Saved papers ---------------------------------------------------------
@@ -185,6 +188,17 @@ async def library_chat(
 
 
 # --- Saved conversations ---------------------------------------------------
+
+
+@router.patch("/teams/{team_id}/members/{member_id}")
+def set_member_role(
+    team_id: int, member_id: str, body: MemberRole, user: str = Depends(current_user)
+) -> dict:
+    """Promote or demote a member. Owners only."""
+    ok = _guard(db.set_member_role, user, team_id, member_id, body.role)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Member not found")
+    return {"ok": True}
 
 
 @router.get("/conversations", response_model=list[ConversationSummary])
