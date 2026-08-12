@@ -276,59 +276,67 @@ function LibraryCard({ paper, folders = [], teamId, onChanged }) {
         />
       )}
 
-      <div className="mt-3 flex items-center gap-4">
-        {paper.url && !isUpload(paper) && (
-          <a
-            href={paper.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline"
-          >
-            {t('viewSource')} <Icon name="externalLink" className="ml-0.5" />
-          </a>
-        )}
-        {/* Close reading belongs to papers you have kept, not to a list of
-            search hits — it opens the paper in its own window to read. */}
-        <CiteButton paper={paper} />
-        {readerIdFor(paper) && (
+      {/* Actions in two groups on one line: what you do with the paper on the
+          left, where it lives on the right. They wrap as groups rather than
+          spilling one button at a time, which is what made this two ragged
+          rows in a narrow column. */}
+      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+        <div className="flex items-center gap-x-4 gap-y-2">
+          {readerIdFor(paper) && (
+            <button
+              type="button"
+              onClick={() =>
+                window.open(
+                  `/read?id=${encodeURIComponent(readerIdFor(paper))}`,
+                  '_blank',
+                  'noopener'
+                )
+              }
+              className="whitespace-nowrap text-sm font-medium text-slate-700 transition-colors hover:text-blue-700"
+            >
+              <Icon name="bookOpen" className="mr-1" />
+              {t('openReader')}
+            </button>
+          )}
+          <CiteButton paper={paper} />
+          {paper.url && !isUpload(paper) && (
+            <a
+              href={paper.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="whitespace-nowrap text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline"
+            >
+              {t('viewSource')} <Icon name="externalLink" className="ml-0.5" />
+            </a>
+          )}
+        </div>
+
+        <div className="ml-auto flex items-center gap-3">
+          <label className="flex items-center gap-1 text-xs text-slate-500">
+            <Icon name="folder" />
+            <select
+              value={paper.folder_id ?? ''}
+              onChange={(e) => moveTo(e.target.value)}
+              title={t('moveToFolder')}
+              className="max-w-[8rem] truncate rounded border border-slate-300 bg-white px-1 py-0.5 text-xs text-slate-700 focus:border-blue-500 focus:outline-none"
+            >
+              <option value="">{t('unfiled')}</option>
+              {folders.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.name}
+                </option>
+              ))}
+            </select>
+          </label>
           <button
             type="button"
-            onClick={() =>
-              window.open(
-                `/read?id=${encodeURIComponent(readerIdFor(paper))}`,
-                '_blank',
-                'noopener'
-              )
-            }
-            className="text-sm font-medium text-slate-600 transition-colors hover:text-blue-700"
+            onClick={remove}
+            title={t('delete')}
+            className="rounded p-1 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600"
           >
-            <Icon name="bookOpen" className="mr-1" />
-            {t('openReader')}
+            <Icon name="trash" />
           </button>
-        )}
-        <label className="flex items-center gap-1 text-xs text-slate-500">
-          <Icon name="folder" />
-          <select
-            value={paper.folder_id ?? ''}
-            onChange={(e) => moveTo(e.target.value)}
-            title={t('moveToFolder')}
-            className="max-w-[9rem] rounded border border-slate-300 bg-white px-1 py-0.5 text-xs text-slate-700 focus:border-blue-500 focus:outline-none"
-          >
-            <option value="">{t('unfiled')}</option>
-            {folders.map((f) => (
-              <option key={f.id} value={f.id}>
-                {f.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <button
-          type="button"
-          onClick={remove}
-          className="ml-auto text-sm font-medium text-red-500 hover:text-red-700"
-        >
-          {t('delete')}
-        </button>
+        </div>
       </div>
     </div>
   )
@@ -383,7 +391,7 @@ function FolderSidebar({ folders, active, onPick, onChanged, total, teamId }) {
   }
 
   return (
-    <aside className="w-60 shrink-0">
+    <div className="min-w-0">
       <FolderTree
         folders={folders}
         active={active}
@@ -396,7 +404,7 @@ function FolderSidebar({ folders, active, onPick, onChanged, total, teamId }) {
         unfiledCount={unfiled?.count ?? 0}
       />
       {error && <p className="mt-2 px-2 text-xs text-red-600">{error}</p>}
-    </aside>
+    </div>
   )
 }
 
@@ -469,8 +477,8 @@ export default function LibraryTab() {
         onSwitch={switchWorkspace}
         onTeamsChanged={loadTeams}
       />
-      <div className="grid grid-cols-1 gap-5 md:grid-cols-[13rem_1fr]">
-      <aside>
+      <div className="grid grid-cols-1 gap-5 md:grid-cols-[13rem_minmax(0,1fr)]">
+      <aside className="min-w-0">
         <FolderSidebar
           folders={folders}
           active={activeFolder}
