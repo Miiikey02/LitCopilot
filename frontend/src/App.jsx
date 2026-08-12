@@ -4,7 +4,6 @@ import * as api from './lib/api'
 import AnswerText from './components/AnswerText'
 import SourceCard from './components/SourceCard'
 import LibraryTab from './components/LibraryTab'
-import HistoryList from './components/HistoryList'
 import TrialsList from './components/TrialsList'
 import ResearchChat from './components/ResearchChat'
 import BulkExport from './components/BulkExport'
@@ -12,6 +11,7 @@ import AuthPanel from './components/AuthPanel'
 import Icon from './components/Icon'
 import SearchProgress from './components/SearchProgress'
 import HeroEmpty from './components/HeroEmpty'
+import Sidebar from './components/Sidebar'
 import SegmentedControl from './components/SegmentedControl'
 import SourcePicker, { ALL_SOURCES } from './components/SourcePicker'
 import DeepResearchView from './components/DeepResearchView'
@@ -22,10 +22,14 @@ import { exportMarkdown, exportPdf } from './lib/exportResult'
 // Layout choice is a workspace preference, so it outlives a single search.
 const VIEW_KEY = 'gaze.sourcesView'
 const DBS_KEY = 'gaze.databases'
+const RAIL_KEY = 'gaze.sidebarCollapsed'
 
 export default function App() {
   const { t, i18n } = useTranslation()
   const [tab, setTab] = useState('search') // 'search' | 'library'
+  const [railCollapsed, setRailCollapsed] = useState(
+    () => localStorage.getItem(RAIL_KEY) === '1'
+  )
   const [query, setQuery] = useState('')
   const [limit, setLimit] = useState(15) // how many papers to retrieve per search
   const [databases, setDatabases] = useState(() => {
@@ -331,64 +335,46 @@ export default function App() {
     })
   }
 
-  return (
-    <div className="min-h-screen">
-      <header className="no-print border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-          <div className="flex items-center gap-6">
-            <h1 className="text-xl font-bold text-slate-900">
-              {t('appName')}
-              <span className="ml-2 hidden text-sm font-normal text-slate-500 sm:inline">
-                {t('tagline')}
-              </span>
-            </h1>
-            <SegmentedControl
-              value={tab}
-              onChange={setTab}
-              options={[
-                { value: 'search', label: t('tabSearch'), icon: 'search' },
-                { value: 'library', label: t('tabLibrary'), icon: 'library' },
-              ]}
-            />
-          </div>
-          <div className="flex items-center gap-3">
-            {authEnabled && session && (
-              <>
-                <span
-                  className="hidden max-w-[12rem] truncate text-sm text-slate-500 sm:inline"
-                  title={session.user?.email}
-                >
-                  {session.user?.email}
-                </span>
-                <button
-                  onClick={() => supabase.auth.signOut()}
-                  className="text-sm text-slate-500 hover:text-slate-800"
-                >
-                  {t('signOut')}
-                </button>
-              </>
-            )}
-            {/* Signed out, accounts exist: make signing in visible from any tab,
-                otherwise the only way in is discovering the library tab. */}
-            {authEnabled && session === false && (
-              <button
-                onClick={() => setTab('library')}
-                className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
-              >
-                {t('signIn')} / {t('signUp')}
-              </button>
-            )}
-            <button
-              onClick={toggleLang}
-              className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
-            >
-              {i18n.language.startsWith('zh') ? t('toggleToEn') : t('toggleToZh')}
-            </button>
-          </div>
-        </div>
-      </header>
+  // "New search" clears the whole working state, so the next question is not
+  // read against the last one's answer, sources or thread.
+  const onNewSearch = () => {
+    setTab('search')
+    setQuery('')
+    setResult(null)
+    setDeep(null)
+    setLookup(null)
+    setLookupSaved(false)
+    setTrials(null)
+    setChatTurns([])
+    setConversationId(null)
+    setError('')
+  }
 
-      <main className="mx-auto max-w-6xl px-6 py-6">
+  return (
+    <div className="flex h-screen overflow-hidden bg-slate-50">
+      <Sidebar
+        collapsed={railCollapsed}
+        onToggle={() => {
+          const next = !railCollapsed
+          setRailCollapsed(next)
+          localStorage.setItem(RAIL_KEY, next ? '1' : '0')
+        }}
+        tab={tab}
+        onTab={setTab}
+        history={history}
+        onPickHistory={onPickHistory}
+        onClearHistory={onClearHistory}
+        onNewSearch={onNewSearch}
+        session={session}
+        authEnabled={authEnabled}
+        onSignIn={() => setTab('library')}
+        onSignOut={() => supabase.auth.signOut()}
+        onToggleLang={toggleLang}
+      />
+
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+      <main className="w-full flex-1 overflow-y-auto px-6 py-6">
+        <div className="mx-auto max-w-5xl">
         {/* The library is per-account, so it needs a signed-in user. Search
             itself stays open so people can try Gaze before registering. */}
         {tab === 'library' &&
@@ -553,13 +539,6 @@ export default function App() {
                 runSearch(q, { deep: true, lookup: false })
               }}
             />
-            <div className="rounded-lg border border-slate-200 bg-white p-5">
-              <HistoryList
-                history={history}
-                onPick={onPickHistory}
-                onClear={onClearHistory}
-              />
-            </div>
           </div>
         )}
 
@@ -749,7 +728,9 @@ export default function App() {
         <footer className="mt-10 border-t border-slate-200 pt-4 text-center text-xs text-slate-400">
           {t('poweredBy')}
         </footer>
+        </div>
       </main>
+      </div>
     </div>
   )
 }
