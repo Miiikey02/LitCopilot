@@ -14,9 +14,9 @@ from pathlib import Path
 
 from collections import OrderedDict
 from time import monotonic
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import db
@@ -24,6 +24,7 @@ from .auth import current_user, optional_user
 from .config import MAX_RESULTS, has_llm_key
 from .routers import library
 from .schemas import (
+    ArticleBlock,
     ArticleResponse,
     AskRequest,
     AskResponse,
@@ -43,8 +44,10 @@ from .schemas import (
     SourceCard,
     TrialsRequest,
     TrialsResponse,
+    UploadResponse,
 )
-from .services import llm_service, sessions
+from .services import llm_service, sessions, uploads
+from .services.models import Paper
 from .services.openalex import connected_papers, resolve_work
 from .services.openalex import _to_paper as _oa_to_paper
 from .services.pubmed import (
@@ -324,7 +327,23 @@ async def _resolve_with_text(identifier: str):
     OpenAlex resolves almost anything and gives the graph fields; PubMed is then
     asked for the same DOI because it carries curated abstracts and the PMC link
     that makes open-access full text reachable.
+
+    An "upload:<id>" identifier is a PDF the reader supplied. Treating it as
+    just another identifier means the close reading, the entities and the
+    paper-scoped agent all work on it without knowing where the text came from.
     """
+    if identifier.startswith(UPLOAD_PREFIX):
+        record = uploads.get(identifier[len(UPLOAD_PREFIX):])
+        if record is None:
+            return None, None
+        paper = Paper(
+            source="upload",
+            source_id=record["id"],
+            title=record["title"],
+            full_text=record["text"][:20000],
+        )
+        return None, paper
+
     work = await resolve_work(identifier)
     if work is None:
         return None, None
@@ -399,6 +418,22 @@ async def paper_article(req: PaperRequest) -> ArticleResponse:
     seconds and the close reading takes far longer, so the reader can start
     reading the paper while the appraisal is still being written.
     """
+    if req.identifier.startswith(UPLOAD_PREFIX):
+        record = uploads.get(req.identifier[len(UPLOAD_PREFIX):])
+        if record is None:
+            raise HTTPException(status_code=404, detail="Upload not found or expired")
+        card = Paper(
+            source="upload", source_id=record["id"], title=record["title"]
+        ).to_card()
+        return ArticleResponse(
+            paper=SourceCard(**card),
+            blocks=[ArticleBlock(**b) for b in record["blocks"]],
+            has_full_text=True,
+            # The only PDF we can reliably display is one the reader gave us.
+            has_pdf=True,
+            pdf_link=f"/api/paper/upload/{record['id']}/file",
+        )
+
     _work, paper = await _resolve_cached(req.identifier)
     if paper is None:
         raise HTTPException(status_code=404, detail="Paper not found")
@@ -486,9 +521,48 @@ async def _serves_a_pdf(url: str) -> bool:
         return False
 
 
+UPLOAD_PREFIX = "upload:"
+
+
+@app.post("/api/paper/upload", response_model=UploadResponse)
+async def paper_upload(file: UploadFile = File(...)) -> UploadResponse:
+    """Take a PDF the reader already has and open 精读模式 on it.
+
+    The route exists because most biomedical PDFs cannot be fetched by a
+    server — publishers answer automated requests with a bot check — while the
+    reader's own institutional access has no such problem.
+    """
+    data = await file.read()
+    try:
+        record = uploads.save(data)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return UploadResponse(
+        identifier=f"{UPLOAD_PREFIX}{record['id']}",
+        title=record["title"],
+        pages=record["pages"],
+        blocks=[ArticleBlock(**b) for b in record["blocks"]],
+    )
+
+
+@app.get("/api/paper/upload/{uid}/file")
+async def paper_upload_file(uid: str):
+    """The uploaded PDF itself — this is the one PDF the reader can display."""
+    data = uploads.file_bytes(uid)
+    if data is None:
+        raise HTTPException(status_code=404, detail="Upload not found or expired")
+    return Response(
+        content=data,
+        media_type="application/pdf",
+        headers={"Content-Disposition": 'inline; filename="paper.pdf"'},
+    )
+
+
 @app.get("/api/paper/pdf")
 async def paper_pdf(id: str):
     """Stream the paper's open-access PDF, so it can be shown in the reader."""
+    if id.startswith(UPLOAD_PREFIX):
+        return await paper_upload_file(id[len(UPLOAD_PREFIX):])
     _work, paper = await _resolve_cached(id)
     if paper is None:
         raise HTTPException(status_code=404, detail="Paper not found")
@@ -550,6 +624,9 @@ async def paper_ask(req: AskRequest) -> AskResponse:
 @app.post("/api/paper/connected", response_model=ConnectedResponse)
 async def paper_connected(req: PaperRequest) -> ConnectedResponse:
     """The similarity graph around one paper (bibliographic coupling)."""
+    if req.identifier.startswith(UPLOAD_PREFIX):
+        # An uploaded PDF has no record in any index, so it has no neighbours.
+        return ConnectedResponse(nodes=[], edges=[], warning="upload has no citation record")
     work = await resolve_work(req.identifier)
     if work is None:
         raise HTTPException(status_code=404, detail="Paper not found")
@@ -574,7 +651,9 @@ async def paper_evidence(
         raise HTTPException(status_code=404, detail="Paper not found")
     lang = req.lang or "zh"
 
-    graph = await connected_papers(work, limit=18)
+    # An uploaded PDF is not in any citation index, so there is no
+    # neighbourhood to draw on — the appraisal falls back to the paper itself.
+    graph = await connected_papers(work, limit=18) if work else {"nodes": []}
     ids = [n["id"] for n in graph["nodes"] if not n["is_seed"]][:14]
     neighbours = []
     if ids:

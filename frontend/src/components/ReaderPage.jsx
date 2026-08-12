@@ -26,6 +26,11 @@ export default function ReaderPage() {
   const { t, i18n } = useTranslation()
   const lang = i18n.language.startsWith('zh') ? 'zh' : 'en'
   const identifier = new URLSearchParams(window.location.search).get('id') || ''
+  // An uploaded PDF exists in no citation index, so the map of related work and
+  // the evidence across it have nothing to draw on.
+  const isUpload = identifier.startsWith('upload:')
+  const fileInput = useRef(null)
+  const [uploading, setUploading] = useState(false)
 
   const [article, setArticle] = useState(null)
   const [read, setRead] = useState(null)
@@ -233,6 +238,37 @@ export default function ReaderPage() {
         </p>
         {/* A publisher that blocks our fetch will still serve the reader's own
             browser, so offer the file even when it cannot be framed here. */}
+        <input
+          ref={fileInput}
+          type="file"
+          accept="application/pdf,.pdf"
+          className="hidden"
+          onChange={async (e) => {
+            const file = e.target.files?.[0]
+            e.target.value = ''
+            if (!file) return
+            setUploading(true)
+            try {
+              const up = await api.paperUpload(file)
+              // Reload against the upload identifier so every panel — reading,
+              // entities, the agent — re-resolves from the same one place.
+              window.location.search = `?id=${encodeURIComponent(up.identifier)}`
+            } catch (err) {
+              setUploading(false)
+              window.alert(`${t('uploadFailed')}${err.message ? `: ${err.message}` : ''}`)
+            }
+          }}
+        />
+        <button
+          onClick={() => fileInput.current?.click()}
+          disabled={uploading}
+          title={t('uploadPdfHint')}
+          className="shrink-0 rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-600 transition-colors hover:border-blue-300 hover:text-blue-700 disabled:opacity-50"
+        >
+          <Icon name="filePlus" className="mr-1" />
+          {uploading ? t('uploadingPdf') : t('uploadPdf')}
+        </button>
+
         {/* The best PDF an index knows of is sometimes an unfamiliar mirror
             rather than the publisher, so name the host before you go there. */}
         {article?.pdf_link && !article?.has_pdf && (
@@ -326,9 +362,13 @@ export default function ReaderPage() {
               options={[
                 { value: 'read', label: t('tabRead'), icon: 'note' },
                 { value: 'chat', label: t('tabChat'), icon: 'sparkles' },
-                { value: 'graph', label: t('tabGraph'), icon: 'grid' },
+                ...(isUpload
+                  ? []
+                  : [
+                      { value: 'graph', label: t('tabGraph'), icon: 'grid' },
+                      { value: 'evidence', label: t('tabEvidence'), icon: 'quote' },
+                    ]),
                 { value: 'entities', label: t('tabEntities'), icon: 'flask' },
-                { value: 'evidence', label: t('tabEvidence'), icon: 'quote' },
               ]}
             />
           </div>

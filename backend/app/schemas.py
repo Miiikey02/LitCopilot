@@ -287,6 +287,13 @@ class ArticleResponse(BaseModel):
     warning: Optional[str] = None
 
 
+class UploadResponse(BaseModel):
+    identifier: str  # pass this back as a normal paper identifier
+    title: str = ""
+    pages: int = 0
+    blocks: list[ArticleBlock] = []
+
+
 class AskRequest(BaseModel):
     identifier: str
     selection: str = ""

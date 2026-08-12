@@ -74,6 +74,16 @@ export const paperEvidence = (identifier, lang, focus) =>
   jsonPost('/api/paper/evidence', { identifier, lang: lang || null, focus: focus || null })
 export const paperArticle = (identifier, lang) =>
   jsonPost('/api/paper/article', { identifier, lang: lang || null })
+export const paperUpload = async (file) => {
+  const body = new FormData()
+  body.append('file', file)
+  const r = await fetch('/api/paper/upload', { method: 'POST', body })
+  if (!r.ok) {
+    const detail = await r.json().catch(() => ({}))
+    throw new Error(detail.detail || 'upload failed')
+  }
+  return r.json()
+}
 export const paperAsk = (identifier, selection, question, intent, lang) =>
   jsonPost('/api/paper/ask', {
     identifier,
