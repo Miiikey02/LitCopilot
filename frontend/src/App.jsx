@@ -513,18 +513,18 @@ export default function App() {
           </div>
         )}
 
-        {!result && !loading && !error && (
+        {!result && !lookup && !loading && !error && (
           <div className="space-y-4">
             <HeroEmpty
               onPick={(q) => {
                 setQuery(q)
                 setMode('quick')
-                runSearch(q, { deep: false })
+                runSearch(q, { deep: false, lookup: false })
               }}
               onDeepPick={(q) => {
                 setQuery(q)
                 setMode('deep')
-                runSearch(q, { deep: true })
+                runSearch(q, { deep: true, lookup: false })
               }}
             />
             <div className="rounded-lg border border-slate-200 bg-white p-5">
