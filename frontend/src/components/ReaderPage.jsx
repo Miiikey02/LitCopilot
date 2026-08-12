@@ -233,11 +233,20 @@ export default function ReaderPage() {
         </p>
         {/* A publisher that blocks our fetch will still serve the reader's own
             browser, so offer the file even when it cannot be framed here. */}
+        {/* The best PDF an index knows of is sometimes an unfamiliar mirror
+            rather than the publisher, so name the host before you go there. */}
         {article?.pdf_link && !article?.has_pdf && (
           <a
             href={article.pdf_link}
             target="_blank"
             rel="noopener noreferrer"
+            title={(() => {
+              try {
+                return new URL(article.pdf_link).host
+              } catch {
+                return article.pdf_link
+              }
+            })()}
             className="shrink-0 text-xs text-slate-500 transition-colors hover:text-blue-700"
           >
             {t('openPdfExternally')} <Icon name="externalLink" />
