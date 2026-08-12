@@ -29,35 +29,64 @@ function loadPdfjs() {
   return pdfjsPromise
 }
 
+// Never render narrower than this. A pane measured mid-layout can report a
+// width of zero, and a page drawn to fit "zero" is a thumbnail nobody can read
+// — and, since rendering happens once, it would stay that way.
+const MIN_WIDTH = 360
+
 export default function PdfPane({ src, onAsk }) {
   const { t } = useTranslation()
   const scroller = useRef(null)
   const pagesHost = useRef(null)
   const [status, setStatus] = useState('loading') // loading | ready | failed
   const [sel, setSel] = useState(null)
+  // Re-render when the split is dragged: a canvas does not reflow, so a wider
+  // pane would otherwise keep showing the page drawn for the narrower one.
+  const [width, setWidth] = useState(0)
+
+  useEffect(() => {
+    const box = scroller.current
+    if (!box) return
+    const measure = () => {
+      const w = Math.max(box.clientWidth - 32, MIN_WIDTH)
+      // Only worth redrawing for a change a reader would notice.
+      setWidth((prev) => (Math.abs(w - prev) > 48 ? w : prev))
+    }
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(box)
+    return () => ro.disconnect()
+  }, [])
 
   useEffect(() => {
     let cancelled = false
     const host = pagesHost.current
-    if (!host || !src) return
+    if (!host || !src || !width) return
     host.replaceChildren()
     setStatus('loading')
     ;(async () => {
       try {
         const pdfjs = await loadPdfjs()
-        const doc = await pdfjs.getDocument({ url: src }).promise
+        // One plain fetch rather than byte-range requests: the upload route
+        // serves the whole file and does not advertise range support, and a
+        // failed range dance shows up as a stream of aborted connections.
+        const doc = await pdfjs.getDocument({
+          url: src,
+          disableRange: true,
+          disableStream: true,
+        }).promise
         if (cancelled) return
 
         // Fit the page to the pane, and draw at device resolution so text is
         // sharp on a retina screen without inflating the layout size.
-        const available = (scroller.current?.clientWidth || 800) - 32
+        const available = width
         const dpr = Math.min(window.devicePixelRatio || 1, 2)
 
         for (let n = 1; n <= doc.numPages; n++) {
           if (cancelled) return
           const page = await doc.getPage(n)
           const base = page.getViewport({ scale: 1 })
-          const scale = Math.max(available / base.width, 0.2)
+          const scale = Math.max(available / base.width, 0.3)
           const viewport = page.getViewport({ scale })
 
           const wrap = document.createElement('div')
@@ -103,7 +132,7 @@ export default function PdfPane({ src, onAsk }) {
     return () => {
       cancelled = true
     }
-  }, [src])
+  }, [src, width])
 
   const captureSelection = () => {
     const s = window.getSelection()
