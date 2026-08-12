@@ -304,16 +304,40 @@ export default function App() {
     setTrials(null)
     try {
       const r = await api.resumeConversation(conv.id)
+      const st = r.state || {}
       setQuery(r.seed_query || r.title || '')
       setConversationId(r.id)
+      // Put the controls back the way they were, so what is on screen matches
+      // what the toolbar claims produced it.
+      setMode(st.mode === 'deep' ? 'deep' : 'quick')
+      if (st.limit) setLimit(st.limit)
+      if (st.sort) setSortBy(st.sort)
+      if (Array.isArray(st.databases) && st.databases.length) setDatabases(st.databases)
       setResult({
         original_query: r.seed_query,
-        detected_lang: i18n.language.startsWith('zh') ? 'zh' : 'en',
-        english_query: '',
+        detected_lang: st.lang || (i18n.language.startsWith('zh') ? 'zh' : 'en'),
+        english_query: st.english_query || '',
         answer: r.answer,
         sources: r.sources,
         session_id: r.session_id,
+        warning: st.warning || null,
       })
+      // A deep brief is its notebook as much as its prose; restoring only the
+      // answer would quietly downgrade it to a quick search.
+      if (st.mode === 'deep') {
+        setDeep({
+          original_query: r.seed_query,
+          detected_lang: st.lang || 'zh',
+          answer: r.answer,
+          contradictions: st.contradictions || [],
+          gaps: st.gaps || [],
+          sources: r.sources,
+          sub_questions: st.sub_questions || [],
+          full_text_read: st.full_text_read || 0,
+          session_id: r.session_id,
+          warning: st.warning || null,
+        })
+      }
       // Everything after the opening exchange is the follow-up thread.
       const rest = (r.messages || []).slice(2)
       const turns = []

@@ -187,6 +187,15 @@ async def search(
                 query,
                 seed_query=query,
                 sources=[c.model_dump() for c in cards],
+                state={
+                    "mode": "quick",
+                    "lang": lang,
+                    "limit": limit,
+                    "sort": sort,
+                    "databases": req.sources,
+                    "english_query": english_query,
+                    "warning": warning,
+                },
             )
             db.append_messages(
                 user,
@@ -311,6 +320,16 @@ async def deep_research(
                 query,
                 seed_query=query,
                 sources=[c.model_dump() for c in cards],
+                state={
+                    "mode": "deep",
+                    "lang": lang,
+                    "databases": req.sources,
+                    "contradictions": contradictions,
+                    "gaps": gaps,
+                    "sub_questions": [q.model_dump() for q in notebook],
+                    "full_text_read": read,
+                    "warning": warning,
+                },
             )
             db.append_messages(
                 user,
@@ -1015,6 +1034,7 @@ def resume_conversation(
         answer=answer,
         sources=[SourceCard(**c) for c in stored],
         messages=[ConversationMessage(**m) for m in conv["messages"]],
+        state=conv.get("state") or {},
         session_id=session_id,
     )
 

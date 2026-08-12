@@ -179,6 +179,9 @@ class ResumeResponse(BaseModel):
     answer: str = ""
     sources: list[SourceCard] = []
     messages: list[ConversationMessage] = []
+    # Mode, filters and — for a deep brief — its sub-questions, contradictions
+    # and gaps, so reopening restores the view and not just the text.
+    state: dict = {}
     session_id: str = ""
 
 

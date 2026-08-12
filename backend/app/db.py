@@ -89,6 +89,11 @@ CREATE TABLE IF NOT EXISTS conversations (
     -- same rule as everywhere else). Without them a saved thread could only be
     -- reopened by running its search again, which is not reopening at all.
     sources    JSONB,
+    -- How the result was arrived at and displayed: the mode, the filters, and
+    -- a deep brief's sub-questions, contradictions and gaps. Without it a
+    -- reopened deep search collapses into a plain answer and the controls snap
+    -- back to defaults, which is not the state the reader left.
+    state      JSONB,
     title      TEXT NOT NULL DEFAULT '',
     seed_query TEXT NOT NULL DEFAULT '',
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -136,6 +141,7 @@ CREATE TABLE IF NOT EXISTS uploads (
 
 ALTER TABLE uploads ADD COLUMN IF NOT EXISTS card JSONB;
 ALTER TABLE conversations ADD COLUMN IF NOT EXISTS sources JSONB;
+ALTER TABLE conversations ADD COLUMN IF NOT EXISTS state JSONB;
 CREATE INDEX IF NOT EXISTS uploads_created_idx ON uploads (created_at);
 CREATE INDEX IF NOT EXISTS saved_papers_user_idx ON saved_papers (user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS search_history_user_idx ON search_history (user_id, created_at DESC);
@@ -750,13 +756,14 @@ def create_conversation(
     seed_query: str = "",
     team_id: int | None = None,
     sources: list[dict] | None = None,
+    state: dict | None = None,
 ) -> int:
     with _get_pool().connection() as conn:
         _assert_member(conn, user_id, team_id)
         row = conn.execute(
             """INSERT INTO conversations
-                   (user_id, team_id, kind, title, seed_query, sources)
-               VALUES (%s,%s,%s,%s,%s,%s) RETURNING id""",
+                   (user_id, team_id, kind, title, seed_query, sources, state)
+               VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
             (
                 user_id,
                 team_id,
@@ -764,6 +771,7 @@ def create_conversation(
                 _title_from(first_message),
                 seed_query,
                 json.dumps(sources) if sources else None,
+                json.dumps(state) if state else None,
             ),
         ).fetchone()
         return row["id"]
@@ -867,6 +875,7 @@ def get_conversation(user_id: str, conversation_id: int) -> dict | None:
         "team_id": c["team_id"],
         "updated_at": c["updated_at"].isoformat(),
         "sources": c.get("sources") or [],
+        "state": c.get("state") or {},
         "messages": [{"role": r["role"], "content": r["content"] } for r in rows],
     }
 
