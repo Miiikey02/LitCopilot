@@ -18,6 +18,8 @@ class SearchRequest(BaseModel):
     # "relevance" (default) or "date" (newest first). Applied at the source
     # query, not just to the returned page.
     sort: Optional[str] = None
+    # Which databases to search. None searches all of them.
+    sources: Optional[list[str]] = None
 
 
 class SourceCard(BaseModel):
