@@ -481,6 +481,8 @@ async def paper_article(
             has_full_text=True,
             # The only PDF we can reliably display is one the reader gave us.
             has_pdf=True,
+            # The map and cross-paper evidence need an indexed identifier.
+            has_neighbours=bool((record.get("card") or {}).get("doi")),
             pdf_embed=(
                 f"/api/paper/upload/{record['id']}/file"
                 f"?g={uploads.make_grant(record['id'])}"
@@ -505,6 +507,7 @@ async def paper_article(
             paper=SourceCard(**paper.to_card()),
             blocks=blocks,
             has_full_text=False,
+            has_neighbours=True,
             has_pdf=await _serves_a_pdf(_pdf_url_for(paper)),
             pdf_link=_pdf_url_for(paper),
             warning=(
@@ -519,6 +522,7 @@ async def paper_article(
         license=article.get("license", ""),
         has_full_text=True,
         has_pdf=await _serves_a_pdf(_pdf_url_for(paper)),
+        has_neighbours=True,
         pdf_link=_pdf_url_for(paper),
         pdf_embed=f"/api/paper/pdf?id={quote(req.identifier, safe='')}",
     )
@@ -576,6 +580,22 @@ async def _serves_a_pdf(url: str) -> bool:
 
 
 UPLOAD_PREFIX = "upload:"
+
+
+def _indexed_identifier(identifier: str) -> str | None:
+    """The identifier to look this paper up in a citation index with.
+
+    An upload is addressed by its upload id, which no index knows. What the
+    index does know is the DOI it resolved to when it was uploaded, so anything
+    that needs the literature around a paper — the map, the evidence across it —
+    asks with that instead. Returns None when the upload matched nothing.
+    """
+    if not identifier.startswith(UPLOAD_PREFIX):
+        return identifier
+    record = uploads.get(identifier[len(UPLOAD_PREFIX):]) or {}
+    card = record.get("card") or {}
+    doi = card.get("doi") or record.get("doi") or ""
+    return doi or None
 
 
 async def _card_for_upload(record: dict) -> dict:
@@ -745,10 +765,13 @@ async def paper_ask(
 @app.post("/api/paper/connected", response_model=ConnectedResponse)
 async def paper_connected(req: PaperRequest) -> ConnectedResponse:
     """The similarity graph around one paper (bibliographic coupling)."""
-    if req.identifier.startswith(UPLOAD_PREFIX):
-        # An uploaded PDF has no record in any index, so it has no neighbours.
+    # An upload has no record of its own, but it usually resolved to a real
+    # paper on the way in — so the map is built from that paper's DOI. Only a
+    # PDF that matched nothing has no neighbourhood to show.
+    identifier = _indexed_identifier(req.identifier)
+    if identifier is None:
         return ConnectedResponse(nodes=[], edges=[], warning="upload has no citation record")
-    work = await resolve_work(req.identifier)
+    work = await resolve_work(identifier)
     if work is None:
         raise HTTPException(status_code=404, detail="Paper not found")
     try:
@@ -772,8 +795,12 @@ async def paper_evidence(
         raise HTTPException(status_code=404, detail="Paper not found")
     lang = req.lang or "zh"
 
-    # An uploaded PDF is not in any citation index, so there is no
-    # neighbourhood to draw on — the appraisal falls back to the paper itself.
+    # For an upload, the neighbourhood comes from the DOI it resolved to; a PDF
+    # that matched nothing simply has no neighbours and the appraisal falls back
+    # to the paper itself.
+    if work is None:
+        indexed = _indexed_identifier(req.identifier)
+        work = await resolve_work(indexed) if indexed else None
     graph = await connected_papers(work, limit=18) if work else {"nodes": []}
     ids = [n["id"] for n in graph["nodes"] if not n["is_seed"]][:14]
     neighbours = []

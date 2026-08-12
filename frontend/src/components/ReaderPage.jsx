@@ -27,9 +27,6 @@ export default function ReaderPage() {
   const { t, i18n } = useTranslation()
   const lang = i18n.language.startsWith('zh') ? 'zh' : 'en'
   const identifier = new URLSearchParams(window.location.search).get('id') || ''
-  // An uploaded PDF exists in no citation index, so the map of related work and
-  // the evidence across it have nothing to draw on.
-  const isUpload = identifier.startsWith('upload:')
   const fileInput = useRef(null)
   const [uploading, setUploading] = useState(false)
 
@@ -368,7 +365,9 @@ export default function ReaderPage() {
               options={[
                 { value: 'read', label: t('tabRead'), icon: 'note' },
                 { value: 'chat', label: t('tabChat'), icon: 'sparkles' },
-                ...(isUpload
+                // An upload gets these too, as long as the paper it resolved
+                // to is one a citation index knows.
+                ...(article && article.has_neighbours === false
                   ? []
                   : [
                       { value: 'graph', label: t('tabGraph'), icon: 'grid' },

@@ -3,6 +3,8 @@ import { useTranslation } from 'react-i18next'
 import * as api from '../lib/api'
 import LibraryChat from './LibraryChat'
 import Icon from './Icon'
+import CiteButton from './CiteButton'
+import BulkExport from './BulkExport'
 import WorkspaceBar from './WorkspaceBar'
 
 const sourceLabel = {
@@ -303,6 +305,7 @@ function LibraryCard({ paper, folders = [], teamId, onChanged }) {
         )}
         {/* Close reading belongs to papers you have kept, not to a list of
             search hits — it opens the paper in its own window to read. */}
+        <CiteButton paper={paper} />
         {readerIdFor(paper) && (
           <button
             type="button"
@@ -558,6 +561,9 @@ export default function LibraryTab() {
           <span className="shrink-0 text-sm text-slate-500">
             {t('savedCount', { count: papers.length })}
           </span>
+          {/* Exports whatever the folder/tag/search filters currently show, so
+              "everything in this folder" is one click rather than a selection. */}
+          <BulkExport papers={papers} queryLabel={t('libraryTitle')} />
         </div>
 
         <UploadPdf

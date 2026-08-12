@@ -283,6 +283,7 @@ class ArticleResponse(BaseModel):
     license: str = ""
     has_full_text: bool = False
     has_pdf: bool = False  # a PDF that can actually be displayed inline
+    has_neighbours: bool = True  # whether a citation index knows this paper
     pdf_link: str = ""  # publisher's PDF, for opening in a new tab
     pdf_embed: str = ""  # our own URL for the PDF pane; never a foreign origin
     warning: Optional[str] = None
