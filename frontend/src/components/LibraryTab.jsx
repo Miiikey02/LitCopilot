@@ -17,6 +17,15 @@ const sourceLabel = {
 const isUpload = (paper) =>
   paper.source === 'upload' || (paper.source_id || '').startsWith('upload:')
 
+// Which identifier 精读模式 should open this paper with.
+//
+// An upload carries the DOI of the published article, because that is what
+// makes it cite correctly — but the DOI locates the *publisher's* copy, which
+// is usually paywalled and resolves to an abstract. The file the reader
+// actually has is the upload, so for an upload the upload id always wins.
+const readerIdFor = (paper) =>
+  isUpload(paper) ? paper.source_id : paper.doi || paper.source_id
+
 function UploadPdf({ teamId, folderId, onDone }) {
   const { t } = useTranslation()
   const input = useRef(null)
@@ -294,12 +303,12 @@ function LibraryCard({ paper, folders = [], teamId, onChanged }) {
         )}
         {/* Close reading belongs to papers you have kept, not to a list of
             search hits — it opens the paper in its own window to read. */}
-        {(paper.doi || paper.source_id) && (
+        {readerIdFor(paper) && (
           <button
             type="button"
             onClick={() =>
               window.open(
-                `/read?id=${encodeURIComponent(paper.doi || paper.source_id)}`,
+                `/read?id=${encodeURIComponent(readerIdFor(paper))}`,
                 '_blank',
                 'noopener'
               )
