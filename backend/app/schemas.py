@@ -273,6 +273,8 @@ class ArticleBlock(BaseModel):
     text: str = ""
     label: str = ""
     level: int = 1
+    image: str = ""  # figure artwork, served by PMC
+    rows: list[list[str]] = []  # table cells, so a table reads as a table
 
 
 class ArticleResponse(BaseModel):

@@ -273,19 +273,74 @@ def _tidy_citations(text: str) -> str:
     return _XREF_RUN.sub(join, _XREF_GROUP.sub(join, text))
 
 
-def _blocks_from_body(body: ET.Element) -> list[dict]:
+_XLINK = "{http://www.w3.org/1999/xlink}href"
+_IMG_SUFFIXES = (".jpg", ".jpeg", ".png", ".gif")
+
+
+def _float_image(el: ET.Element, pmcid: str) -> str:
+    """URL of a figure's image, taken from the XML rather than guessed.
+
+    PMC serves an article's artwork under /articles/<PMCID>/bin/<graphic href>,
+    and the href is in the record we already fetched, so no filename has to be
+    inferred. Returns "" when the float carries no artwork.
+    """
+    graphic = el.find(".//graphic")
+    if graphic is None or not pmcid:
+        return ""
+    href = (graphic.get(_XLINK) or "").strip()
+    if not href:
+        return ""
+    if not href.lower().endswith(_IMG_SUFFIXES):
+        href += ".jpg"
+    return f"https://pmc.ncbi.nlm.nih.gov/articles/{pmcid}/bin/{href}"
+
+
+def _table_rows(el: ET.Element, max_rows: int = 40, max_cols: int = 10) -> list[list[str]]:
+    """A table's cells, so a table reads as a table rather than as a caption.
+
+    In a review the tables often carry the comparison the reader came for —
+    showing only the caption throws that away. Bounded because a few articles
+    carry very large tables and the reading pane is not a spreadsheet.
+    """
+    table = el.find(".//table")
+    if table is None:
+        return []
+    rows: list[list[str]] = []
+    for tr in table.iter("tr"):
+        cells = [_tidy_citations(_text(td).strip()) for td in tr if td.tag in ("td", "th")]
+        if any(cells):
+            rows.append(cells[:max_cols])
+        if len(rows) >= max_rows:
+            break
+    return rows
+
+
+def _float_block(el: ET.Element, tag: str, pmcid: str) -> dict | None:
+    """One figure or table as a reading block, wherever it was found."""
+    label = _text(el.find("label")).strip()
+    cap = _text(el.find("caption")).strip()
+    rows = _table_rows(el) if tag == "table-wrap" else []
+    image = _float_image(el, pmcid)
+    if not (label or cap or rows or image):
+        return None
+    return {
+        "type": "figure" if tag == "fig" else "table",
+        "label": label or ("Figure" if tag == "fig" else "Table"),
+        "text": cap,
+        "image": image,
+        "rows": rows,
+        "float_id": el.get("id", ""),
+    }
+
+
+def _blocks_from_body(body: ET.Element, pmcid: str = "") -> list[dict]:
     """Full text as ordered blocks, for a reading pane rather than a prompt.
 
     `_extract_body` flattens an article into one string, which is all a model
     needs. A person reading the paper needs the structure back: which heading
-    they are under, where a paragraph ends, and what Figure 1's caption says —
-    captions especially, since "what does Figure 1 show" is the question people
-    ask most and the caption is the only part of a figure we have as text.
+    they are under, where a paragraph ends, and where each figure belongs.
     """
     out: list[dict] = []
-
-    def caption_of(el: ET.Element) -> tuple[str, str]:
-        return _text(el.find("label")).strip(), _text(el.find("caption")).strip()
 
     def walk(el: ET.Element, depth: int) -> None:
         for child in el:
@@ -300,23 +355,24 @@ def _blocks_from_body(body: ET.Element) -> list[dict]:
             elif tag == "p":
                 t = _tidy_citations(_text(child).strip())
                 if t:
-                    out.append({"type": "p", "text": t})
+                    # Which floats this paragraph points at, so a figure kept in
+                    # <floats-group> can be put back where it is discussed.
+                    refs = [
+                        x.get("rid", "")
+                        for x in child.iter("xref")
+                        if x.get("ref-type") in ("fig", "table")
+                    ]
+                    out.append({"type": "p", "text": t, "refs": [r for r in refs if r]})
             elif tag in ("fig", "table-wrap"):
-                label, cap = caption_of(child)
-                if label or cap:
-                    out.append({
-                        "type": "figure" if tag == "fig" else "table",
-                        "label": label or ("Figure" if tag == "fig" else "Table"),
-                        "text": cap,
-                    })
+                block = _float_block(child, tag, pmcid)
+                if block:
+                    out.append(block)
             elif tag == "title":
                 continue
             else:
                 walk(child, depth)
 
     walk(body, 1)
-    for i, b in enumerate(out):
-        b["id"] = f"b{i}"
     return out
 
 
@@ -388,27 +444,44 @@ async def fetch_article(pmcid: str) -> dict:
     body = root.find(".//body")
     if body is None:
         return {}
-    blocks = _blocks_from_body(body)
+    blocks = _blocks_from_body(body, pmcid)
     if sum(len(b.get("text", "")) for b in blocks) < 500:
         return {}
 
-    # Many publishers deposit figures in <floats-group>, outside <body>, so
-    # walking the body alone finds none of them even though the text says
-    # "(Fig. 1)" throughout. Collect what the body missed and append it — a
-    # caption at the end is far better than a caption the reader cannot reach.
-    seen = {b.get("label", "") for b in blocks if b["type"] in ("figure", "table")}
-    extra: list[dict] = []
-    for tag, kind in (("fig", "figure"), ("table-wrap", "table")):
+    # Most publishers deposit figures in <floats-group>, a sibling of <body>, so
+    # the body walk finds none of them. Collecting them is not enough: dumping
+    # them at the end rearranges the paper, and a figure is only meaningful
+    # beside the passage that discusses it. Each float goes back after the first
+    # paragraph that references it, which is where the journal itself puts it.
+    placed = {b.get("float_id") for b in blocks if b["type"] in ("figure", "table")}
+    pending: "OrderedDict[str, dict]" = OrderedDict()
+    for tag in ("fig", "table-wrap"):
         for el in root.iter(tag):
-            label = _text(el.find("label")).strip()
-            cap = _text(el.find("caption")).strip()
-            if not (label or cap) or label in seen:
+            fid = el.get("id", "")
+            if fid and fid in placed:
                 continue
-            seen.add(label)
-            extra.append({"type": kind, "label": label or kind.title(), "text": cap})
-    if extra:
-        blocks.append({"type": "heading", "text": "Figures and tables", "level": 1})
-        blocks.extend(extra)
+            block = _float_block(el, tag, pmcid)
+            if block is None:
+                continue
+            key = fid or f"{tag}:{block['label']}:{len(pending)}"
+            if key not in pending:
+                pending[key] = block
+
+    merged: list[dict] = []
+    for b in blocks:
+        merged.append(b)
+        for rid in b.pop("refs", []) or []:
+            float_block = pending.pop(rid, None)
+            if float_block is not None:
+                merged.append(float_block)
+    # Anything the text never referenced still belongs to the article; keep it
+    # at the end rather than dropping it.
+    merged.extend(pending.values())
+
+    blocks = merged
+    for b in blocks:
+        b.pop("refs", None)
+        b.pop("float_id", None)
     for i, b in enumerate(blocks):
         b["id"] = f"b{i}"
     result = {"blocks": blocks, "license": _license_of(root)}
