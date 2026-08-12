@@ -282,7 +282,8 @@ class ArticleResponse(BaseModel):
     blocks: list[ArticleBlock] = []
     license: str = ""
     has_full_text: bool = False
-    has_pdf: bool = False
+    has_pdf: bool = False  # a PDF that can actually be displayed inline
+    pdf_link: str = ""  # publisher's PDF, for opening in a new tab
     warning: Optional[str] = None
 
 

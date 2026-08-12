@@ -231,6 +231,18 @@ export default function ReaderPage() {
         <p className="min-w-0 flex-1 truncate text-sm text-slate-500">
           {paper?.title}
         </p>
+        {/* A publisher that blocks our fetch will still serve the reader's own
+            browser, so offer the file even when it cannot be framed here. */}
+        {article?.pdf_link && !article?.has_pdf && (
+          <a
+            href={article.pdf_link}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="shrink-0 text-xs text-slate-500 transition-colors hover:text-blue-700"
+          >
+            {t('openPdfExternally')} <Icon name="externalLink" />
+          </a>
+        )}
         {paper?.url && (
           <a
             href={paper.url}

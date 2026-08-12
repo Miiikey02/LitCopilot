@@ -417,7 +417,8 @@ async def paper_article(req: PaperRequest) -> ArticleResponse:
             paper=SourceCard(**paper.to_card()),
             blocks=blocks,
             has_full_text=False,
-            has_pdf=bool(_pdf_url_for(paper)),
+            has_pdf=await _serves_a_pdf(_pdf_url_for(paper)),
+            pdf_link=_pdf_url_for(paper),
             warning=(
                 "这篇文献没有开放获取全文，此处仅显示摘要。可点击标题前往出版方阅读原文。"
                 if lang == "zh"
@@ -429,7 +430,8 @@ async def paper_article(req: PaperRequest) -> ArticleResponse:
         blocks=article["blocks"],
         license=article.get("license", ""),
         has_full_text=True,
-        has_pdf=bool(_pdf_url_for(paper)),
+        has_pdf=await _serves_a_pdf(_pdf_url_for(paper)),
+        pdf_link=_pdf_url_for(paper),
     )
 
 
@@ -458,6 +460,32 @@ def _pdf_url_for(paper) -> str:
     return oa if ".pdf" in oa.lower() else ""
 
 
+async def _serves_a_pdf(url: str) -> bool:
+    """Whether that URL really returns a PDF, asked in about a kilobyte.
+
+    Publishers and PMC both put automated PDF fetches behind bot checks, and
+    they answer with a perfectly ordinary 200 carrying an HTML challenge page.
+    Trusting the status code meant labelling that HTML `application/pdf` and
+    handing the reader an empty frame, so the bytes are checked instead. A
+    ranged request keeps the cost of being sure to a rounding error.
+    """
+    if not url:
+        return False
+    try:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=25) as client:
+            r = await client.get(
+                url,
+                headers={
+                    "User-Agent": _PDF_UA,
+                    "Accept": "application/pdf",
+                    "Range": "bytes=0-1023",
+                },
+            )
+            return r.status_code < 400 and r.content[:5] == b"%PDF-"
+    except httpx.HTTPError:
+        return False
+
+
 @app.get("/api/paper/pdf")
 async def paper_pdf(id: str):
     """Stream the paper's open-access PDF, so it can be shown in the reader."""
@@ -475,7 +503,13 @@ async def paper_pdf(id: str):
                 "GET", url, headers={"User-Agent": _PDF_UA, "Accept": "application/pdf"}
             ) as r:
                 r.raise_for_status()
+                first = True
                 async for chunk in r.aiter_bytes():
+                    # Never pass off a bot-check page as a PDF.
+                    if first:
+                        first = False
+                        if chunk[:5] != b"%PDF-":
+                            return
                     sent += len(chunk)
                     if sent > _MAX_PDF_BYTES:
                         return
