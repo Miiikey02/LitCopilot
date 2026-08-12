@@ -287,6 +287,12 @@ class ArticleResponse(BaseModel):
     warning: Optional[str] = None
 
 
+class ResolveResponse(BaseModel):
+    paper: SourceCard
+    has_full_text: bool = False
+    warning: Optional[str] = None
+
+
 class UploadResponse(BaseModel):
     identifier: str  # pass this back as a normal paper identifier
     title: str = ""

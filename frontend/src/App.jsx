@@ -14,6 +14,7 @@ import SearchProgress from './components/SearchProgress'
 import HeroEmpty from './components/HeroEmpty'
 import SegmentedControl from './components/SegmentedControl'
 import DeepResearchView from './components/DeepResearchView'
+import LookupResult from './components/LookupResult'
 import { supabase, authEnabled } from './lib/supabase'
 import { exportMarkdown, exportPdf } from './lib/exportResult'
 
@@ -39,7 +40,13 @@ export default function App() {
   const [chatTurns, setChatTurns] = useState([]) // follow-up research thread
   const [chatLoading, setChatLoading] = useState(false)
   const [conversationId, setConversationId] = useState(null)
-  const [deepMode, setDeepMode] = useState(false)
+  // 'quick' answers from abstracts, 'deep' plans sub-questions and reads full
+  // text, 'lookup' finds one specific paper and opens it for close reading.
+  const [mode, setMode] = useState('quick')
+  const deepMode = mode === 'deep'
+  const lookupMode = mode === 'lookup'
+  const [lookup, setLookup] = useState(null)
+  const [lookupSaved, setLookupSaved] = useState(false)
   const [deep, setDeep] = useState(null) // the deep-research brief, when run
   // null while we're still restoring a persisted session on first paint.
   const [session, setSession] = useState(authEnabled ? null : 'disabled')
@@ -127,11 +134,20 @@ export default function App() {
       const sort = overrides.sort || sortBy
       setLoading(true)
       setError('')
+      setLookup(null)
+      setLookupSaved(false)
       setTrials(null) // clear trials from any previous search
       setChatTurns([]) // start a fresh research thread for the new search
       setConversationId(null)
       setDeep(null)
       try {
+        if (overrides.lookup ?? lookupMode) {
+          // One specific paper: confirm it is the right one, then the reader
+          // opens on it. Resolving here also warms the cache the reader uses.
+          setResult(null)
+          setLookup({ ...(await api.paperResolve(text, lang)), identifier: text })
+          return
+        }
         if (overrides.deep ?? deepMode) {
           // Deep research returns a brief plus its notebook; reuse the same
           // sources panel and follow-up session as a quick search.
@@ -159,7 +175,7 @@ export default function App() {
         setLoading(false)
       }
     },
-    [loading, loadHistory, limit, includePreprints, sortBy, deepMode, t, i18n]
+    [loading, loadHistory, limit, includePreprints, sortBy, deepMode, lookupMode, t, i18n]
   )
 
   const onFindTrials = async () => {
@@ -371,7 +387,7 @@ export default function App() {
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder={t('searchPlaceholder')}
+              placeholder={lookupMode ? t('lookupPlaceholder') : t('searchPlaceholder')}
               className="flex-1 rounded-xl border border-slate-300 px-5 py-3.5 text-[15px] text-slate-900 shadow-sm transition-shadow focus:border-blue-500 focus:shadow-md focus:outline-none focus:ring-1 focus:ring-blue-500"
             />
             <button
@@ -388,13 +404,19 @@ export default function App() {
             {/* Quick search answers from abstracts; deep research plans
                 sub-questions and reads open-access full text. */}
             <SegmentedControl
-              value={deepMode}
-              onChange={setDeepMode}
+              value={mode}
+              onChange={setMode}
               options={[
-                { value: false, label: t('quickMode'), icon: 'search' },
-                { value: true, label: t('deepMode'), icon: 'sparkles' },
+                { value: 'quick', label: t('quickMode'), icon: 'search' },
+                { value: 'deep', label: t('deepMode'), icon: 'sparkles' },
+                { value: 'lookup', label: t('lookupMode'), icon: 'bookOpen' },
               ]}
             />
+            {lookupMode && (
+              <span className="text-xs text-slate-400">{t('lookupHint')}</span>
+            )}
+            {!lookupMode && (
+              <>
             <label htmlFor="result-limit">{t('resultsCount')}</label>
             <select
               id="result-limit"
@@ -421,6 +443,18 @@ export default function App() {
               <option value="relevance">{t('sortRelevance')}</option>
               <option value="date">{t('sortDate')}</option>
             </select>
+            <label className="ml-2 inline-flex cursor-pointer items-center gap-1.5">
+              <input
+                type="checkbox"
+                checked={includePreprints}
+                onChange={(e) => setIncludePreprints(e.target.checked)}
+                className="h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+              />
+              {t('includePreprints')}
+            </label>
+          
+              </>
+            )}
             {teams.length > 0 && (
               <label className="ml-2 inline-flex items-center gap-1.5">
                 {t('saveTo')}
@@ -438,17 +472,31 @@ export default function App() {
                 </select>
               </label>
             )}
-            <label className="ml-2 inline-flex cursor-pointer items-center gap-1.5">
-              <input
-                type="checkbox"
-                checked={includePreprints}
-                onChange={(e) => setIncludePreprints(e.target.checked)}
-                className="h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-              />
-              {t('includePreprints')}
-            </label>
           </div>
         </form>
+
+        {lookup && !loading && (
+          <div className="mb-6">
+            <LookupResult
+              result={lookup}
+              identifier={lookup.identifier}
+              saving={false}
+              saved={lookupSaved}
+              onSave={
+                signedIn
+                  ? async () => {
+                      try {
+                        await api.saveLibrary(lookup.paper, saveTeam || null)
+                        setLookupSaved(true)
+                      } catch {
+                        setError(t('errorNetwork'))
+                      }
+                    }
+                  : null
+              }
+            />
+          </div>
+        )}
 
         {deepMode && !result && !loading && (
           <p className="animate-expand mb-4 flex items-start gap-1.5 rounded-lg bg-blue-50/70 px-3 py-2 text-xs leading-5 text-blue-800">
@@ -470,12 +518,12 @@ export default function App() {
             <HeroEmpty
               onPick={(q) => {
                 setQuery(q)
-                setDeepMode(false)
+                setMode('quick')
                 runSearch(q, { deep: false })
               }}
               onDeepPick={(q) => {
                 setQuery(q)
-                setDeepMode(true)
+                setMode('deep')
                 runSearch(q, { deep: true })
               }}
             />

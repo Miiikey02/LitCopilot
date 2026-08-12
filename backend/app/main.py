@@ -35,6 +35,7 @@ from .schemas import (
     GraphEvidenceResponse,
     PaperReadResponse,
     PaperRequest,
+    ResolveResponse,
     ChatResponse,
     DeepResearchRequest,
     DeepResearchResponse,
@@ -406,6 +407,34 @@ async def paper_read(req: PaperRequest) -> PaperReadResponse:
         read=read,
         entities=entities,
         session_id=session_id,
+        warning=warning,
+    )
+
+
+@app.post("/api/paper/resolve", response_model=ResolveResponse)
+async def paper_resolve(req: PaperRequest) -> ResolveResponse:
+    """Find one specific paper from a DOI, PMID, PMC id, URL or exact title.
+
+    Separate from search because it answers a different question: not "what is
+    known about X" but "is this the paper, and can I read it". Resolving here
+    also warms the cache the reader uses, so 精读模式 opens without repeating
+    the lookup.
+    """
+    lang = req.lang or llm_service.detect_language(req.identifier)
+    _work, paper = await _resolve_cached(req.identifier)
+    if paper is None:
+        raise HTTPException(status_code=404, detail="Paper not found")
+    warning = None
+    if not paper.full_text:
+        warning = (
+            "这篇文献没有开放获取全文，精读将只基于摘要。你可以在精读模式中上传自己有权限的 PDF。"
+            if lang == "zh"
+            else "No open-access full text; the close reading will use the abstract only. "
+            "You can upload a PDF you have access to inside close-reading mode."
+        )
+    return ResolveResponse(
+        paper=SourceCard(**paper.to_card()),
+        has_full_text=bool(paper.full_text),
         warning=warning,
     )
 

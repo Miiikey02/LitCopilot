@@ -72,6 +72,8 @@ export const paperConnected = (identifier) =>
   jsonPost('/api/paper/connected', { identifier })
 export const paperEvidence = (identifier, lang, focus) =>
   jsonPost('/api/paper/evidence', { identifier, lang: lang || null, focus: focus || null })
+export const paperResolve = (identifier, lang) =>
+  jsonPost('/api/paper/resolve', { identifier, lang: lang || null })
 export const paperArticle = (identifier, lang) =>
   jsonPost('/api/paper/article', { identifier, lang: lang || null })
 export const paperUpload = async (file) => {
