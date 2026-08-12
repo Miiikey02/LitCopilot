@@ -91,12 +91,17 @@ function Node({ folder, all, childrenOf, depth, ctx }) {
   const [open, setOpen] = useState(true)
   const [menu, setMenu] = useState(false)
   const [soon, setSoon] = useState(false)
+  const [hover, setHover] = useState(false)
   const isActive = String(ctx.active) === String(folder.id)
   const isDropTarget = ctx.dropTarget === folder.id
   const isDragging = ctx.dragging === folder.id
 
   return (
-    <li className="relative">
+    <li
+      className="relative"
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+    >
       <div
         draggable
         onDragStart={(e) => {
@@ -173,44 +178,54 @@ function Node({ folder, all, childrenOf, depth, ctx }) {
           )}
         </button>
 
-        <span className="hidden shrink-0 items-center gap-0.5 group-hover:flex">
+      </div>
+
+      {/* Actions live under the folder rather than beside it: the row already
+          holds a chevron, an icon, a name and a count, and five more controls
+          squeezed to its right collided with all of them. Kept visible while a
+          menu is open, so the pointer can travel to it. */}
+      {(hover || menu || soon || isActive) && (
+        <div
+          style={{ paddingLeft: `${depth * 14 + 30}px` }}
+          className="animate-expand flex items-center gap-0.5 pb-1"
+        >
           <button
             onClick={() => ctx.onCreate(folder.id)}
             title={t('newSubfolder')}
-            className="rounded p-1 text-slate-400 hover:bg-white hover:text-blue-700"
+            className="rounded p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-blue-700"
           >
             <Icon name="plus" />
           </button>
           <button
             onClick={() => setSoon((v) => !v)}
             title={t('watchFieldSoon')}
-            className="rounded p-1 text-slate-300 hover:bg-white hover:text-blue-600"
+            className="rounded p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-blue-600"
           >
             <Icon name="bell" />
           </button>
           <button
             onClick={() => setMenu((v) => !v)}
             title={t('moveFolder')}
-            className="rounded p-1 text-slate-400 hover:bg-white hover:text-blue-700"
+            className="rounded p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-blue-700"
           >
             <Icon name="folder" />
           </button>
           <button
             onClick={() => ctx.onRename(folder)}
             title={t('rename')}
-            className="rounded p-1 text-slate-400 hover:bg-white hover:text-blue-700"
+            className="rounded p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-blue-700"
           >
             <Icon name="pencil" />
           </button>
           <button
             onClick={() => ctx.onDelete(folder)}
             title={t('deleteFolder')}
-            className="rounded p-1 text-slate-400 hover:bg-white hover:text-red-600"
+            className="rounded p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-red-600"
           >
             <Icon name="trash" />
           </button>
-        </span>
-      </div>
+        </div>
+      )}
 
       {/* Explains what it will do rather than looking broken. A disabled
           button teaches nothing; this at least tells you what is coming. */}
