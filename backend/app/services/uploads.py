@@ -20,7 +20,7 @@ from collections import Counter, OrderedDict
 from pathlib import Path
 from time import monotonic
 
-from pypdf import PdfReader
+import pypdfium2 as pdfium
 
 _DIR = Path(tempfile.gettempdir()) / "gaze-uploads"
 _INDEX: "OrderedDict[str, dict]" = OrderedDict()
@@ -58,7 +58,12 @@ def _looks_like_heading(line: str) -> bool:
     words = line.split()
     if not (1 <= len(words) <= 12) or len(line) > 90:
         return False
-    if line.endswith((".", ",", ";", ":")) and not re.match(r"^\d", line):
+    # A heading never trails a comma or semicolon. The exception for lines
+    # starting with a digit is only for the full stop in "3.1 Methods" — it let
+    # "14 days, followed by continued HFD feeding..." through as a heading.
+    if line.endswith((",", ";", ":")):
+        return False
+    if line.endswith(".") and not re.match(r"^\d+(\.\d+)*\.?$", line.split()[0]):
         return False
     if re.match(r"^\d+(\.\d+)*\.?\s+\S", line):  # "3.1 Delivery vectors"
         return True
@@ -67,9 +72,20 @@ def _looks_like_heading(line: str) -> bool:
     letters = [c for c in line if c.isalpha()]
     if not letters:
         return False
+    # Figure panel labels ("D E", "B C") are capitals separated by spaces and
+    # look exactly like a Title Case heading. Real headings have real words.
+    if sum(1 for w in words if len(w) <= 2) > len(words) / 2:
+        return False
     # Title Case, and not a sentence fragment that merely starts a paragraph.
     capitals = sum(1 for w in words if w[:1].isupper())
     return capitals >= max(2, len(words) - 1) and not line.endswith(".")
+
+
+# A running head usually carries the page number, so the literal strings never
+# repeat — "4 Cell Metabolism 37, 1-17" and "6 Cell Metabolism 37, 1-17" are the
+# same furniture. Compare with the digits masked out.
+def _repeat_key(line: str) -> str:
+    return re.sub(r"\d+", "#", line)
 
 
 def _running_heads(pages: list[str]) -> set[str]:
@@ -79,11 +95,11 @@ def _running_heads(pages: list[str]) -> set[str]:
     seen: Counter[str] = Counter()
     for text in pages:
         lines = [l.strip() for l in text.splitlines() if l.strip()]
-        for line in lines[:2] + lines[-2:]:
+        for line in lines[:3] + lines[-3:]:
             if 3 < len(line) < 120:
-                seen[line] += 1
-    threshold = max(3, int(len(pages) * 0.5))
-    return {line for line, n in seen.items() if n >= threshold}
+                seen[_repeat_key(line)] += 1
+    threshold = max(3, int(len(pages) * 0.25))
+    return {key for key, n in seen.items() if n >= threshold}
 
 
 def _blocks_from_pages(pages: list[str]) -> list[dict]:
@@ -103,7 +119,7 @@ def _blocks_from_pages(pages: list[str]) -> list[dict]:
         text = _HYPHEN_BREAK.sub(r"\1\2", text)
         for raw in text.splitlines():
             line = raw.strip()
-            if not line or line in noise or _PAGE_NOISE.match(line):
+            if not line or _repeat_key(line) in noise or _PAGE_NOISE.match(line):
                 flush()
                 continue
             if _looks_like_heading(line):
@@ -123,9 +139,8 @@ def _blocks_from_pages(pages: list[str]) -> list[dict]:
     return blocks
 
 
-def _title_from(reader: PdfReader, blocks: list[dict]) -> str:
-    meta = (reader.metadata or {}).get("/Title") or ""
-    title = str(meta).strip()
+def _title_from(meta_title: str, blocks: list[dict]) -> str:
+    title = (meta_title or "").strip()
     if 8 < len(title) < 300 and not title.lower().endswith(".pdf"):
         return title
     # Otherwise the first substantial line is nearly always the title.
@@ -150,20 +165,31 @@ def save(data: bytes) -> dict:
     path = _DIR / f"{uid}.pdf"
     path.write_bytes(data)
 
+    # PDFium rather than a pure-Python parser: a 24-page paper took 6.3s to
+    # extract with pypdf locally and 143s on the deployed instance, whose CPU is
+    # far slower. PDFium does the same work in 0.3s for the same text, and its
+    # licence (Apache-2.0/BSD-3) is safe for a product you may sell, which
+    # PyMuPDF's AGPL would not be.
+    doc = None
     try:
-        reader = PdfReader(str(path))
-        if reader.is_encrypted:
-            try:
-                reader.decrypt("")  # many publisher PDFs are "encrypted" with no password
-            except Exception:  # noqa: BLE001
-                path.unlink(missing_ok=True)
-                raise ValueError("password-protected PDF")
-        pages = [(p.extract_text() or "") for p in reader.pages]
-    except ValueError:
-        raise
+        doc = pdfium.PdfDocument(str(path))
+        pages = []
+        for i in range(len(doc)):
+            page = doc[i]
+            textpage = page.get_textpage()
+            pages.append(textpage.get_text_range() or "")
+            textpage.close()
+            page.close()
+        meta_title = str((doc.get_metadata_dict() or {}).get("Title", "") or "")
+    except pdfium.PdfiumError as exc:
+        path.unlink(missing_ok=True)
+        raise ValueError("password-protected or damaged PDF") from exc
     except Exception as exc:  # noqa: BLE001
         path.unlink(missing_ok=True)
         raise ValueError("could not read this PDF") from exc
+    finally:
+        if doc is not None:
+            doc.close()
 
     blocks = _blocks_from_pages(pages)
     text = "\n\n".join(b["text"] for b in blocks)
@@ -179,7 +205,7 @@ def save(data: bytes) -> dict:
         "pages": len(pages),
         "blocks": blocks,
         "text": text,
-        "title": _title_from(reader, blocks),
+        "title": _title_from(meta_title, blocks),
     }
     _INDEX[uid] = record
     _INDEX.move_to_end(uid)
