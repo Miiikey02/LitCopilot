@@ -42,6 +42,11 @@ CREATE TABLE IF NOT EXISTS folders (
     id         BIGSERIAL PRIMARY KEY,
     user_id    UUID NOT NULL,
     name       TEXT NOT NULL,
+    -- Folders nest. A reading list is rarely one flat level: a project has
+    -- topics, a topic has threads. Deleting a parent lifts its children up
+    -- rather than taking them with it, because a folder is a label and losing
+    -- one should never lose papers.
+    parent_id  BIGINT REFERENCES folders(id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (user_id, name)
 );
@@ -142,6 +147,9 @@ CREATE TABLE IF NOT EXISTS uploads (
 ALTER TABLE uploads ADD COLUMN IF NOT EXISTS card JSONB;
 ALTER TABLE conversations ADD COLUMN IF NOT EXISTS sources JSONB;
 ALTER TABLE conversations ADD COLUMN IF NOT EXISTS state JSONB;
+ALTER TABLE folders ADD COLUMN IF NOT EXISTS parent_id BIGINT REFERENCES folders(id) ON DELETE SET NULL;
+ALTER TABLE folders DROP CONSTRAINT IF EXISTS folders_user_id_name_key;
+CREATE INDEX IF NOT EXISTS folders_parent_idx ON folders (parent_id);
 CREATE INDEX IF NOT EXISTS uploads_created_idx ON uploads (created_at);
 CREATE INDEX IF NOT EXISTS saved_papers_user_idx ON saved_papers (user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS search_history_user_idx ON search_history (user_id, created_at DESC);
@@ -193,13 +201,19 @@ def init_db() -> None:
             "CREATE UNIQUE INDEX IF NOT EXISTS saved_papers_team_uniq ON saved_papers "
             "(team_id, dedup_key) WHERE team_id IS NOT NULL"
         )
+        # Uniqueness is per parent, not per workspace: "Methods" under two
+        # different projects is an ordinary thing to want, and the old indexes
+        # forbade it. COALESCE gives top-level folders a stand-in parent so a
+        # NULL parent still collides with another NULL parent.
+        conn.execute("DROP INDEX IF EXISTS folders_personal_uniq")
+        conn.execute("DROP INDEX IF EXISTS folders_team_uniq")
         conn.execute(
-            "CREATE UNIQUE INDEX IF NOT EXISTS folders_personal_uniq ON folders "
-            "(user_id, name) WHERE team_id IS NULL"
+            "CREATE UNIQUE INDEX IF NOT EXISTS folders_personal_parent_uniq ON folders "
+            "(user_id, COALESCE(parent_id, 0), name) WHERE team_id IS NULL"
         )
         conn.execute(
-            "CREATE UNIQUE INDEX IF NOT EXISTS folders_team_uniq ON folders "
-            "(team_id, name) WHERE team_id IS NOT NULL"
+            "CREATE UNIQUE INDEX IF NOT EXISTS folders_team_parent_uniq ON folders "
+            "(team_id, COALESCE(parent_id, 0), name) WHERE team_id IS NOT NULL"
         )
 
 
@@ -670,7 +684,12 @@ def _folder_scope(user_id: str, team_id: int | None) -> tuple[str, list]:
     return "f.team_id = %s", [team_id]
 
 
-def create_folder(user_id: str, name: str, team_id: int | None = None) -> dict | None:
+def create_folder(
+    user_id: str,
+    name: str,
+    team_id: int | None = None,
+    parent_id: int | None = None,
+) -> dict | None:
     """Create a folder in a workspace. None if the name is empty or taken."""
     name = name.strip()
     if not name:
@@ -678,17 +697,27 @@ def create_folder(user_id: str, name: str, team_id: int | None = None) -> dict |
     with _get_pool().connection() as conn:
         _assert_member(conn, user_id, team_id)
         scope_sql, params = _folder_scope(user_id, team_id)
+        # Clash only within the same parent — the check used to span the whole
+        # workspace, which stopped "Methods" existing under two projects.
+        parent_sql = "f.parent_id IS NULL" if parent_id is None else "f.parent_id = %s"
+        parent_params = [] if parent_id is None else [parent_id]
         clash = conn.execute(
-            f"SELECT 1 FROM folders f WHERE {scope_sql} AND f.name = %s",
-            [*params, name],
+            f"SELECT 1 FROM folders f WHERE {scope_sql} AND {parent_sql} AND f.name = %s",
+            [*params, *parent_params, name],
         ).fetchone()
         if clash:
             return None
         row = conn.execute(
-            "INSERT INTO folders (user_id, team_id, name) VALUES (%s,%s,%s) RETURNING id, name",
-            (user_id, team_id, name),
+            """INSERT INTO folders (user_id, team_id, name, parent_id)
+               VALUES (%s,%s,%s,%s) RETURNING id, name, parent_id""",
+            (user_id, team_id, name, parent_id),
         ).fetchone()
-    return {"id": row["id"], "name": row["name"], "count": 0}
+    return {
+        "id": row["id"],
+        "name": row["name"],
+        "parent_id": row["parent_id"],
+        "count": 0,
+    }
 
 
 def list_folders(user_id: str, team_id: int | None = None) -> list[dict]:
@@ -698,11 +727,11 @@ def list_folders(user_id: str, team_id: int | None = None) -> list[dict]:
     with _get_pool().connection() as conn:
         _assert_member(conn, user_id, team_id)
         rows = conn.execute(
-            f"""SELECT f.id, f.name, COUNT(p.id) AS n
+            f"""SELECT f.id, f.name, f.parent_id, COUNT(p.id) AS n
                 FROM folders f
                 LEFT JOIN saved_papers p ON p.folder_id = f.id
                 WHERE {scope_sql}
-                GROUP BY f.id, f.name
+                GROUP BY f.id, f.name, f.parent_id
                 ORDER BY f.name""",
             params,
         ).fetchall()
@@ -710,8 +739,11 @@ def list_folders(user_id: str, team_id: int | None = None) -> list[dict]:
             f"SELECT COUNT(*) AS n FROM saved_papers p WHERE {p_scope} AND p.folder_id IS NULL",
             p_params,
         ).fetchone()["n"]
-    folders = [{"id": r["id"], "name": r["name"], "count": r["n"]} for r in rows]
-    return folders + [{"id": None, "name": "", "count": unfiled}]
+    folders = [
+        {"id": r["id"], "name": r["name"], "parent_id": r["parent_id"], "count": r["n"]}
+        for r in rows
+    ]
+    return folders + [{"id": None, "name": "", "parent_id": None, "count": unfiled}]
 
 
 def _accessible_folder(conn, user_id: str, folder_id: int, team_id: int | None) -> bool:
@@ -1117,5 +1149,39 @@ def set_member_role(user_id: str, team_id: int, member_id: str, role: str) -> bo
         cur = conn.execute(
             "UPDATE team_members SET role = %s WHERE team_id = %s AND user_id = %s",
             (role, team_id, member_id),
+        )
+        return cur.rowcount > 0
+
+
+def move_folder(
+    user_id: str, folder_id: int, parent_id: int | None, team_id: int | None = None
+) -> bool:
+    """Re-file a folder under another one, or back to the top level.
+
+    A folder cannot be moved inside itself or its own descendants: that would
+    detach the whole branch from the tree, leaving papers that exist but can
+    never be reached.
+    """
+    with _get_pool().connection() as conn:
+        _assert_member(conn, user_id, team_id)
+        if not _accessible_folder(conn, user_id, folder_id, team_id):
+            return False
+        if parent_id is not None:
+            if parent_id == folder_id:
+                raise NotPermitted("a folder cannot contain itself")
+            if not _accessible_folder(conn, user_id, parent_id, team_id):
+                return False
+            walker = parent_id
+            seen = 0
+            while walker is not None and seen < 64:
+                if walker == folder_id:
+                    raise NotPermitted("a folder cannot be moved inside itself")
+                row = conn.execute(
+                    "SELECT parent_id FROM folders WHERE id = %s", (walker,)
+                ).fetchone()
+                walker = row["parent_id"] if row else None
+                seen += 1
+        cur = conn.execute(
+            "UPDATE folders SET parent_id = %s WHERE id = %s", (parent_id, folder_id)
         )
         return cur.rowcount > 0

@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from .. import db
 from ..auth import current_user
 from ..schemas import (
+    FolderMove,
     MemberRole,
     Conversation,
     ConversationRename,
@@ -252,12 +253,25 @@ def delete_conversation(
 def create_folder(
     req: FolderCreate, team: int | None = None, user: str = Depends(current_user)
 ) -> Folder:
-    created = _guard(db.create_folder, user, req.name, team)
+    created = _guard(db.create_folder, user, req.name, team, req.parent_id)
     if created is None:
         raise HTTPException(
             status_code=409, detail="Folder name is empty or already exists"
         )
     return Folder(**created)
+
+
+@router.put("/folders/{folder_id}/parent")
+def move_folder(
+    folder_id: int,
+    body: FolderMove,
+    team: int | None = None,
+    user: str = Depends(current_user),
+) -> dict:
+    """Nest a folder under another, or move it back to the top level."""
+    if not _guard(db.move_folder, user, folder_id, body.parent_id, team):
+        raise HTTPException(status_code=404, detail="Folder not found")
+    return {"ok": True}
 
 
 @router.get("/folders", response_model=list[Folder])

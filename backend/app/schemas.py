@@ -208,12 +208,18 @@ class TagCount(BaseModel):
 
 class FolderCreate(BaseModel):
     name: str
+    parent_id: Optional[int] = None  # None creates it at the top level
 
 
 class Folder(BaseModel):
     id: Optional[int] = None  # None is the synthetic "unfiled" bucket
     name: str
+    parent_id: Optional[int] = None
     count: int
+
+
+class FolderMove(BaseModel):
+    parent_id: Optional[int] = None  # None moves it back to the top level
 
 
 class MoveToFolder(BaseModel):

@@ -195,8 +195,14 @@ export const listTags = (teamId) => req(`/api/library/tags${ws({}, teamId)}`)
 
 // --- Folders ---
 export const listFolders = (teamId) => req(`/api/folders${ws({}, teamId)}`)
-export const createFolder = (name, teamId) =>
-  jsonPost(`/api/folders${ws({}, teamId)}`, { name })
+export const createFolder = (name, teamId, parentId = null) =>
+  jsonPost(`/api/folders${ws({}, teamId)}`, { name, parent_id: parentId })
+export const moveFolder = (folderId, parentId, teamId) =>
+  req(`/api/folders/${folderId}/parent${ws({}, teamId)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ parent_id: parentId }),
+  })
 export const renameFolder = (id, name, teamId) =>
   req(`/api/folders/${id}${ws({}, teamId)}`, {
     method: 'PATCH',
