@@ -59,6 +59,11 @@ export const UPDATES = [
         en: 'An update log: what changed in each release, by date, in both languages.',
       },
       {
+        kind: 'change',
+        zh: '文件夹上多了一个铃铛：「追踪这个领域的新文献」。功能还没上线，点开会说明它将做什么——放在这里是想先听听你要不要。',
+        en: 'A bell on each folder: track new papers in that field. Not built yet — clicking it explains what it will do. It is there to find out whether you want it.',
+      },
+      {
         kind: 'fix',
         zh: '点开「引用」等下拉菜单时不再被下一张卡片盖住。',
         en: 'Dropdown menus such as Cite are no longer painted under the next card.',
