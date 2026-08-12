@@ -90,7 +90,6 @@ function Node({ folder, all, childrenOf, depth, ctx }) {
   const kids = childrenOf(folder.id)
   const [open, setOpen] = useState(true)
   const [menu, setMenu] = useState(false)
-  const [soon, setSoon] = useState(false)
   const [hover, setHover] = useState(false)
   const isActive = String(ctx.active) === String(folder.id)
   const isDropTarget = ctx.dropTarget === folder.id
@@ -184,7 +183,7 @@ function Node({ folder, all, childrenOf, depth, ctx }) {
           holds a chevron, an icon, a name and a count, and five more controls
           squeezed to its right collided with all of them. Kept visible while a
           menu is open, so the pointer can travel to it. */}
-      {(hover || menu || soon || isActive) && (
+      {(hover || menu || isActive) && (
         <div
           style={{ paddingLeft: `${depth * 14 + 30}px` }}
           className="animate-expand flex items-center gap-0.5 pb-1"
@@ -195,13 +194,6 @@ function Node({ folder, all, childrenOf, depth, ctx }) {
             className="rounded p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-blue-700"
           >
             <Icon name="plus" />
-          </button>
-          <button
-            onClick={() => setSoon((v) => !v)}
-            title={t('watchFieldSoon')}
-            className="rounded p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-blue-600"
-          >
-            <Icon name="bell" />
           </button>
           <button
             onClick={() => setMenu((v) => !v)}
@@ -225,26 +217,6 @@ function Node({ folder, all, childrenOf, depth, ctx }) {
             <Icon name="trash" />
           </button>
         </div>
-      )}
-
-      {/* Explains what it will do rather than looking broken. A disabled
-          button teaches nothing; this at least tells you what is coming. */}
-      {soon && (
-        <>
-          <div className="fixed inset-0 z-10" onClick={() => setSoon(false)} />
-          <div className="absolute right-1 z-20 mt-1 w-64 rounded-md border border-slate-200 bg-white p-3 shadow-lg">
-            <p className="flex items-center gap-1.5 text-sm font-medium text-slate-800">
-              <Icon name="bell" className="text-blue-600" />
-              {t('watchField')}
-              <span className="ml-auto rounded-full bg-amber-50 px-2 py-0.5 text-xs font-normal text-amber-700">
-                {t('comingSoon')}
-              </span>
-            </p>
-            <p className="mt-1.5 text-xs leading-5 text-slate-500">
-              {t('watchFieldWhat', { name: folder.name })}
-            </p>
-          </div>
-        </>
       )}
 
       {menu && (
@@ -398,6 +370,17 @@ export default function FolderTree({
           {t('dropToTopLevel')}
         </div>
       )}
+
+      <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50/70 p-3">
+        <p className="flex items-center gap-1.5 text-xs font-medium text-slate-700">
+          <Icon name="bell" className="text-blue-600" />
+          {t('watchField')}
+          <span className="ml-auto rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-normal text-amber-700">
+            {t('comingSoon')}
+          </span>
+        </p>
+        <p className="mt-1.5 text-xs leading-5 text-slate-500">{t('watchFieldWhat')}</p>
+      </div>
 
       {!dragging && all.length > 0 && (
         <p className="mt-2 px-2 text-xs leading-5 text-slate-400">{t('folderHint')}</p>
