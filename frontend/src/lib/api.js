@@ -68,7 +68,8 @@ export const deepResearch = (
   includePreprints = true,
   sources = null,
   conversationId = null,
-  limit = null
+  limit = null,
+  perQuestion = null
 ) =>
   jsonPost('/api/deep-research', {
     query,
@@ -77,6 +78,7 @@ export const deepResearch = (
     sources,
     conversation_id: conversationId,
     limit,
+    per_question: perQuestion ?? 8,
   })
 
 // --- Single paper: deep read, graph, entities, evidence ---
@@ -118,12 +120,13 @@ export const paperAsk = (identifier, selection, question, intent, lang, conversa
   })
 
 // --- Research agent (multi-turn follow-ups) ---
-export const chat = (sessionId, message, lang, conversationId) =>
+export const chat = (sessionId, message, lang, conversationId, forceSearch = false) =>
   jsonPost('/api/chat', {
     session_id: sessionId,
     message,
     lang: lang || null,
     conversation_id: conversationId ?? null,
+    force_search: forceSearch,
   })
 
 // --- Saved conversations ---
@@ -152,8 +155,12 @@ export const renameConversation = (id, title) =>
   })
 
 // --- Library ---
-export const saveLibrary = (paper, teamId) =>
-  jsonPost('/api/library/save', { ...paper, team_id: teamId ?? null })
+export const saveLibrary = (paper, teamId, folderId = null) =>
+  jsonPost('/api/library/save', {
+    ...paper,
+    team_id: teamId ?? null,
+    folder_id: folderId,
+  })
 // `team` selects the workspace: undefined/null = personal library.
 const ws = (params = {}, teamId) => {
   const qs = new URLSearchParams()

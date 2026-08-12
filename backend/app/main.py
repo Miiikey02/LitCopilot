@@ -243,6 +243,34 @@ async def search(
     )
 
 
+_IRRELEVANT = re.compile(
+    r"不相关|无关|不属于|未涉及|not relevant|unrelated|does not (?:relate|address)", re.I
+)
+
+
+_UNCOVERED = re.compile(
+    r"语料库.{0,12}(不足|不够|没有|未)|现有文献.{0,10}(不足|没有|未涵盖)|未涵盖|没有足够"
+    r"|检索结果中.{0,10}(没有|未)|not enough|insufficient|do(?:es)? not (?:cover|contain|include)"
+    r"|no (?:relevant )?(?:papers?|studies|literature)",
+    re.I,
+)
+
+
+def _reads_uncovered(answer: str) -> bool:
+    """Whether the answer is really saying "I do not have papers for this"."""
+    return bool(_UNCOVERED.search(answer or ""))
+
+
+def _reads_irrelevant(note: str) -> bool:
+    """Whether our own relevance note admits the paper does not belong.
+
+    A sub-question search can surface a stray, and the model then dutifully
+    writes "not relevant — this paper is about marine ecology". Printing that
+    next to a source is worse than dropping it: it tells the reader we knew.
+    """
+    return bool(_IRRELEVANT.search(note or ""))
+
+
 def _cited_keys(*texts: object) -> set[str]:
     """Every [Surname, Year] token the brief actually used."""
     found: set[str] = set()
@@ -345,7 +373,8 @@ async def deep_research(
     # brief never used, with a note explaining that it is irrelevant, is worse
     # than not showing it.
     cited = {key for key in _cited_keys(answer, contradictions, gaps)}
-    ranked = sorted(papers, key=lambda p: 0 if p.citation_key() in cited else 1)
+    kept = [p for p in papers if not _reads_irrelevant(p.relevance_zh)]
+    ranked = sorted(kept, key=lambda p: 0 if p.citation_key() in cited else 1)
     papers = ranked[:wanted]
 
     cards = [SourceCard(**p.to_card()) for p in papers]
@@ -1153,7 +1182,10 @@ async def chat(
     need_search, search_query = await llm_service.decide_search(message, corpus_titles)
 
     searched = False
-    if need_search and search_query:
+    if req.force_search and not search_query:
+        # The reader pressed "go and look" — their question is the query.
+        search_query = message
+    if (need_search or req.force_search) and search_query:
         new_papers = await retrieve(
             search_query,
             limit=8,
@@ -1209,11 +1241,17 @@ async def chat(
         except Exception:  # noqa: BLE001 - saving must not lose the answer
             pass
 
+    # Telling someone the corpus does not cover their question is a dead end
+    # when we could simply go and look. Offer that instead of ending there.
+    suggest = ""
+    if not searched and _reads_uncovered(answer):
+        suggest = search_query or message
     return ChatResponse(
         answer=answer,
         sources=_cards(),
         searched=searched,
         search_query=search_query if searched else "",
+        suggest_search=suggest,
         conversation_id=conversation_id,
         warning=warning,
     )

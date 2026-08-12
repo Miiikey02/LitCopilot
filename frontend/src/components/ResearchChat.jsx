@@ -62,6 +62,21 @@ export default function ResearchChat({
                   </div>
                 </div>
                 <div className="animate-from-left rounded-2xl rounded-tl-md bg-slate-50 px-4 py-3.5">
+                  {/* The corpus did not reach this question. Offering to go
+                      and look is more use than reporting the gap. */}
+                  {turn.suggestSearch && (
+                    <div className="mt-3 rounded-md border border-blue-200 bg-blue-50 p-3">
+                      <p className="text-xs text-blue-900">{t('searchMoreHint')}</p>
+                      <button
+                        onClick={() => onAsk(turn.question, true)}
+                        disabled={loading}
+                        className="mt-2 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+                      >
+                        <Icon name="search" className="mr-1" />
+                        {t('searchMore', { q: turn.suggestSearch.slice(0, 30) })}
+                      </button>
+                    </div>
+                  )}
                   {turn.searched && (
                     <div className="mb-2 inline-flex items-center gap-1.5 rounded-full bg-teal-50 px-2.5 py-1 text-xs text-teal-700">
                       <Icon name="search" />

@@ -32,6 +32,10 @@ export default function App() {
   )
   const [query, setQuery] = useState('')
   const [limit, setLimit] = useState(15) // how many papers to retrieve per search
+  // Deep research reads far more than a quick search, so it gets its own
+  // ceiling and its own breadth-per-sub-question.
+  const [deepLimit, setDeepLimit] = useState(25)
+  const [perQuestion, setPerQuestion] = useState(8)
   const [databases, setDatabases] = useState(() => {
     try {
       const saved = JSON.parse(localStorage.getItem(DBS_KEY) || 'null')
@@ -65,6 +69,9 @@ export default function App() {
   // null while we're still restoring a persisted session on first paint.
   const [session, setSession] = useState(authEnabled ? null : 'disabled')
   const [teams, setTeams] = useState([])
+  // Saving asks where to put the paper, so the destinations have to be known
+  // before the button is pressed.
+  const [saveFolders, setSaveFolders] = useState([])
   // Which workspace a "Save" on a search result goes to: '' = personal.
   const [saveTeam, setSaveTeam] = useState('')
 
@@ -86,6 +93,14 @@ export default function App() {
     }
     api.listTeams().then(setTeams).catch(() => setTeams([]))
   }, [signedIn])
+
+  useEffect(() => {
+    if (!signedIn) return setSaveFolders([])
+    api
+      .listFolders(saveTeam ? Number(saveTeam) : null)
+      .then((fs) => setSaveFolders(fs.filter((f) => f.id != null)))
+      .catch(() => setSaveFolders([]))
+  }, [signedIn, saveTeam])
 
   // Refs to each source card so citation clicks can scroll + flash them.
   const cardRefs = useRef({})
@@ -174,9 +189,12 @@ export default function App() {
         if (overrides.deep ?? deepMode) {
           // Deep research returns a brief plus its notebook; reuse the same
           // sources panel and follow-up session as a quick search.
-          const d = await api.deepResearch(text, lang, includePreprints, dbs, keepThread, limit)
+          const d = await api.deepResearch(text, lang, includePreprints, dbs, keepThread, deepLimit, perQuestion)
           setDeep(d)
           if (d.conversation_id) setConversationId(d.conversation_id)
+          // The brief is long and the source list is the reference shelf beside
+          // it; a narrow column would make both worse.
+          setWideSources(true)
           setResult({
             original_query: d.original_query,
             detected_lang: d.detected_lang,
@@ -202,7 +220,7 @@ export default function App() {
         setLoading(false)
       }
     },
-    [loading, loadHistory, limit, databases, sortBy, deepMode, lookupMode, conversationId, t, i18n]
+    [loading, loadHistory, limit, deepLimit, perQuestion, databases, sortBy, deepMode, lookupMode, conversationId, t, i18n]
   )
 
   const onFindTrials = async () => {
@@ -219,12 +237,12 @@ export default function App() {
   }
 
   const onAsk = useCallback(
-    async (message) => {
+    async (message, forceSearch = false) => {
       if (!result?.session_id || chatLoading) return
       const lang = i18n.language.startsWith('zh') ? 'zh' : 'en'
       setChatLoading(true)
       try {
-        const resp = await api.chat(result.session_id, message, lang, conversationId)
+        const resp = await api.chat(result.session_id, message, lang, conversationId, forceSearch)
         if (resp.conversation_id) setConversationId(resp.conversation_id)
         setChatTurns((prev) => [
           ...prev,
@@ -233,6 +251,7 @@ export default function App() {
             answer: resp.answer,
             searched: resp.searched,
             searchQuery: resp.search_query,
+            suggestSearch: resp.suggest_search || '',
             warning: resp.warning,
           },
         ])
@@ -286,12 +305,12 @@ export default function App() {
   // Saving needs an account. Send signed-out users to the sign-in screen rather
   // than letting the click fail silently with a 401.
   const onSavePaper = useCallback(
-    async (paper) => {
+    async (paper, folderId = null) => {
       if (authEnabled && session === false) {
         setTab('library')
         throw new Error('sign in required')
       }
-      return api.saveLibrary(paper, saveTeam ? Number(saveTeam) : null)
+      return api.saveLibrary(paper, saveTeam ? Number(saveTeam) : null, folderId)
     },
     [session, saveTeam]
   )
@@ -490,19 +509,10 @@ export default function App() {
                 sub-questions and reads open-access full text. */}
             <SegmentedControl
               value={mode}
-              // Switching mode is a request for a different answer to the same
-              // question, so it re-runs rather than leaving the previous mode's
-              // results sitting under a control that now says something else.
-              onChange={(next) => {
-                setMode(next)
-                if (query.trim() && !loading) {
-                  runSearch(query, {
-                    deep: next === 'deep',
-                    lookup: next === 'lookup',
-                    keepThread: true,
-                  })
-                }
-              }}
+              // Changing mode sets up the next search rather than running one:
+              // deep research is slow and has its own settings, and firing it
+              // the instant the toggle moves takes that choice away.
+              onChange={setMode}
               options={[
                 { value: 'quick', label: t('quickMode'), icon: 'search' },
                 { value: 'deep', label: t('deepMode'), icon: 'sparkles' },
@@ -512,7 +522,40 @@ export default function App() {
             {lookupMode && (
               <span className="text-xs text-slate-400">{t('lookupHint')}</span>
             )}
-            {!lookupMode && (
+            {deepMode && (
+              <>
+                <label htmlFor="deep-limit">{t('resultsCount')}</label>
+                <select
+                  id="deep-limit"
+                  value={deepLimit}
+                  onChange={(e) => setDeepLimit(Number(e.target.value))}
+                  className="rounded-md border border-slate-300 bg-white px-2 py-1 text-slate-700 focus:border-blue-500 focus:outline-none"
+                >
+                  {[15, 25, 35, 50].map((n) => (
+                    <option key={n} value={n}>
+                      {t('resultsCountOption', { count: n })}
+                    </option>
+                  ))}
+                </select>
+                <label className="ml-2" htmlFor="per-question">
+                  {t('perQuestion')}
+                </label>
+                <select
+                  id="per-question"
+                  value={perQuestion}
+                  onChange={(e) => setPerQuestion(Number(e.target.value))}
+                  title={t('perQuestionHint')}
+                  className="rounded-md border border-slate-300 bg-white px-2 py-1 text-slate-700 focus:border-blue-500 focus:outline-none"
+                >
+                  {[5, 8, 12, 15].map((n) => (
+                    <option key={n} value={n}>
+                      {n}
+                    </option>
+                  ))}
+                </select>
+              </>
+            )}
+            {!lookupMode && !deepMode && (
               <>
             <label htmlFor="result-limit">{t('resultsCount')}</label>
             <select
@@ -545,9 +588,8 @@ export default function App() {
               onChange={(next) => {
                 setDatabases(next)
                 localStorage.setItem(DBS_KEY, JSON.stringify(next))
-                if (query.trim() && !loading) {
-                  runSearch(query, { sources: next, keepThread: true })
-                }
+                // Same reasoning as the mode toggle: pick your databases, then
+                // search.
               }}
             />
           
@@ -657,10 +699,41 @@ export default function App() {
                   : 'lg:col-span-3 lg:sticky lg:top-6 lg:self-start lg:max-h-[calc(100vh-5rem)] lg:overflow-y-auto print:static print:max-h-none print:overflow-visible'
               }
             >
+              {/* Deep research has already said everything this panel used to
+                  say, in 研究简报 above. What is left worth keeping is the
+                  actions, so they appear as a plain bar rather than a card
+                  wrapped around nothing. */}
+              {deep && result.answer && (
+                <div className="no-print mb-4 flex flex-wrap gap-2">
+                  <button
+                    onClick={onFindTrials}
+                    disabled={trialsLoading}
+                    className="rounded-md bg-teal-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-teal-700 disabled:opacity-50"
+                  >
+                    {trialsLoading ? t('findingTrials') : t('findTrials')}
+                  </button>
+                  <button
+                    onClick={() => exportMarkdown(result)}
+                    className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                  >
+                    <Icon name="download" className="mr-1" />
+                    {t('exportMd')}
+                  </button>
+                  <button
+                    onClick={exportPdf}
+                    className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                  >
+                    <Icon name="printer" className="mr-1" />
+                    {t('exportPdf')}
+                  </button>
+                </div>
+              )}
+
+              {!deep && (
               <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
                 <div className="mb-4 flex items-center justify-between">
                   <h2 className="text-lg font-semibold text-slate-900">
-                    {deep ? t('deepActionsTitle') : t('answerTitle')}
+                    {t('answerTitle')}
                   </h2>
                   <span className="text-xs text-slate-400">
                     {t('detectedLang')}:{' '}
@@ -674,11 +747,7 @@ export default function App() {
                   </div>
                 )}
 
-                {/* Deep research already shows this text as 研究简报 above,
-                    with its sub-questions, contradictions and gaps. Repeating
-                    it here as 综合回答 was the same brief twice, which invites
-                    reading one as a summary of the other. */}
-                {deep ? null : result.answer ? (
+                {result.answer ? (
                   <>
                     <p className="mb-3 text-xs text-slate-400">
                       {t('citationHint')}
@@ -729,6 +798,7 @@ export default function App() {
                   <div className="mt-2">{t('disclaimer')}</div>
                 </div>
               </div>
+              )}
 
               {/* Related clinical trials (ClinicalTrials.gov) */}
               {trials !== null && (
@@ -791,6 +861,7 @@ export default function App() {
                       paper={p}
                       index={i}
                       onSave={onSavePaper}
+                      folders={saveFolders}
                       ref={(el) => {
                         if (el) cardRefs.current[p.citation_key] = el
                       }}

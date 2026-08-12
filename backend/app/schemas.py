@@ -64,6 +64,8 @@ class SearchResponse(BaseModel):
 class ChatRequest(BaseModel):
     session_id: str
     message: str
+    # Set when the reader accepts the offer to go and find more literature.
+    force_search: bool = False
     lang: Optional[str] = None  # response language; defaults to session's
     # Continue an existing saved thread; omitted starts a new one.
     conversation_id: Optional[int] = None
@@ -74,6 +76,9 @@ class ChatResponse(BaseModel):
     sources: list[SourceCard]  # full, updated corpus (metadata only)
     searched: bool  # whether the agent pulled new literature this turn
     search_query: str = ""  # the English query it searched, if any
+    # Non-empty when the corpus did not cover the question: what we would
+    # search for if the reader says yes.
+    suggest_search: str = ""
     conversation_id: Optional[int] = None  # saved thread this turn belongs to
     warning: Optional[str] = None
 

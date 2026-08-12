@@ -148,7 +148,10 @@ from the provided list.
 explicitly in the answer rather than guessing.
 4. Write the answer in the RESPONSE LANGUAGE stated in the user message (Chinese \
 or English). Write naturally and fluently in that language directly — do NOT \
-translate a literal draft from the other language. 3-5 paragraphs.
+translate a literal draft from the other language.
+Keep it SHORT: 2-3 tight paragraphs, roughly 150-250 words. This is a quick
+orientation, not a review — a reader who wants depth runs deep research, and
+padding this out only makes the two modes read the same.
 5. Do NOT reproduce abstract text verbatim — paraphrase in your own words.
 6. A source marked RETRACTED or with an expression of concern must NOT be used
 to support a claim as if it were sound evidence. If you mention it at all, say
@@ -286,6 +289,12 @@ async def decide_search(
 
 _CHAT_ANSWER_SYSTEM = """You are Gaze, a biomedical literature research \
 assistant in a multi-turn research conversation.
+
+If the gathered papers do not cover the question, say briefly what is missing
+and STOP — do not pad the answer. Do not tell the reader the corpus is
+insufficient as though that ends it: the interface offers to go and search for
+the missing topic, so your job is to name the gap in one sentence, not to
+apologise for it.
 
 You are given the conversation so far, the researcher's NEW question, and a \
 numbered list of source papers (the accumulated corpus) with abstracts. Follow \
@@ -536,7 +545,7 @@ Produce a structured brief. For evidence_type use exactly one of:
 
 Return ONLY a JSON object of this exact shape:
 {
-  "answer": "<the cited brief, 3-6 paragraphs, in the response language>",
+  "answer": "<the cited brief, 6-10 substantial paragraphs, in the response language. This is a research report, not a summary: work through what is established, how strong the evidence is, where the study designs differ, and what follows for someone planning work. A reader chose this over the quick summary because they wanted the detail.>",
   "contradictions": ["<where studies disagree, with citations>"],
   "gaps": ["<what the evidence does not yet answer>"],
   "sources": [

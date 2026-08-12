@@ -11,18 +11,20 @@ const sourceLabel = {
 }
 
 const SourceCard = React.forwardRef(function SourceCard(
-  { paper, index, onSave },
+  { paper, index, onSave, folders = [] },
   ref
 ) {
   const { t } = useTranslation()
   const [saved, setSaved] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [picking, setPicking] = useState(false)
 
-  const handleSave = async () => {
+  const handleSave = async (folderId = null) => {
     if (saved || saving) return
+    setPicking(false)
     setSaving(true)
     try {
-      await onSave(paper)
+      await onSave(paper, folderId)
       setSaved(true)
     } catch {
       // Surface nothing intrusive; leave the button retryable.
@@ -126,18 +128,48 @@ const SourceCard = React.forwardRef(function SourceCard(
         )}
         <CiteButton paper={paper} />
         {onSave && (
+          <div className="relative ml-auto">
+            {/* Saving asks where. A paper filed on the way in is a paper you
+                can find later; one dropped in the pile is one you re-find by
+                searching again. */}
+            {picking && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setPicking(false)} />
+                <div className="absolute bottom-full right-0 z-20 mb-1 max-h-56 w-52 overflow-y-auto rounded-md border border-slate-200 bg-white py-1 shadow-lg">
+                  <p className="px-3 py-1 text-xs text-slate-400">{t('saveInto')}</p>
+                  <button
+                    onClick={() => handleSave(null)}
+                    className="block w-full px-3 py-1.5 text-left text-sm text-slate-700 hover:bg-slate-50"
+                  >
+                    <Icon name="inbox" className="mr-1.5 text-slate-400" />
+                    {t('unfiled')}
+                  </button>
+                  {folders.map((f) => (
+                    <button
+                      key={f.id}
+                      onClick={() => handleSave(f.id)}
+                      className="block w-full truncate px-3 py-1.5 text-left text-sm text-slate-700 hover:bg-slate-50"
+                    >
+                      <Icon name="folder" className="mr-1.5 text-slate-400" />
+                      {f.name}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
           <button
             type="button"
-            onClick={handleSave}
+            onClick={() => (folders.length ? setPicking((v) => !v) : handleSave(null))}
             disabled={saved || saving}
             className={
               saved
-                ? 'ml-auto whitespace-nowrap text-sm font-medium text-green-600'
-                : 'ml-auto whitespace-nowrap text-sm font-medium text-slate-600 hover:text-slate-900 disabled:opacity-50'
+                ? 'whitespace-nowrap text-sm font-medium text-green-600'
+                : 'whitespace-nowrap text-sm font-medium text-slate-600 hover:text-slate-900 disabled:opacity-50'
             }
           >
             {saved ? <><Icon name="check" className="mr-1" />{t('saved')}</> : <><Icon name="star" className="mr-1" />{t('save')}</>}
           </button>
+          </div>
         )}
       </div>
     </div>
