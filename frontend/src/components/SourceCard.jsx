@@ -107,12 +107,12 @@ const SourceCard = React.forwardRef(function SourceCard(
       {/* Same grouping as the library card: what you do with the paper on the
           left, saving pinned right, wrapping as groups rather than dropping
           one button onto a second line. */}
-      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs">
         <a
           href={paper.url}
           target="_blank"
           rel="noopener noreferrer"
-          className="whitespace-nowrap text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline"
+          className="whitespace-nowrap font-medium text-blue-600 hover:text-blue-800 hover:underline"
         >
           {t('viewSource')} <Icon name="externalLink" className="ml-0.5" />
         </a>
@@ -121,7 +121,7 @@ const SourceCard = React.forwardRef(function SourceCard(
             href={paper.oa_url}
             target="_blank"
             rel="noopener noreferrer"
-            className="whitespace-nowrap text-sm font-medium text-green-700 hover:text-green-800 hover:underline"
+            className="whitespace-nowrap font-medium text-green-700 hover:text-green-800 hover:underline"
           >
             <Icon name="download" className="mr-1" />{t('freeFullText')}
           </a>
@@ -163,8 +163,8 @@ const SourceCard = React.forwardRef(function SourceCard(
             disabled={saved || saving}
             className={
               saved
-                ? 'whitespace-nowrap text-sm font-medium text-green-600'
-                : 'whitespace-nowrap text-sm font-medium text-slate-600 hover:text-slate-900 disabled:opacity-50'
+                ? 'whitespace-nowrap font-medium text-green-600'
+                : 'whitespace-nowrap font-medium text-slate-600 hover:text-slate-900 disabled:opacity-50'
             }
           >
             {saved ? <><Icon name="check" className="mr-1" />{t('saved')}</> : <><Icon name="star" className="mr-1" />{t('save')}</>}

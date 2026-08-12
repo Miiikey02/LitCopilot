@@ -34,8 +34,8 @@ export default function CiteButton({ paper }) {
         onClick={() => setOpen((v) => !v)}
         className={
           copied
-            ? 'text-sm font-medium text-green-600'
-            : 'text-sm font-medium text-slate-600 hover:text-slate-900'
+            ? 'whitespace-nowrap font-medium text-green-600'
+            : 'whitespace-nowrap font-medium text-slate-600 hover:text-slate-900'
         }
       >
         {copied ? <><Icon name="check" className="mr-1" />{t('citeCopied')}</> : <><Icon name="quote" className="mr-1" />{t('cite')}<Icon name="chevronDown" className="ml-0.5" /></>}

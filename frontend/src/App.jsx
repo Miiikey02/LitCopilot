@@ -58,6 +58,10 @@ export default function App() {
   const [chatTurns, setChatTurns] = useState([]) // follow-up research thread
   const [chatLoading, setChatLoading] = useState(false)
   const [conversationId, setConversationId] = useState(null)
+  // The question the open thread belongs to. Re-running that same question —
+  // in another mode, against other databases, however it is triggered —
+  // updates the thread instead of filing a second entry for one piece of work.
+  const [threadQuery, setThreadQuery] = useState('')
   // 'quick' answers from abstracts, 'deep' plans sub-questions and reads full
   // text, 'lookup' finds one specific paper and opens it for close reading.
   const [mode, setMode] = useState('quick')
@@ -165,10 +169,13 @@ export default function App() {
       // Passed explicitly rather than read from state: changing the databases
       // re-runs immediately, before React has committed the new value.
       const dbs = overrides.sources || databases
-      // Only a re-run of the question already on screen reuses its thread.
-      // Typing something new must file its own, or the rail would overwrite
-      // the earlier work with an unrelated search.
-      const keepThread = overrides.keepThread ? conversationId : null
+      // A re-run of the question already on screen reuses its thread; a new
+      // question files its own, or the rail would overwrite earlier work with
+      // an unrelated search. This is decided by the text, not by which control
+      // was pressed, so switching mode and pressing search behaves the same as
+      // switching mode alone used to.
+      const keepThread =
+        conversationId && text === threadQuery ? conversationId : null
       const includePreprints = dbs.includes('biorxiv')
       setLoading(true)
       setError('')
@@ -192,6 +199,8 @@ export default function App() {
           const d = await api.deepResearch(text, lang, includePreprints, dbs, keepThread, deepLimit, perQuestion)
           setDeep(d)
           if (d.conversation_id) setConversationId(d.conversation_id)
+          setThreadQuery(text)
+          setThreadQuery(text)
           // The brief is long and the source list is the reference shelf beside
           // it; a narrow column would make both worse.
           setWideSources(true)
@@ -210,6 +219,8 @@ export default function App() {
         const data = await api.search(text, lang, limit, includePreprints, sort, dbs, keepThread)
         setResult(data)
         if (data.conversation_id) setConversationId(data.conversation_id)
+        setThreadQuery(text)
+        setThreadQuery(text)
         loadHistory()
       } catch (err) {
         // "Not found" is an answer, not an outage. Reporting it as a dead
@@ -220,7 +231,7 @@ export default function App() {
         setLoading(false)
       }
     },
-    [loading, loadHistory, limit, deepLimit, perQuestion, databases, sortBy, deepMode, lookupMode, conversationId, t, i18n]
+    [loading, loadHistory, limit, deepLimit, perQuestion, databases, sortBy, deepMode, lookupMode, conversationId, threadQuery, t, i18n]
   )
 
   const onFindTrials = async () => {
@@ -300,6 +311,9 @@ export default function App() {
   const onNewConversation = useCallback(() => {
     setChatTurns([])
     setConversationId(null)
+    // Detach from the thread too, so the next search files its own rather than
+    // overwriting the one just left behind.
+    setThreadQuery('')
   }, [])
 
   // Saving needs an account. Send signed-out users to the sign-in screen rather
@@ -334,6 +348,7 @@ export default function App() {
       const st = r.state || {}
       setQuery(r.seed_query || r.title || '')
       setConversationId(r.id)
+      setThreadQuery(r.seed_query || '')
       // Put the controls back the way they were, so what is on screen matches
       // what the toolbar claims produced it.
       setMode(st.mode === 'deep' ? 'deep' : 'quick')
@@ -450,6 +465,7 @@ export default function App() {
     setTrials(null)
     setChatTurns([])
     setConversationId(null)
+    setThreadQuery('')
     setError('')
   }
 
