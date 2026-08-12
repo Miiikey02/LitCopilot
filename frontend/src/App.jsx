@@ -12,6 +12,7 @@ import Icon from './components/Icon'
 import SearchProgress from './components/SearchProgress'
 import HeroEmpty from './components/HeroEmpty'
 import Sidebar from './components/Sidebar'
+import Updates from './components/Updates'
 import SegmentedControl from './components/SegmentedControl'
 import SourcePicker, { ALL_SOURCES } from './components/SourcePicker'
 import DeepResearchView from './components/DeepResearchView'
@@ -26,7 +27,7 @@ const RAIL_KEY = 'gaze.sidebarCollapsed'
 
 export default function App() {
   const { t, i18n } = useTranslation()
-  const [tab, setTab] = useState('search') // 'search' | 'library'
+  const [tab, setTab] = useState('search') // 'search' | 'library' | 'updates'
   const [railCollapsed, setRailCollapsed] = useState(
     () => localStorage.getItem(RAIL_KEY) === '1'
   )
@@ -497,6 +498,8 @@ export default function App() {
         <div className="mx-auto max-w-5xl">
         {/* The library is per-account, so it needs a signed-in user. Search
             itself stays open so people can try Gaze before registering. */}
+        {tab === 'updates' && <Updates />}
+
         {tab === 'library' &&
           (signedIn ? <LibraryTab /> : <AuthPanel onDone={() => setTab('library')} />)}
 

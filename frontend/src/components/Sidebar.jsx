@@ -97,6 +97,13 @@ export default function Sidebar({
           onClick={() => onTab('library')}
           collapsed={collapsed}
         />
+        <NavItem
+          icon="clock"
+          label={t('tabUpdates')}
+          active={tab === 'updates'}
+          onClick={() => onTab('updates')}
+          collapsed={collapsed}
+        />
       </nav>
 
       {!collapsed && (
