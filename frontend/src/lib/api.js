@@ -116,8 +116,18 @@ export const chat = (sessionId, message, lang, conversationId) =>
   })
 
 // --- Saved conversations ---
-export const listConversations = (kind) =>
-  req(`/api/conversations${kind ? `?kind=${kind}` : ''}`)
+// `teamId === undefined` lists across workspaces; pass it (null for personal)
+// to get only the threads belonging to the workspace being looked at.
+export const listConversations = (kind, teamId) => {
+  const qs = new URLSearchParams()
+  if (kind) qs.set('kind', kind)
+  if (teamId !== undefined) {
+    qs.set('scope', 'workspace')
+    if (teamId) qs.set('team', teamId)
+  }
+  const s = qs.toString()
+  return req(`/api/conversations${s ? `?${s}` : ''}`)
+}
 export const getConversation = (id) => req(`/api/conversations/${id}`)
 export const resumeConversation = (id) =>
   jsonPost(`/api/conversations/${id}/resume`, {})

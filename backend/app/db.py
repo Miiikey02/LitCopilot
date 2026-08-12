@@ -797,13 +797,29 @@ def append_messages(user_id: str, conversation_id: int, messages: list[dict]) ->
 
 
 def list_conversations(
-    user_id: str, kind: str | None = None, limit: int = 50
+    user_id: str,
+    kind: str | None = None,
+    limit: int = 50,
+    team_id: int | None = None,
+    scope_team: bool = False,
 ) -> list[dict]:
+    """Threads for this user, optionally narrowed to one workspace.
+
+    `scope_team` is what makes a workspace's threads its own: without it a
+    library conversation started in a lab workspace shows up in the personal
+    library and in every other lab, because they are all the same user's rows.
+    """
     clauses = ["c.user_id = %s"]
     params: list = [user_id]
     if kind:
         clauses.append("c.kind = %s")
         params.append(kind)
+    if scope_team:
+        if team_id is None:
+            clauses.append("c.team_id IS NULL")
+        else:
+            clauses.append("c.team_id = %s")
+            params.append(team_id)
     params.append(limit)
     with _get_pool().connection() as conn:
         rows = conn.execute(

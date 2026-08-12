@@ -21,7 +21,8 @@ export default function LibraryChat({ folder, scopeLabel, paperCount, teamId }) 
 
   const loadConversations = async () => {
     try {
-      setConversations(await api.listConversations('library'))
+      // Scoped to the workspace on screen: a lab's threads are the lab's.
+      setConversations(await api.listConversations('library', teamId ?? null))
     } catch {
       /* history is non-critical */
     }
@@ -29,7 +30,10 @@ export default function LibraryChat({ folder, scopeLabel, paperCount, teamId }) 
 
   useEffect(() => {
     if (open) loadConversations()
-  }, [open])
+    // Reload on a workspace switch too, or the panel keeps showing the threads
+    // of the workspace you just left.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, teamId])
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })

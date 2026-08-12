@@ -3,7 +3,6 @@ import { useTranslation } from 'react-i18next'
 import * as api from '../lib/api'
 import AnswerText from './AnswerText'
 import ChatComposer from './ChatComposer'
-import ConversationList from './ConversationList'
 import Icon from './Icon'
 import TypingDots from './TypingDots'
 
@@ -22,19 +21,10 @@ export default function ResearchChat({
   onNewConversation,
 }) {
   const { t } = useTranslation()
-  const [conversations, setConversations] = useState([])
   const endRef = useRef(null)
 
-  const loadConversations = async () => {
-    try {
-      setConversations(await api.listConversations('search'))
-    } catch {
-      /* history is non-critical */
-    }
-  }
 
   useEffect(() => {
-    loadConversations()
   }, [turns.length])
 
   // Keep the newest exchange in view as the thread grows.
@@ -52,18 +42,8 @@ export default function ResearchChat({
         </span>
       </header>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[17rem_1fr]">
-        <div className="order-2 border-t border-slate-100 p-3 lg:order-1 lg:border-r lg:border-t-0">
-          <ConversationList
-            conversations={conversations}
-            activeId={conversationId}
-            onOpen={onOpenConversation}
-            onNew={onNewConversation}
-            onChanged={loadConversations}
-          />
-        </div>
-
-        <div className="order-1 flex min-h-[22rem] flex-col lg:order-2">
+      <div>
+        <div className="flex min-h-[22rem] flex-col">
           <div className="flex-1 space-y-5 overflow-y-auto px-5 py-4 lg:max-h-[32rem]">
             {turns.length === 0 && !loading && (
               <div className="flex h-full flex-col items-center justify-center py-12 text-center">

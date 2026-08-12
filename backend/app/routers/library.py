@@ -189,9 +189,18 @@ async def library_chat(
 
 @router.get("/conversations", response_model=list[ConversationSummary])
 def list_conversations(
-    kind: str | None = None, user: str = Depends(current_user)
+    kind: str | None = None,
+    team: int | None = None,
+    scope: str | None = None,
+    user: str = Depends(current_user),
 ) -> list[ConversationSummary]:
-    return [ConversationSummary(**c) for c in db.list_conversations(user, kind)]
+    """Saved threads. `scope=workspace` narrows to the given workspace."""
+    return [
+        ConversationSummary(**c)
+        for c in db.list_conversations(
+            user, kind, team_id=team, scope_team=(scope == "workspace")
+        )
+    ]
 
 
 @router.get("/conversations/{conversation_id}", response_model=Conversation)
