@@ -565,12 +565,12 @@ async def paper_upload(
     server — publishers answer automated requests with a bot check — while the
     reader's own institutional access has no such problem.
     """
-    data = await file.read()
     try:
-        record = uploads.save(data)
+        # Stream from the spooled request body rather than reading it all in.
+        record = uploads.save(file.file)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    background.add_task(uploads.persist, record, data, user)
+    background.add_task(uploads.persist, record, user)
     return UploadResponse(
         identifier=f"{UPLOAD_PREFIX}{record['id']}",
         title=record["title"],

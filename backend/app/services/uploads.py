@@ -153,20 +153,46 @@ def _title_from(meta_title: str, blocks: list[dict]) -> str:
     return "Uploaded PDF"
 
 
-def save(data: bytes, user_id: str | None = None) -> dict:
+def save(source, user_id: str | None = None) -> dict:
     """Store an uploaded PDF and return what the reader needs to show it.
+
+    `source` is either the bytes or a readable file object. Streaming is
+    preferred: a 25MB upload otherwise sits in memory as the request body, as a
+    bytes copy, and again on the way to disk, on an instance with little to
+    spare.
 
     Raises ValueError when the bytes are not a usable PDF.
     """
-    if not data.startswith(b"%PDF-"):
-        raise ValueError("not a PDF")
-    if len(data) > MAX_BYTES:
-        raise ValueError("file too large")
-
     _DIR.mkdir(parents=True, exist_ok=True)
     uid = secrets.token_hex(16)  # unguessable: the id is the only credential
     path = _DIR / f"{uid}.pdf"
-    path.write_bytes(data)
+
+    if isinstance(source, (bytes, bytearray)):
+        if not bytes(source[:5]) == b"%PDF-":
+            raise ValueError("not a PDF")
+        if len(source) > MAX_BYTES:
+            raise ValueError("file too large")
+        path.write_bytes(source)
+    else:
+        written = 0
+        try:
+            with path.open("wb") as out:
+                while True:
+                    chunk = source.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    if written == 0 and chunk[:5] != b"%PDF-":
+                        raise ValueError("not a PDF")
+                    written += len(chunk)
+                    if written > MAX_BYTES:
+                        raise ValueError("file too large")
+                    out.write(chunk)
+        except ValueError:
+            path.unlink(missing_ok=True)
+            raise
+        if written == 0:
+            path.unlink(missing_ok=True)
+            raise ValueError("empty file")
 
     # PDFium rather than a pure-Python parser: a 24-page paper took 6.3s to
     # extract with pypdf locally and 143s on the deployed instance, whose CPU is
@@ -217,7 +243,7 @@ def save(data: bytes, user_id: str | None = None) -> dict:
     return record
 
 
-def persist(record: dict, data: bytes, user_id: str | None) -> None:
+def persist(record: dict, user_id: str | None) -> None:
     """Write an upload to the database, off the request's critical path.
 
     The local copy is only a cache: the instance's filesystem is wiped on every
@@ -231,7 +257,7 @@ def persist(record: dict, data: bytes, user_id: str | None) -> None:
     if not has_db():
         return
     try:
-        db.put_upload(record, data, user_id)
+        db.put_upload(record, Path(record["path"]).read_bytes(), user_id)
     except Exception:  # noqa: BLE001 - the reader still works this session
         pass
 
