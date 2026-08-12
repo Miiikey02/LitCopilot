@@ -182,6 +182,16 @@ class Conversation(BaseModel):
     messages: list[ConversationMessage]
 
 
+class FeedbackRequest(BaseModel):
+    message: str
+    email: str = ""  # optional; only so they can be replied to
+    context: str = ""  # which screen it came from, to make it reproducible
+
+
+class FeedbackResponse(BaseModel):
+    ok: bool = True
+
+
 class ResumeResponse(BaseModel):
     """A saved thread, restored: its answer, its papers and a live session."""
 

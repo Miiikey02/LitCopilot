@@ -13,6 +13,7 @@ import SearchProgress from './components/SearchProgress'
 import HeroEmpty from './components/HeroEmpty'
 import Sidebar from './components/Sidebar'
 import Updates from './components/Updates'
+import FeedbackPanel from './components/FeedbackPanel'
 import SegmentedControl from './components/SegmentedControl'
 import SourcePicker, { ALL_SOURCES } from './components/SourcePicker'
 import DeepResearchView from './components/DeepResearchView'
@@ -28,6 +29,7 @@ const RAIL_KEY = 'gaze.sidebarCollapsed'
 export default function App() {
   const { t, i18n } = useTranslation()
   const [tab, setTab] = useState('search') // 'search' | 'library' | 'updates'
+  const [feedbackOpen, setFeedbackOpen] = useState(false)
   const [railCollapsed, setRailCollapsed] = useState(
     () => localStorage.getItem(RAIL_KEY) === '1'
   )
@@ -472,6 +474,14 @@ export default function App() {
 
   return (
     <div className="flex h-screen overflow-hidden bg-slate-50">
+      {feedbackOpen && (
+        <FeedbackPanel
+          // Where they were when something bothered them, so a report can be
+          // reproduced instead of guessed at.
+          context={`${tab}/${mode}/${i18n.language}`}
+          onClose={() => setFeedbackOpen(false)}
+        />
+      )}
       <Sidebar
         collapsed={railCollapsed}
         onToggle={() => {
@@ -491,6 +501,7 @@ export default function App() {
         onSignIn={() => setTab('library')}
         onSignOut={() => supabase.auth.signOut()}
         onToggleLang={toggleLang}
+        onFeedback={() => setFeedbackOpen(true)}
       />
 
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">

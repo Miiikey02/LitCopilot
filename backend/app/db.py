@@ -150,6 +150,16 @@ ALTER TABLE conversations ADD COLUMN IF NOT EXISTS state JSONB;
 ALTER TABLE folders ADD COLUMN IF NOT EXISTS parent_id BIGINT REFERENCES folders(id) ON DELETE SET NULL;
 ALTER TABLE folders DROP CONSTRAINT IF EXISTS folders_user_id_name_key;
 CREATE INDEX IF NOT EXISTS folders_parent_idx ON folders (parent_id);
+CREATE TABLE IF NOT EXISTS feedback (
+    id         BIGSERIAL PRIMARY KEY,
+    user_id    UUID,          -- null when sent by someone not signed in
+    email      TEXT,          -- optional, only if they want a reply
+    message    TEXT NOT NULL,
+    context    TEXT,          -- which screen they were on, for reproducing it
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS feedback_created_idx ON feedback (created_at DESC);
 CREATE INDEX IF NOT EXISTS uploads_created_idx ON uploads (created_at);
 CREATE INDEX IF NOT EXISTS saved_papers_user_idx ON saved_papers (user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS search_history_user_idx ON search_history (user_id, created_at DESC);
@@ -1185,3 +1195,19 @@ def move_folder(
             "UPDATE folders SET parent_id = %s WHERE id = %s", (parent_id, folder_id)
         )
         return cur.rowcount > 0
+
+
+def add_feedback(
+    user_id: str | None, message: str, email: str = "", context: str = ""
+) -> bool:
+    """Record a piece of feedback. Anonymous is allowed — search is."""
+    message = (message or "").strip()
+    if not message:
+        return False
+    with _get_pool().connection() as conn:
+        conn.execute(
+            """INSERT INTO feedback (user_id, email, message, context)
+               VALUES (%s,%s,%s,%s)""",
+            (user_id, (email or "").strip()[:200] or None, message[:4000], (context or "")[:400]),
+        )
+        return True

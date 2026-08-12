@@ -41,6 +41,7 @@ export default function Sidebar({
   onSignIn,
   onSignOut,
   onToggleLang,
+  onFeedback,
 }) {
   const { t, i18n } = useTranslation()
 
@@ -180,6 +181,12 @@ export default function Sidebar({
             collapsed={collapsed}
           />
         )}
+        <NavItem
+          icon="messageSquare"
+          label={t('feedbackNav')}
+          onClick={onFeedback}
+          collapsed={collapsed}
+        />
         <NavItem
           icon="globe"
           label={i18n.language.startsWith('zh') ? t('toggleToEn') : t('toggleToZh')}

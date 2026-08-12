@@ -23,7 +23,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import db
 from .auth import current_user, optional_user
-from .config import MAX_RESULTS, has_llm_key, redact
+from .config import MAX_RESULTS, has_db, has_llm_key, redact
 from .routers import library
 from .schemas import (
     ArticleBlock,
@@ -33,6 +33,8 @@ from .schemas import (
     AskRequest,
     AskResponse,
     ChatRequest,
+    FeedbackRequest,
+    FeedbackResponse,
     ConnectedResponse,
     DeepRead,
     GraphEvidenceRequest,
@@ -1123,6 +1125,28 @@ def resume_conversation(
         state=conv.get("state") or {},
         session_id=session_id,
     )
+
+
+@app.post("/api/feedback", response_model=FeedbackResponse)
+def submit_feedback(
+    req: FeedbackRequest, user: str | None = Depends(optional_user)
+) -> FeedbackResponse:
+    """Take a note from whoever is using this.
+
+    Open to people who are not signed in, because search is: the reader most
+    likely to hit something confusing is the one who has not committed to an
+    account yet, and making them register first loses exactly that report.
+    """
+    message = req.message.strip()
+    if not message:
+        raise HTTPException(status_code=422, detail="Empty message")
+    if not has_db():
+        raise HTTPException(status_code=503, detail="Feedback storage unavailable")
+    try:
+        db.add_feedback(user, message, req.email, req.context)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=503, detail="Could not save feedback") from exc
+    return FeedbackResponse(ok=True)
 
 
 @app.post("/api/trials", response_model=TrialsResponse)

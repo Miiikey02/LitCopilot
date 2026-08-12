@@ -253,5 +253,9 @@ export const removeMember = (teamId, memberId) =>
 export const listHistory = () => req('/api/history')
 export const clearHistory = () => req('/api/history', { method: 'DELETE' })
 
+// --- Feedback (works signed out) ---
+export const sendFeedback = (message, email, context) =>
+  jsonPost('/api/feedback', { message, email: email || '', context: context || '' })
+
 // --- Clinical trials ---
 export const findTrials = (query) => jsonPost('/api/trials', { query })

@@ -49,6 +49,11 @@ export const UPDATES = [
         en: 'When a follow-up falls outside the papers gathered so far, Gaze offers to go and search for it rather than reporting that the corpus is insufficient.',
       },
       {
+        kind: 'feature',
+        zh: '新增「更新日志」与「反馈」：随时可以看每次更新做了什么，也可以直接说哪里不好用——不用登录。',
+        en: 'An update log and a feedback button: see what changed in each release, and say what is not working — no account needed.',
+      },
+      {
         kind: 'fix',
         zh: '深度研究会遵守你选择的文献数量，并且不再把自己标注为「不相关」的文献放进来源列表。',
         en: 'Deep research honours the number of papers you asked for, and no longer includes sources its own note admits are irrelevant.',
