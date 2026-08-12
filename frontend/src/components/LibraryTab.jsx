@@ -36,23 +36,25 @@ function UploadPdf({ teamId, folderId, onDone }) {
     setError('')
     try {
       const up = await api.paperUpload(file)
-      await api.saveLibrary(
-        {
-          source: 'upload',
-          source_id: up.identifier,
-          title: up.title || file.name.replace(/\.pdf$/i, ''),
-          title_zh: '',
-          authors: [],
-          year: null,
-          venue: '',
-          url: '',
-          doi: '',
-          citation_key: (up.title || file.name).slice(0, 40),
-          relevance_zh: '',
-          has_full_text: true,
-        },
-        teamId || null
-      )
+      // The server resolves the DOI printed on the PDF against the same index
+      // the search uses, so the card carries real authors, journal, year and
+      // citation key. The fallback only matters for a paper that resolves to
+      // nothing at all.
+      const card = up.paper || {
+        source: 'upload',
+        source_id: up.identifier,
+        title: up.title || file.name.replace(/\.pdf$/i, ''),
+        title_zh: '',
+        authors: [],
+        year: null,
+        venue: '',
+        url: '',
+        doi: '',
+        citation_key: (up.title || file.name).slice(0, 40),
+        relevance_zh: '',
+        has_full_text: true,
+      }
+      await api.saveLibrary(card, teamId || null)
       onDone()
     } catch (err) {
       setError(err.message || t('uploadFailed'))

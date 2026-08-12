@@ -125,10 +125,12 @@ CREATE TABLE IF NOT EXISTS uploads (
     pages      INTEGER,
     blocks     JSONB,
     body       TEXT,
+    card       JSONB,  -- resolved bibliographic record, so an upload looks like any other paper
     data       BYTEA NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+ALTER TABLE uploads ADD COLUMN IF NOT EXISTS card JSONB;
 CREATE INDEX IF NOT EXISTS uploads_created_idx ON uploads (created_at);
 CREATE INDEX IF NOT EXISTS saved_papers_user_idx ON saved_papers (user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS search_history_user_idx ON search_history (user_id, created_at DESC);
@@ -907,8 +909,8 @@ def put_upload(record: dict, data: bytes, user_id: str | None) -> None:
     with _get_pool().connection() as conn:
         conn.execute(
             """
-            INSERT INTO uploads (id, user_id, title, pages, blocks, body, data)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO uploads (id, user_id, title, pages, blocks, body, data, card)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (id) DO NOTHING
             """,
             (
@@ -919,13 +921,14 @@ def put_upload(record: dict, data: bytes, user_id: str | None) -> None:
                 json.dumps(record["blocks"]),
                 record["text"],
                 data,
+                json.dumps(record.get("card")) if record.get("card") else None,
             ),
         )
 
 
 def get_upload(uid: str, with_data: bool = False) -> dict | None:
     """An uploaded PDF. `with_data` also returns the bytes, which are large."""
-    cols = "id, title, pages, blocks, body" + (", data" if with_data else "")
+    cols = "id, title, pages, blocks, body, card" + (", data" if with_data else "")
     with _get_pool().connection() as conn:
         row = conn.execute(
             f"SELECT {cols} FROM uploads WHERE id = %s", (uid,)
@@ -938,6 +941,7 @@ def get_upload(uid: str, with_data: bool = False) -> dict | None:
         "pages": row["pages"] or 0,
         "blocks": row["blocks"] or [],
         "text": row["body"] or "",
+        "card": row["card"],
     }
     if with_data:
         record["data"] = bytes(row["data"])

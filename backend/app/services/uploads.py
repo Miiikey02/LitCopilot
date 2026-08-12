@@ -144,6 +144,27 @@ def _blocks_from_pages(pages: list[str]) -> list[dict]:
     return blocks
 
 
+# A DOI as printed on a paper's first page. Deliberately only searched near the
+# front: the reference list is full of other people's DOIs, and picking one of
+# those would label the upload as an entirely different paper.
+_DOI = re.compile(r"\b10\.\d{4,9}/[^\s\"'<>,;]+", re.I)
+_DOI_TRAILING = ".,;:)]}>\u3002\uff0c"
+
+
+def _find_doi(pages: list[str], meta: dict | None = None) -> str:
+    candidates = []
+    for key in ("doi", "Subject", "Keywords"):
+        value = (meta or {}).get(key)
+        if value:
+            candidates.append(str(value))
+    candidates.extend(pages[:2])
+    for text in candidates:
+        found = _DOI.search(text or "")
+        if found:
+            return found.group(0).rstrip(_DOI_TRAILING)
+    return ""
+
+
 def _title_from(meta_title: str, blocks: list[dict]) -> str:
     title = (meta_title or "").strip()
     if 8 < len(title) < 300 and not title.lower().endswith(".pdf"):
@@ -185,7 +206,8 @@ def _finish(uid: str, path: Path) -> dict:
             pages.append(textpage.get_text_range() or "")
             textpage.close()
             page.close()
-        meta_title = str((doc.get_metadata_dict() or {}).get("Title", "") or "")
+        meta = doc.get_metadata_dict() or {}
+        meta_title = str(meta.get("Title", "") or "")
     except pdfium.PdfiumError as exc:
         path.unlink(missing_ok=True)
         raise ValueError("password-protected or damaged PDF") from exc
@@ -211,6 +233,10 @@ def _finish(uid: str, path: Path) -> dict:
         "blocks": blocks,
         "text": text,
         "title": _title_from(meta_title, blocks),
+        # The identifier that lets us look the paper up properly, rather than
+        # guessing its authors and journal out of the PDF's front matter.
+        "doi": _find_doi(pages, meta),
+        "card": None,  # filled once the DOI or title resolves
     }
     _INDEX[uid] = record
     _INDEX.move_to_end(uid)

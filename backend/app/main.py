@@ -338,10 +338,17 @@ async def _resolve_with_text(identifier: str):
         record = uploads.get(identifier[len(UPLOAD_PREFIX):])
         if record is None:
             return None, None
+        card = record.get("card") or {}
         paper = Paper(
             source="upload",
             source_id=record["id"],
-            title=record["title"],
+            title=card.get("title") or record["title"],
+            authors=card.get("authors") or [],
+            year=card.get("year"),
+            venue=card.get("venue") or "",
+            doi=card.get("doi") or record.get("doi", ""),
+            url=card.get("url") or "",
+            retraction_status=card.get("retraction_status") or "",
             full_text=record["text"][:20000],
         )
         return None, paper
@@ -463,8 +470,10 @@ async def paper_article(
         record = uploads.get(uid)
         if record is None:
             raise HTTPException(status_code=404, detail="Upload not found or expired")
-        card = Paper(
-            source="upload", source_id=record["id"], title=record["title"]
+        card = record.get("card") or Paper(
+            source="upload",
+            source_id=f"{UPLOAD_PREFIX}{record['id']}",
+            title=record["title"],
         ).to_card()
         return ArticleResponse(
             paper=SourceCard(**card),
@@ -569,6 +578,48 @@ async def _serves_a_pdf(url: str) -> bool:
 UPLOAD_PREFIX = "upload:"
 
 
+async def _card_for_upload(record: dict) -> dict:
+    """Bibliographic metadata for an uploaded PDF.
+
+    A PDF's front matter is a layout, not a record: authors wrap across lines,
+    the journal is a logo, and the year hides in a footer. So the DOI printed on
+    page one is resolved against the same index the search uses, and the upload
+    comes back with the authors, journal, year and citation key a search result
+    has. Falling back to the title catches papers that print no DOI; falling
+    back to the filename-derived title keeps something readable when neither
+    lands.
+    """
+    work = None
+    for probe in (record.get("doi"), record.get("title")):
+        if not probe or len(str(probe)) < 6:
+            continue
+        try:
+            work = await resolve_work(str(probe))
+        except Exception:  # noqa: BLE001 - metadata is a bonus, never a blocker
+            work = None
+        if work is not None:
+            break
+
+    if work is not None:
+        paper = _oa_to_paper(work)
+        card = paper.to_card()
+    else:
+        card = Paper(
+            source="upload",
+            source_id=record["id"],
+            title=record["title"],
+            doi=record.get("doi", ""),
+        ).to_card()
+
+    # However it resolved, the library and the reader address it as the upload.
+    card["source"] = "upload"
+    card["source_id"] = f"{UPLOAD_PREFIX}{record['id']}"
+    card["has_full_text"] = True
+    if not card.get("title"):
+        card["title"] = record["title"]
+    return card
+
+
 @app.post("/api/paper/upload", response_model=UploadResponse)
 async def paper_upload(
     request: Request,
@@ -589,12 +640,14 @@ async def paper_upload(
         record = await uploads.save_stream(request.stream())
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    record["card"] = await _card_for_upload(record)
     background.add_task(uploads.persist, record, user)
     return UploadResponse(
         identifier=f"{UPLOAD_PREFIX}{record['id']}",
-        title=record["title"],
+        title=record["card"].get("title") or record["title"],
         pages=record["pages"],
         blocks=[ArticleBlock(**b) for b in record["blocks"]],
+        paper=SourceCard(**record["card"]),
     )
 
 

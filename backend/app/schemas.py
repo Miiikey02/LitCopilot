@@ -299,6 +299,7 @@ class UploadResponse(BaseModel):
     title: str = ""
     pages: int = 0
     blocks: list[ArticleBlock] = []
+    paper: Optional[SourceCard] = None  # resolved authors, journal, year, DOI
 
 
 class AskRequest(BaseModel):
