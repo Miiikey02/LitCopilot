@@ -282,6 +282,7 @@ class ArticleResponse(BaseModel):
     blocks: list[ArticleBlock] = []
     license: str = ""
     has_full_text: bool = False
+    has_pdf: bool = False
     warning: Optional[str] = None
 
 

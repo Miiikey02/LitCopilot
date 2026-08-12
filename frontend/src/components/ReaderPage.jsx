@@ -37,6 +37,9 @@ export default function ReaderPage() {
   const [activeId, setActiveId] = useState(null)
   const [error, setError] = useState('')
   const [split, setSplit] = useState(58) // % width of the article pane
+  // 'pdf' shows the paper exactly as published; 'text' is the parsed reading
+  // view, which is the only one that can carry highlights and select-to-ask.
+  const [leftView, setLeftView] = useState('pdf')
   const dragging = useRef(false)
   const chatEnd = useRef(null)
 
@@ -47,7 +50,11 @@ export default function ReaderPage() {
     let alive = true
     api
       .paperArticle(identifier, lang)
-      .then((d) => alive && setArticle(d))
+      .then((d) => {
+        if (!alive) return
+        setArticle(d)
+        if (!d.has_pdf) setLeftView('text')
+      })
       .catch(() => alive && setError(t('paperNotFound')))
     api
       .paperRead(identifier, lang)
@@ -166,10 +173,17 @@ export default function ReaderPage() {
     )
   }
 
+  // Locating a claim only works in the parsed view, so asking to locate one
+  // switches to it rather than doing nothing while the PDF is showing.
+  const locate = (id) => {
+    setLeftView('text')
+    setActiveId(id)
+  }
+
   const Item = ({ it, id, kind }) => (
     <li>
       <button
-        onClick={() => it.quote && setActiveId(id)}
+        onClick={() => it.quote && locate(id)}
         className={`group flex w-full gap-2 rounded-md px-2 py-1.5 text-left text-sm leading-6 transition-colors ${
           it.quote ? 'hover:bg-slate-50' : 'cursor-default'
         } ${activeId === id ? 'bg-blue-50' : ''}`}
@@ -230,17 +244,43 @@ export default function ReaderPage() {
       </header>
 
       <div className="flex min-h-0 flex-1">
-        <div style={{ width: `${split}%` }} className="min-w-0">
-          <ArticlePane
-            blocks={article?.blocks || []}
-            highlights={highlights}
-            activeId={activeId}
-            license={article?.license}
-            warning={article?.warning}
-            loading={!article}
-            onMarkClick={(hl) => setActiveId(hl.id)}
-            onAsk={(selection, intent) => send({ selection, intent })}
-          />
+        <div style={{ width: `${split}%` }} className="flex min-w-0 flex-col">
+          {article?.has_pdf && (
+            <div className="flex shrink-0 items-center gap-3 border-b border-slate-100 bg-white px-4 py-2">
+              <SegmentedControl
+                value={leftView}
+                onChange={setLeftView}
+                size="sm"
+                options={[
+                  { value: 'pdf', label: t('viewPdf'), icon: 'filePlus' },
+                  { value: 'text', label: t('viewText'), icon: 'note' },
+                ]}
+              />
+              <p className="truncate text-xs text-slate-400">
+                {leftView === 'pdf' ? t('pdfHint') : t('textHint')}
+              </p>
+            </div>
+          )}
+          <div className="min-h-0 flex-1">
+            {leftView === 'pdf' && article?.has_pdf ? (
+              <iframe
+                title={t('viewPdf')}
+                src={`/api/paper/pdf?id=${encodeURIComponent(identifier)}`}
+                className="h-full w-full border-0 bg-slate-100"
+              />
+            ) : (
+              <ArticlePane
+                blocks={article?.blocks || []}
+                highlights={highlights}
+                activeId={activeId}
+                license={article?.license}
+                warning={article?.warning}
+                loading={!article}
+                onMarkClick={(hl) => setActiveId(hl.id)}
+                onAsk={(selection, intent) => send({ selection, intent })}
+              />
+            )}
+          </div>
         </div>
 
         {/* Draggable divider — reading widths are personal, and a Chinese

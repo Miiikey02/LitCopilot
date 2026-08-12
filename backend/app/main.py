@@ -8,13 +8,15 @@ from __future__ import annotations
 
 import asyncio
 import os
+
+import httpx
 from pathlib import Path
 
 from collections import OrderedDict
 from time import monotonic
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import db
@@ -415,6 +417,7 @@ async def paper_article(req: PaperRequest) -> ArticleResponse:
             paper=SourceCard(**paper.to_card()),
             blocks=blocks,
             has_full_text=False,
+            has_pdf=bool(_pdf_url_for(paper)),
             warning=(
                 "这篇文献没有开放获取全文，此处仅显示摘要。可点击标题前往出版方阅读原文。"
                 if lang == "zh"
@@ -426,6 +429,57 @@ async def paper_article(req: PaperRequest) -> ArticleResponse:
         blocks=article["blocks"],
         license=article.get("license", ""),
         has_full_text=True,
+        has_pdf=bool(_pdf_url_for(paper)),
+    )
+
+
+# A browser renders a PDF far better than anything we would build, but it will
+# not render one from another origin inside our page, so the file is streamed
+# through here. Only ever an open-access copy — this proxies what the publisher
+# already gives away free, never anything behind a paywall.
+_PDF_UA = "Gaze/1.0 (biomedical literature reader; +https://litcopilot-1.onrender.com)"
+_MAX_PDF_BYTES = 40 * 1024 * 1024
+
+
+def _pdf_url_for(paper) -> str:
+    """The open-access PDF for this paper, or "" when there isn't one."""
+    pmcid = _pmcid_from(paper)
+    if pmcid:
+        return f"https://pmc.ncbi.nlm.nih.gov/articles/{pmcid}/pdf/"
+    oa = paper.oa_url or ""
+    return oa if ".pdf" in oa.lower() else ""
+
+
+@app.get("/api/paper/pdf")
+async def paper_pdf(id: str):
+    """Stream the paper's open-access PDF, so it can be shown in the reader."""
+    _work, paper = await _resolve_cached(id)
+    if paper is None:
+        raise HTTPException(status_code=404, detail="Paper not found")
+    url = _pdf_url_for(paper)
+    if not url:
+        raise HTTPException(status_code=404, detail="No open-access PDF for this paper")
+
+    async def body():
+        sent = 0
+        async with httpx.AsyncClient(follow_redirects=True, timeout=90) as client:
+            async with client.stream(
+                "GET", url, headers={"User-Agent": _PDF_UA, "Accept": "application/pdf"}
+            ) as r:
+                r.raise_for_status()
+                async for chunk in r.aiter_bytes():
+                    sent += len(chunk)
+                    if sent > _MAX_PDF_BYTES:
+                        return
+                    yield chunk
+
+    return StreamingResponse(
+        body(),
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": 'inline; filename="paper.pdf"',
+            "Cache-Control": "public, max-age=3600",
+        },
     )
 
 
