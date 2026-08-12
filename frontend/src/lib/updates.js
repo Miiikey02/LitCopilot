@@ -60,6 +60,11 @@ export const UPDATES = [
       },
       {
         kind: 'fix',
+        zh: '点开「引用」等下拉菜单时不再被下一张卡片盖住。',
+        en: 'Dropdown menus such as Cite are no longer painted under the next card.',
+      },
+      {
+        kind: 'fix',
         zh: '「深度研究」下也能选择检索哪些数据库——之前这个选项只在快速检索时出现。',
         en: 'The database picker now appears in deep research too — it had only been showing in quick search.',
       },

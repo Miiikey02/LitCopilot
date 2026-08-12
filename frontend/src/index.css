@@ -205,6 +205,12 @@ body {
 }
 .card-hover:hover {
   @apply -translate-y-0.5 shadow-md;
+  /* The lift is a transform, and a transform creates a stacking context — so
+     any menu opened inside a hovered card was trapped in it and painted under
+     the next card. Raising the hovered card fixes that: you have to hover it to
+     open the menu, and the menu is inside the card, so the hover holds. */
+  position: relative;
+  z-index: 10;
 }
 
 /* Print / export-to-PDF: show only the answer + reference material. */

@@ -28,7 +28,7 @@ export default function CiteButton({ paper }) {
   }
 
   return (
-    <div className="relative" ref={ref}>
+    <div className={`relative ${open ? "z-30" : ""}`} ref={ref}>
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -41,7 +41,7 @@ export default function CiteButton({ paper }) {
         {copied ? <><Icon name="check" className="mr-1" />{t('citeCopied')}</> : <><Icon name="quote" className="mr-1" />{t('cite')}<Icon name="chevronDown" className="ml-0.5" /></>}
       </button>
       {open && (
-        <div className="animate-expand absolute left-0 z-20 mt-1 w-56 overflow-hidden rounded-md border border-slate-200 bg-white py-1 shadow-lg">
+        <div className="animate-expand absolute left-0 z-40 mt-1 w-56 overflow-hidden rounded-md border border-slate-200 bg-white py-1 shadow-lg">
           {CITATION_FORMATS.map((fmt) => (
             <button
               key={fmt.key}
