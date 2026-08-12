@@ -60,6 +60,11 @@ export const UPDATES = [
       },
       {
         kind: 'fix',
+        zh: '「深度研究」下也能选择检索哪些数据库——之前这个选项只在快速检索时出现。',
+        en: 'The database picker now appears in deep research too — it had only been showing in quick search.',
+      },
+      {
+        kind: 'fix',
         zh: '深度研究的来源列表不再混入无关文献。你设置的篇数是上限而非配额——宁可少给几篇，也不会用检索时顺带捞到的文献凑数。',
         en: 'Deep research no longer mixes unrelated papers into its sources. The number you choose is a ceiling, not a quota — it would rather show fewer papers than pad the list with whatever the sub-question searches happened to turn up.',
       },

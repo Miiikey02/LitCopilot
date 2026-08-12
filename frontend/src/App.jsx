@@ -613,17 +613,17 @@ export default function App() {
               <option value="relevance">{t('sortRelevance')}</option>
               <option value="date">{t('sortDate')}</option>
             </select>
-            <SourcePicker
-              value={databases}
-              onChange={(next) => {
-                setDatabases(next)
-                localStorage.setItem(DBS_KEY, JSON.stringify(next))
-                // Same reasoning as the mode toggle: pick your databases, then
-                // search.
-              }}
-            />
-          
               </>
+            )}
+            {!lookupMode && (
+              <SourcePicker
+                value={databases}
+                onChange={(next) => {
+                  setDatabases(next)
+                  localStorage.setItem(DBS_KEY, JSON.stringify(next))
+                  // Pick your databases, then search — same as the mode toggle.
+                }}
+              />
             )}
             {teams.length > 0 && (
               <label className="ml-2 inline-flex items-center gap-1.5">
