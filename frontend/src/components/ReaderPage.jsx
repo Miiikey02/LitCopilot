@@ -6,6 +6,7 @@ import ArticlePane from './ArticlePane'
 import ChatComposer from './ChatComposer'
 import Icon from './Icon'
 import PaperGraph from './PaperGraph'
+import PdfPane from './PdfPane'
 import SegmentedControl from './SegmentedControl'
 import TypingDots from './TypingDots'
 
@@ -320,15 +321,15 @@ export default function ReaderPage() {
           )}
           <div className="min-h-0 flex-1">
             {leftView === 'pdf' && article?.has_pdf ? (
-              <iframe
-                title={t('viewPdf')}
-                // A frame cannot send the auth header, so it uses the signed,
-                // short-lived link the article response issued for this file.
+              // Rendered by us, not framed: a browser's own PDF viewer exposes
+              // no selection to JavaScript, so asking about a passage would
+              // silently do nothing here.
+              <PdfPane
                 src={
                   article.pdf_embed ||
                   `/api/paper/pdf?id=${encodeURIComponent(identifier)}`
                 }
-                className="h-full w-full border-0 bg-slate-100"
+                onAsk={(selection, intent) => send({ selection, intent })}
               />
             ) : (
               <ArticlePane

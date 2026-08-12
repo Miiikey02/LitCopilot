@@ -220,3 +220,39 @@ body {
     max-width: 100% !important;
   }
 }
+
+
+/* pdf.js text layer: transparent, positioned copies of the page's words laid
+   over the rendered image. This is what makes a PDF selectable — and therefore
+   what makes "select a phrase and ask about it" work on the published layout
+   rather than only in the reflowed reading view. */
+.pdf-text-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  line-height: 1;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  z-index: 2;
+}
+.pdf-text-layer span,
+.pdf-text-layer br {
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+  color: transparent;
+}
+.pdf-text-layer ::selection {
+  background: rgb(59 130 246 / 0.35);
+}
+/* pdf.js marks the span it is currently measuring; it must not be visible. */
+.pdf-text-layer .endOfContent {
+  display: block;
+  position: absolute;
+  inset: 100% 0 0;
+  z-index: -1;
+  cursor: default;
+  user-select: none;
+}
