@@ -40,6 +40,10 @@ export default function PdfPane({ src, onAsk }) {
   const pagesHost = useRef(null)
   const [status, setStatus] = useState('loading') // loading | ready | failed
   const [sel, setSel] = useState(null)
+  // Whether the pages carry a usable text layer. When they do not, saying so
+  // beats leaving the reader dragging across a page that will never highlight.
+  const [selectable, setSelectable] = useState(true)
+  const [detail, setDetail] = useState('')
   // Re-render when the split is dragged: a canvas does not reflow, so a wider
   // pane would otherwise keep showing the page drawn for the narrower one.
   const [width, setWidth] = useState(0)
@@ -64,6 +68,9 @@ export default function PdfPane({ src, onAsk }) {
     if (!host || !src || !width) return
     host.replaceChildren()
     setStatus('loading')
+    setSelectable(true)
+    setDetail('')
+    let selectable = true
     ;(async () => {
       try {
         const pdfjs = await loadPdfjs()
@@ -115,18 +122,40 @@ export default function PdfPane({ src, onAsk }) {
             transform: dpr === 1 ? null : [dpr, 0, 0, dpr, 0, 0],
           }).promise
           if (cancelled) return
-
-          const layer = new pdfjs.TextLayer({
-            textContentSource: await page.getTextContent(),
-            container: textLayer,
-            viewport,
-          })
-          await layer.render()
           if (n === 1) setStatus('ready')
+
+          // The page image is the content; the text layer only adds selection.
+          // Building it depends on the browser reporting real font metrics, and
+          // where that fails pdf.js can hang rather than throw — which stalled
+          // this loop after page one and left the reader with a single page.
+          // So it is bounded, its failure is contained to the page, and once it
+          // has failed the rest are skipped instead of stalling one by one.
+          if (selectable) {
+            try {
+              const layer = new pdfjs.TextLayer({
+                textContentSource: await page.getTextContent(),
+                container: textLayer,
+                viewport,
+              })
+              await Promise.race([
+                layer.render(),
+                new Promise((_, reject) =>
+                  setTimeout(() => reject(new Error('text layer timed out')), 6000)
+                ),
+              ])
+              if (!textLayer.childElementCount) throw new Error('text layer empty')
+            } catch {
+              selectable = false
+              if (!cancelled) setSelectable(false)
+            }
+          }
         }
         if (!cancelled) setStatus('ready')
-      } catch {
-        if (!cancelled) setStatus('failed')
+      } catch (err) {
+        if (!cancelled) {
+          setStatus('failed')
+          setDetail(String(err?.message || err))
+        }
       }
     })()
     return () => {
@@ -167,6 +196,12 @@ export default function PdfPane({ src, onAsk }) {
       {status === 'failed' && (
         <div className="m-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
           {t('pdfFailed')}
+          {detail && <span className="mt-1 block text-xs opacity-70">{detail}</span>}
+        </div>
+      )}
+      {status === 'ready' && !selectable && (
+        <div className="sticky top-0 z-10 mb-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          {t('pdfNotSelectable')}
         </div>
       )}
       <div ref={pagesHost} />
