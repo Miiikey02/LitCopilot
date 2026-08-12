@@ -150,6 +150,10 @@ export default function App() {
       // Passed explicitly rather than read from state: changing the databases
       // re-runs immediately, before React has committed the new value.
       const dbs = overrides.sources || databases
+      // Only a re-run of the question already on screen reuses its thread.
+      // Typing something new must file its own, or the rail would overwrite
+      // the earlier work with an unrelated search.
+      const keepThread = overrides.keepThread ? conversationId : null
       const includePreprints = dbs.includes('biorxiv')
       setLoading(true)
       setError('')
@@ -170,8 +174,9 @@ export default function App() {
         if (overrides.deep ?? deepMode) {
           // Deep research returns a brief plus its notebook; reuse the same
           // sources panel and follow-up session as a quick search.
-          const d = await api.deepResearch(text, lang, includePreprints, dbs)
+          const d = await api.deepResearch(text, lang, includePreprints, dbs, keepThread)
           setDeep(d)
+          if (d.conversation_id) setConversationId(d.conversation_id)
           setResult({
             original_query: d.original_query,
             detected_lang: d.detected_lang,
@@ -184,8 +189,9 @@ export default function App() {
           loadHistory()
           return
         }
-        const data = await api.search(text, lang, limit, includePreprints, sort, dbs)
+        const data = await api.search(text, lang, limit, includePreprints, sort, dbs, keepThread)
         setResult(data)
+        if (data.conversation_id) setConversationId(data.conversation_id)
         loadHistory()
       } catch (err) {
         setError(t('errorNetwork'))
@@ -194,7 +200,7 @@ export default function App() {
         setLoading(false)
       }
     },
-    [loading, loadHistory, limit, databases, sortBy, deepMode, lookupMode, t, i18n]
+    [loading, loadHistory, limit, databases, sortBy, deepMode, lookupMode, conversationId, t, i18n]
   )
 
   const onFindTrials = async () => {
@@ -477,6 +483,7 @@ export default function App() {
                   runSearch(query, {
                     deep: next === 'deep',
                     lookup: next === 'lookup',
+                    keepThread: true,
                   })
                 }
               }}
@@ -523,7 +530,7 @@ export default function App() {
                 setDatabases(next)
                 localStorage.setItem(DBS_KEY, JSON.stringify(next))
                 if (query.trim() && !loading) {
-                  runSearch(query, { sources: next })
+                  runSearch(query, { sources: next, keepThread: true })
                 }
               }}
             />

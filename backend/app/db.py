@@ -1015,3 +1015,41 @@ def set_conversation_sources(user_id: str, conversation_id: int, sources: list[d
             (json.dumps(sources), conversation_id),
         )
         return True
+
+
+def replace_conversation_result(
+    user_id: str,
+    conversation_id: int,
+    first_message: str,
+    answer: str,
+    sources: list[dict],
+    state: dict,
+) -> bool:
+    """Overwrite a thread with a fresh run of the same question.
+
+    Re-running at a different depth, or against different databases, is the
+    same piece of work — filing it as a second thread leaves the reader with
+    two entries for one question and no way to tell them apart. The earlier
+    exchange is replaced rather than appended because the answer it produced no
+    longer describes what is on screen.
+    """
+    with _get_pool().connection() as conn:
+        if not _owns_conversation(conn, user_id, conversation_id):
+            return False
+        conn.execute(
+            "DELETE FROM conversation_messages WHERE conversation_id = %s",
+            (conversation_id,),
+        )
+        conn.execute(
+            """UPDATE conversations
+                  SET title = %s, sources = %s, state = %s, updated_at = now()
+                WHERE id = %s""",
+            (_title_from(first_message), json.dumps(sources), json.dumps(state), conversation_id),
+        )
+        for role, content in (("user", first_message), ("assistant", answer)):
+            conn.execute(
+                """INSERT INTO conversation_messages (conversation_id, role, content)
+                   VALUES (%s,%s,%s)""",
+                (conversation_id, role, content),
+            )
+        return True

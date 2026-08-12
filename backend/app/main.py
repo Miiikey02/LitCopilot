@@ -93,6 +93,41 @@ async def health() -> dict:
     return {"status": "ok", "llm_key": has_llm_key()}
 
 
+def _save_search_thread(
+    user: str,
+    conversation_id: int | None,
+    query: str,
+    answer: str,
+    cards: list,
+    state: dict,
+) -> int | None:
+    """Store a search result, updating the open thread rather than adding one.
+
+    Switching mode or databases re-runs the same question, and filing each run
+    separately leaves a rail full of entries that all say the same thing. The
+    thread is only reused when the caller passes its id, which it does exactly
+    when the question has not changed.
+    """
+    sources = [c.model_dump() for c in cards]
+    try:
+        if conversation_id is not None and db.replace_conversation_result(
+            user, conversation_id, query, answer, sources, state
+        ):
+            return conversation_id
+        new_id = db.create_conversation(
+            user, "search", query, seed_query=query, sources=sources, state=state
+        )
+        db.append_messages(
+            user,
+            new_id,
+            [{"role": "user", "content": query},
+             {"role": "assistant", "content": answer}],
+        )
+        return new_id
+    except Exception:  # noqa: BLE001 - saving must never lose the answer
+        return conversation_id
+
+
 @app.post("/api/search", response_model=SearchResponse)
 async def search(
     req: SearchRequest, user: str | None = Depends(optional_user)
@@ -178,33 +213,20 @@ async def search(
 
     # Saved with its papers, so opening it later shows what you already have
     # instead of running the same search again and filing a second copy of it.
-    conversation_id = None
+    conversation_id = req.conversation_id
     if user and answer:
-        try:
-            conversation_id = db.create_conversation(
-                user,
-                "search",
-                query,
-                seed_query=query,
-                sources=[c.model_dump() for c in cards],
-                state={
-                    "mode": "quick",
-                    "lang": lang,
-                    "limit": limit,
-                    "sort": sort,
-                    "databases": req.sources,
-                    "english_query": english_query,
-                    "warning": warning,
-                },
-            )
-            db.append_messages(
-                user,
-                conversation_id,
-                [{"role": "user", "content": query},
-                 {"role": "assistant", "content": answer}],
-            )
-        except Exception:  # noqa: BLE001 - saving must not lose the answer
-            conversation_id = None
+        state = {
+            "mode": "quick",
+            "lang": lang,
+            "limit": limit,
+            "sort": sort,
+            "databases": req.sources,
+            "english_query": english_query,
+            "warning": warning,
+        }
+        conversation_id = _save_search_thread(
+            user, conversation_id, query, answer, cards, state
+        )
 
     return SearchResponse(
         conversation_id=conversation_id,
@@ -311,34 +333,21 @@ async def deep_research(
         papers, seed, lang, include_preprints=req.include_preprints, sources=req.sources
     )
 
-    conversation_id = None
+    conversation_id = req.conversation_id
     if user and answer:
-        try:
-            conversation_id = db.create_conversation(
-                user,
-                "search",
-                query,
-                seed_query=query,
-                sources=[c.model_dump() for c in cards],
-                state={
-                    "mode": "deep",
-                    "lang": lang,
-                    "databases": req.sources,
-                    "contradictions": contradictions,
-                    "gaps": gaps,
-                    "sub_questions": [q.model_dump() for q in notebook],
-                    "full_text_read": read,
-                    "warning": warning,
-                },
-            )
-            db.append_messages(
-                user,
-                conversation_id,
-                [{"role": "user", "content": query},
-                 {"role": "assistant", "content": answer}],
-            )
-        except Exception:  # noqa: BLE001
-            conversation_id = None
+        state = {
+            "mode": "deep",
+            "lang": lang,
+            "databases": req.sources,
+            "contradictions": contradictions,
+            "gaps": gaps,
+            "sub_questions": [q.model_dump() for q in notebook],
+            "full_text_read": read,
+            "warning": warning,
+        }
+        conversation_id = _save_search_thread(
+            user, conversation_id, query, answer, cards, state
+        )
 
     return DeepResearchResponse(
         conversation_id=conversation_id,

@@ -20,6 +20,9 @@ class SearchRequest(BaseModel):
     sort: Optional[str] = None
     # Which databases to search. None searches all of them.
     sources: Optional[list[str]] = None
+    # Re-running the same question (a mode or database switch) updates this
+    # thread instead of filing another one for the same piece of work.
+    conversation_id: Optional[int] = None
 
 
 class SourceCard(BaseModel):
@@ -229,6 +232,7 @@ class DeepResearchRequest(BaseModel):
     lang: Optional[str] = None
     include_preprints: bool = True
     sources: Optional[list[str]] = None
+    conversation_id: Optional[int] = None
     # Papers to retrieve per sub-question; the merged set is capped separately.
     per_question: int = 8
 
