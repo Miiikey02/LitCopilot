@@ -194,7 +194,9 @@ export default function App() {
         if (data.conversation_id) setConversationId(data.conversation_id)
         loadHistory()
       } catch (err) {
-        setError(t('errorNetwork'))
+        // "Not found" is an answer, not an outage. Reporting it as a dead
+        // backend sends the reader off to check a service that is running fine.
+        setError(err?.status === 404 ? t('lookupNotFound') : t('errorNetwork'))
         setResult(null)
       } finally {
         setLoading(false)

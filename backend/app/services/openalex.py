@@ -200,9 +200,13 @@ async def _resolve_title(client: httpx.AsyncClient, ident: str) -> dict | None:
     # Commas and colons separate clauses in OpenAlex's filter syntax, so a title
     # containing them cannot be passed through raw.
     safe = re.sub(r"[,:|]+", " ", ident).strip()
+    # No `select` here, unlike the by-id lookups. Trimming fields is only a
+    # bandwidth saving, and the plain list query is the shape already proven to
+    # work against this API from the deployed host — a title lookup returning
+    # nothing at all is a far worse trade than a slightly larger response.
     attempts = (
-        {"filter": f"title.search:{safe}", "per-page": "25", "select": _OA_FIELDS},
-        {"search": ident, "per-page": "25", "select": _OA_FIELDS},
+        {"filter": f"title.search:{safe}", "per-page": "10"},
+        {"search": ident, "per-page": "10"},
     )
     fallback = None
     for params in attempts:
