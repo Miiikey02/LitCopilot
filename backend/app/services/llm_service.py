@@ -447,6 +447,10 @@ async def localize_papers(papers: list[Paper], question: str, lang: str) -> None
         idx = s.get("index", 0) - 1
         if 0 <= idx < len(papers):
             _set_localized(papers[idx], s.get("title_localized", ""), s.get("relevance", ""))
+            # An explicit "no" is worth more than parsing the prose note for
+            # the word "irrelevant" in two languages.
+            if s.get("relevant") is False:
+                papers[idx].relevance_zh = "__IRRELEVANT__"
 
 
 # --- Deep research: plan, evidence typing, contradictions ------------------
@@ -521,6 +525,12 @@ and numbered sources. Some sources include FULL TEXT (methods, sample sizes,
 limitations); others are ABSTRACT ONLY. Follow these rules WITHOUT EXCEPTION:
 
 1. Use ONLY the provided sources. Never invent findings, numbers or papers.
+1b. Set "relevant": false for any source that does not bear on the question.
+Sub-question searches drag in strays — a paper about a different organ, field or
+organism — and the honest response is to mark it, not to write a polite note
+explaining why it does not fit. Anything marked false is removed before the
+reader sees it, so marking generously costs nothing; leaving a stray marked true
+puts an unrelated paper in front of someone trusting the list.
 2. Cite every substantive claim inline using the exact [citation_key] token
 shown for that source, e.g. [Smith, 2021]. NEVER cite by number such as [1],
 [3], [1,2,7] or [[3]] — the source numbers are for your reference only and a
@@ -558,6 +568,7 @@ Return ONLY a JSON object of this exact shape:
   "gaps": ["<what the evidence does not yet answer>"],
   "sources": [
     {"index": 1, "title_localized": "...", "relevance": "...",
+     "relevant": true,
      "evidence_type": "rct"}
   ]
 }
@@ -614,6 +625,10 @@ async def synthesize_deep(
         idx = s.get("index", 0) - 1
         if 0 <= idx < len(papers):
             _set_localized(papers[idx], s.get("title_localized", ""), s.get("relevance", ""))
+            # An explicit "no" is worth more than parsing the prose note for
+            # the word "irrelevant" in two languages.
+            if s.get("relevant") is False:
+                papers[idx].relevance_zh = "__IRRELEVANT__"
             papers[idx].evidence_type = (s.get("evidence_type") or "").strip().lower()
 
     return {

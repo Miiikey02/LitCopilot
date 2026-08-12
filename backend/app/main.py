@@ -246,7 +246,7 @@ async def search(
 
 
 _IRRELEVANT = re.compile(
-    r"不相关|无关|不属于|未涉及|not relevant|unrelated|does not (?:relate|address)", re.I
+    r"__IRRELEVANT__|不相关|无关|不属于|未涉及|not relevant|unrelated|does not (?:relate|address)", re.I
 )
 
 
@@ -374,8 +374,17 @@ async def deep_research(
     # the requested count with the rest, and drop the tail — showing a paper the
     # brief never used, with a note explaining that it is irrelevant, is worse
     # than not showing it.
+    # The requested number is a ceiling, not a quota. Padding up to it with
+    # whatever the sub-questions happened to drag in is what put a paper about
+    # a different field in front of the reader — showing fewer papers that all
+    # belong is the better failure.
     cited = {key for key in _cited_keys(answer, contradictions, gaps)}
-    kept = [p for p in papers if not _reads_irrelevant(p.relevance_zh)]
+    kept = [
+        p
+        for p in papers
+        if p.citation_key() in cited
+        or (p.relevance_zh and not _reads_irrelevant(p.relevance_zh))
+    ]
     ranked = sorted(kept, key=lambda p: 0 if p.citation_key() in cited else 1)
     papers = ranked[:wanted]
 
