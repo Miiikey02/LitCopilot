@@ -182,6 +182,17 @@ def _to_paper(item: dict) -> Paper:
     )
 
 
+# Why the most recent title lookup came back empty. Reset per call by
+# `resolve_title_notes`, which the resolve endpoint drains into its response.
+_NOTES: list[str] = []
+
+
+def take_notes() -> list[str]:
+    notes = list(_NOTES)
+    _NOTES.clear()
+    return notes
+
+
 def _norm_title(text: str) -> str:
     """A title reduced to comparable words: case, punctuation and spacing gone."""
     return " ".join(re.sub(r"[^a-z0-9]+", " ", (text or "").lower()).split())
@@ -212,7 +223,12 @@ async def _resolve_title(client: httpx.AsyncClient, ident: str) -> dict | None:
     for params in attempts:
         try:
             data = await _get(client, OPENALEX_WORKS, params)
-        except (httpx.HTTPError, ValueError):
+        except (httpx.HTTPError, ValueError) as exc:
+            # Kept, not swallowed: a lookup that finds nothing because the index
+            # refused the request is a different problem from one that finds
+            # nothing because the paper is not there, and the reader can only
+            # act on the second.
+            _NOTES.append(f"{type(exc).__name__}: {str(exc)[:120]}")
             continue
         results = data.get("results") or []
         if fallback is None and results:
@@ -225,6 +241,7 @@ async def _resolve_title(client: httpx.AsyncClient, ident: str) -> dict | None:
             got = _norm_title(item.get("display_name"))
             if got and len(want) > 30 and (got.startswith(want) or want.startswith(got)):
                 return item
+        _NOTES.append(f"{len(results)} candidates, no title match")
     return fallback
 
 

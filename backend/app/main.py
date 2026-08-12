@@ -53,6 +53,7 @@ from .schemas import (
 from .services import llm_service, sessions, uploads
 from .services.models import Paper
 from .services.openalex import _norm_title, connected_papers, resolve_work
+from .services.openalex import take_notes as oa_notes
 from .services.openalex import _to_paper as _oa_to_paper
 from .services.pubmed import (
     _pmcid_from,
@@ -519,7 +520,11 @@ async def paper_resolve(req: PaperRequest) -> ResolveResponse:
     lang = req.lang or llm_service.detect_language(req.identifier)
     _work, paper = await _resolve_cached(req.identifier)
     if paper is None:
-        raise HTTPException(status_code=404, detail="Paper not found")
+        notes = "; ".join(oa_notes())
+        raise HTTPException(
+            status_code=404,
+            detail=f"Paper not found ({notes})" if notes else "Paper not found",
+        )
     warning = None
     # A title lookup that lands on a different paper is worse than no result:
     # the reader would go on to read the wrong article believing it was theirs.
