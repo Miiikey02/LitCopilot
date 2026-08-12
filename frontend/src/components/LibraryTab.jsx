@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import * as api from '../lib/api'
 import LibraryChat from './LibraryChat'
@@ -11,6 +11,101 @@ const sourceLabel = {
   openalex: 'OpenAlex',
   biorxiv: 'bioRxiv',
 }
+
+// A paper you uploaded is identified by its upload id rather than a DOI, and
+// 精读模式 resolves that identifier directly.
+const isUpload = (paper) =>
+  paper.source === 'upload' || (paper.source_id || '').startsWith('upload:')
+
+function UploadPdf({ teamId, folderId, onDone }) {
+  const { t } = useTranslation()
+  const input = useRef(null)
+  const [busy, setBusy] = useState(false)
+  const [dragging, setDragging] = useState(false)
+  const [error, setError] = useState('')
+
+  // An uploaded PDF joins the library as a paper in its own right: it is
+  // identified by its upload id, which 精读模式 resolves the same way it
+  // resolves a DOI, so everything downstream works without a special case.
+  const take = async (file) => {
+    if (!file || busy) return
+    if (!/\.pdf$/i.test(file.name) && file.type !== 'application/pdf') {
+      return setError(t('uploadNotPdf'))
+    }
+    setBusy(true)
+    setError('')
+    try {
+      const up = await api.paperUpload(file)
+      await api.saveLibrary(
+        {
+          source: 'upload',
+          source_id: up.identifier,
+          title: up.title || file.name.replace(/\.pdf$/i, ''),
+          title_zh: '',
+          authors: [],
+          year: null,
+          venue: '',
+          url: '',
+          doi: '',
+          citation_key: (up.title || file.name).slice(0, 40),
+          relevance_zh: '',
+          has_full_text: true,
+        },
+        teamId || null
+      )
+      onDone()
+    } catch (err) {
+      setError(err.message || t('uploadFailed'))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div
+      onDragOver={(e) => {
+        e.preventDefault()
+        setDragging(true)
+      }}
+      onDragLeave={() => setDragging(false)}
+      onDrop={(e) => {
+        e.preventDefault()
+        setDragging(false)
+        take(e.dataTransfer.files?.[0])
+      }}
+      className={`mb-4 rounded-xl border-2 border-dashed px-4 py-3 text-sm transition-colors ${
+        dragging
+          ? 'border-blue-400 bg-blue-50/60'
+          : 'border-slate-200 bg-slate-50/60 hover:border-slate-300'
+      }`}
+    >
+      <input
+        ref={input}
+        type="file"
+        accept="application/pdf,.pdf"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0]
+          e.target.value = ''
+          take(f)
+        }}
+      />
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <button
+          onClick={() => input.current?.click()}
+          disabled={busy}
+          className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-medium text-white transition-all hover:bg-slate-800 active:scale-[0.98] disabled:opacity-60"
+        >
+          <Icon name="filePlus" />
+          {busy ? t('uploadingPdf') : t('uploadPdf')}
+        </button>
+        <span className="text-slate-500">{t('uploadDropHint')}</span>
+      </div>
+      {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
+    </div>
+  )
+}
+
 
 function LibraryCard({ paper, folders = [], teamId, onChanged }) {
   const { t } = useTranslation()
@@ -58,7 +153,7 @@ function LibraryCard({ paper, folders = [], teamId, onChanged }) {
     <div className="card-hover rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
       <div className="mb-2 flex items-center justify-between gap-2">
         <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
-          {sourceLabel[paper.source] || paper.source}
+          {isUpload(paper) ? t('uploadedPdf') : sourceLabel[paper.source] || paper.source}
         </span>
         <span className="text-xs font-medium text-blue-700">[{paper.citation_key}]</span>
       </div>
@@ -185,14 +280,16 @@ function LibraryCard({ paper, folders = [], teamId, onChanged }) {
       </div>
 
       <div className="mt-3 flex items-center gap-4">
-        <a
-          href={paper.url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline"
-        >
-          {t('viewSource')} <Icon name="externalLink" className="ml-0.5" />
-        </a>
+        {paper.url && !isUpload(paper) && (
+          <a
+            href={paper.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline"
+          >
+            {t('viewSource')} <Icon name="externalLink" className="ml-0.5" />
+          </a>
+        )}
         {/* Close reading belongs to papers you have kept, not to a list of
             search hits — it opens the paper in its own window to read. */}
         {(paper.doi || paper.source_id) && (
@@ -451,6 +548,12 @@ export default function LibraryTab() {
             {t('savedCount', { count: papers.length })}
           </span>
         </div>
+
+        <UploadPdf
+          teamId={activeTeam}
+          folderId={activeFolder}
+          onDone={load}
+        />
 
         {/* Ask questions across the papers you've saved */}
         <LibraryChat
