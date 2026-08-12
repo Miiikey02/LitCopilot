@@ -120,13 +120,14 @@ export default function App() {
   }, [result, sortBy])
 
   const loadHistory = useCallback(async () => {
-    // History is per-account; signed-out visitors simply have none.
+    // The rail lists saved threads rather than bare queries: a thread can be
+    // reopened with the answer it produced, a query can only be run again.
     if (!signedIn) {
       setHistory([])
       return
     }
     try {
-      setHistory(await api.listHistory())
+      setHistory(await api.listConversations('search'))
     } catch {
       /* history is non-critical */
     }
@@ -292,12 +293,50 @@ export default function App() {
     runSearch(query)
   }
 
-  const onPickHistory = (q) => {
-    setQuery(q)
-    runSearch(q)
+  // Reopening is not re-running: the stored answer, papers and thread come
+  // back, and no second history entry is filed for the same piece of work.
+  const onOpenThread = async (conv) => {
+    if (loading) return
+    setLoading(true)
+    setError('')
+    setDeep(null)
+    setLookup(null)
+    setTrials(null)
+    try {
+      const r = await api.resumeConversation(conv.id)
+      setQuery(r.seed_query || r.title || '')
+      setConversationId(r.id)
+      setResult({
+        original_query: r.seed_query,
+        detected_lang: i18n.language.startsWith('zh') ? 'zh' : 'en',
+        english_query: '',
+        answer: r.answer,
+        sources: r.sources,
+        session_id: r.session_id,
+      })
+      // Everything after the opening exchange is the follow-up thread.
+      const rest = (r.messages || []).slice(2)
+      const turns = []
+      for (const m of rest) {
+        if (m.role === 'user') turns.push({ question: m.content, answer: '' })
+        else if (turns.length) turns[turns.length - 1].answer = m.content
+      }
+      setChatTurns(turns)
+      setTab('search')
+    } catch {
+      setError(t('errorNetwork'))
+    } finally {
+      setLoading(false)
+    }
   }
 
   const onClearHistory = async () => {
+    // The rail lists threads now, so clearing has to remove those.
+    try {
+      await Promise.all((history || []).map((c) => api.deleteConversation(c.id)))
+    } catch {
+      /* fall through to the history clear below */
+    }
     await api.clearHistory()
     loadHistory()
   }
@@ -362,7 +401,7 @@ export default function App() {
         tab={tab}
         onTab={setTab}
         history={history}
-        onPickHistory={onPickHistory}
+        onOpenThread={onOpenThread}
         onClearHistory={onClearHistory}
         onNewSearch={onNewSearch}
         session={session}

@@ -32,7 +32,7 @@ export default function Sidebar({
   tab,
   onTab,
   history,
-  onPickHistory,
+  onOpenThread,
   onClearHistory,
   onNewSearch,
   session,
@@ -123,11 +123,11 @@ export default function Sidebar({
               {(history || []).map((h) => (
                 <li key={h.id}>
                   <button
-                    onClick={() => onPickHistory(h.query)}
-                    title={h.query}
+                    onClick={() => onOpenThread(h)}
+                    title={h.seed_query || h.title}
                     className="block w-full truncate rounded-lg px-2 py-1.5 text-left text-sm text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900"
                   >
-                    {h.query}
+                    {h.title || h.seed_query}
                   </button>
                 </li>
               ))}

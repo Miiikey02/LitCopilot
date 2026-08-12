@@ -48,6 +48,7 @@ class SourceCard(BaseModel):
 
 
 class SearchResponse(BaseModel):
+    conversation_id: Optional[int] = None  # the saved, reopenable thread
     original_query: str
     detected_lang: str
     english_query: str  # what we actually searched with
@@ -168,6 +169,19 @@ class Conversation(BaseModel):
     messages: list[ConversationMessage]
 
 
+class ResumeResponse(BaseModel):
+    """A saved thread, restored: its answer, its papers and a live session."""
+
+    id: int
+    kind: str
+    title: str
+    seed_query: str = ""
+    answer: str = ""
+    sources: list[SourceCard] = []
+    messages: list[ConversationMessage] = []
+    session_id: str = ""
+
+
 class ConversationRename(BaseModel):
     title: str
 
@@ -223,6 +237,7 @@ class SubQuestion(BaseModel):
 
 
 class DeepResearchResponse(BaseModel):
+    conversation_id: Optional[int] = None
     original_query: str
     detected_lang: str
     answer: str

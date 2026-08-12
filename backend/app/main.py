@@ -26,6 +26,8 @@ from .config import MAX_RESULTS, has_llm_key, redact
 from .routers import library
 from .schemas import (
     ArticleBlock,
+    ConversationMessage,
+    ResumeResponse,
     ArticleResponse,
     AskRequest,
     AskResponse,
@@ -174,7 +176,29 @@ async def search(
         sources=req.sources,
     )
 
+    # Saved with its papers, so opening it later shows what you already have
+    # instead of running the same search again and filing a second copy of it.
+    conversation_id = None
+    if user and answer:
+        try:
+            conversation_id = db.create_conversation(
+                user,
+                "search",
+                query,
+                seed_query=query,
+                sources=[c.model_dump() for c in cards],
+            )
+            db.append_messages(
+                user,
+                conversation_id,
+                [{"role": "user", "content": query},
+                 {"role": "assistant", "content": answer}],
+            )
+        except Exception:  # noqa: BLE001 - saving must not lose the answer
+            conversation_id = None
+
     return SearchResponse(
+        conversation_id=conversation_id,
         original_query=query,
         detected_lang=lang,
         english_query=english_query,
@@ -278,7 +302,27 @@ async def deep_research(
         papers, seed, lang, include_preprints=req.include_preprints, sources=req.sources
     )
 
+    conversation_id = None
+    if user and answer:
+        try:
+            conversation_id = db.create_conversation(
+                user,
+                "search",
+                query,
+                seed_query=query,
+                sources=[c.model_dump() for c in cards],
+            )
+            db.append_messages(
+                user,
+                conversation_id,
+                [{"role": "user", "content": query},
+                 {"role": "assistant", "content": answer}],
+            )
+        except Exception:  # noqa: BLE001
+            conversation_id = None
+
     return DeepResearchResponse(
+        conversation_id=conversation_id,
         original_query=query,
         detected_lang=lang,
         answer=answer,
@@ -917,6 +961,64 @@ async def paper_evidence(
     )
 
 
+def _card_to_paper(card: dict) -> Paper:
+    """Rebuild a Paper from a stored card. Abstracts were never saved, so a
+    resumed thread reasons from titles and the answer already written — the
+    agent re-fetches anything it needs."""
+    return Paper(
+        source=card.get("source", ""),
+        source_id=card.get("source_id", ""),
+        title=card.get("title", ""),
+        authors=card.get("authors") or [],
+        year=card.get("year"),
+        venue=card.get("venue", ""),
+        url=card.get("url", ""),
+        doi=card.get("doi", ""),
+        pub_date=card.get("pub_date", ""),
+        oa_url=card.get("oa_url", ""),
+        retraction_status=card.get("retraction_status", ""),
+        evidence_type=card.get("evidence_type", ""),
+        title_zh=card.get("title_zh", ""),
+        relevance_zh=card.get("relevance_zh", ""),
+    )
+
+
+@app.post("/api/conversations/{conversation_id}/resume", response_model=ResumeResponse)
+def resume_conversation(
+    conversation_id: int, user: str = Depends(current_user)
+) -> ResumeResponse:
+    """Reopen a saved thread with its answer, its papers and a live session.
+
+    Re-running the original query would be a different search — new results, a
+    new answer, and a second history entry for the same piece of work. The
+    stored corpus is put back into a session instead, so follow-up questions
+    continue the thread rather than starting another one.
+    """
+    conv = db.get_conversation(user, conversation_id)
+    if conv is None:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    stored = conv.get("sources") or []
+    papers = [_card_to_paper(c) for c in stored]
+    session_id = sessions.create_session(papers, conv["messages"], "zh")
+
+    answer = ""
+    for msg in conv["messages"]:
+        if msg["role"] == "assistant":
+            answer = msg["content"]
+            break
+    return ResumeResponse(
+        id=conv["id"],
+        kind=conv["kind"],
+        title=conv["title"],
+        seed_query=conv["seed_query"],
+        answer=answer,
+        sources=[SourceCard(**c) for c in stored],
+        messages=[ConversationMessage(**m) for m in conv["messages"]],
+        session_id=session_id,
+    )
+
+
 @app.post("/api/trials", response_model=TrialsResponse)
 async def trials(req: TrialsRequest) -> TrialsResponse:
     """Find ClinicalTrials.gov studies related to the query.
@@ -1023,6 +1125,10 @@ async def chat(
                 [{"role": "user", "content": message},
                  {"role": "assistant", "content": answer}],
             )
+            if searched:
+                db.set_conversation_sources(
+                    user, conversation_id, [c.model_dump() for c in _cards()]
+                )
         except Exception:  # noqa: BLE001 - saving must not lose the answer
             pass
 

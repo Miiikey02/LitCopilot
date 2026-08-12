@@ -119,6 +119,8 @@ export const chat = (sessionId, message, lang, conversationId) =>
 export const listConversations = (kind) =>
   req(`/api/conversations${kind ? `?kind=${kind}` : ''}`)
 export const getConversation = (id) => req(`/api/conversations/${id}`)
+export const resumeConversation = (id) =>
+  jsonPost(`/api/conversations/${id}/resume`, {})
 export const deleteConversation = (id) =>
   req(`/api/conversations/${id}`, { method: 'DELETE' })
 export const renameConversation = (id, title) =>
