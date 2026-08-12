@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import * as api from '../lib/api'
 import LibraryChat from './LibraryChat'
 import Icon from './Icon'
-import FolderTree from './FolderTree'
+import FolderTree, { PAPER_DRAG } from './FolderTree'
 import NotePanel from './NotePanel'
 import CiteButton from './CiteButton'
 import BulkExport from './BulkExport'
@@ -127,10 +127,6 @@ function LibraryCard({ paper, folders = [], teamId, onChanged }) {
   const [newTag, setNewTag] = useState('')
   const [noteOpen, setNoteOpen] = useState(false)
 
-  const moveTo = async (value) => {
-    await api.movePaper(paper.id, value === '' ? null : Number(value), teamId)
-    onChanged()
-  }
 
 
   const addTag = async (e) => {
@@ -160,7 +156,18 @@ function LibraryCard({ paper, folders = [], teamId, onChanged }) {
   }
 
   return (
-    <div className="card-hover rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+    <div
+      draggable
+      onDragStart={(e) => {
+        // A custom type so a folder drag and a paper drag stay distinguishable
+        // during dragover, where the payload itself cannot be read.
+        e.dataTransfer.setData(PAPER_DRAG, String(paper.id))
+        e.dataTransfer.setData('text/plain', paper.title)
+        e.dataTransfer.effectAllowed = 'move'
+      }}
+      title={t('dragPaperHint')}
+      className="card-hover cursor-grab rounded-xl border border-slate-200 bg-white p-4 shadow-sm active:cursor-grabbing"
+    >
       <div className="mb-2 flex items-center justify-between gap-2">
         <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
           {isUpload(paper) ? t('uploadedPdf') : sourceLabel[paper.source] || paper.source}
@@ -312,22 +319,14 @@ function LibraryCard({ paper, folders = [], teamId, onChanged }) {
         </div>
 
         <div className="ml-auto flex items-center gap-3">
-          <label className="flex items-center gap-1 text-xs text-slate-500">
-            <Icon name="folder" />
-            <select
-              value={paper.folder_id ?? ''}
-              onChange={(e) => moveTo(e.target.value)}
-              title={t('moveToFolder')}
-              className="max-w-[8rem] truncate rounded border border-slate-300 bg-white px-1 py-0.5 text-xs text-slate-700 focus:border-blue-500 focus:outline-none"
-            >
-              <option value="">{t('unfiled')}</option>
-              {folders.map((f) => (
-                <option key={f.id} value={f.id}>
-                  {f.name}
-                </option>
-              ))}
-            </select>
-          </label>
+          {/* Which folder it is in is still worth seeing; it just stopped
+              being a control, because filing is now done by dragging. */}
+          {paper.folder_id != null && (
+            <span className="inline-flex items-center gap-1 text-xs text-slate-400">
+              <Icon name="folder" />
+              {folders.find((f) => String(f.id) === String(paper.folder_id))?.name || ''}
+            </span>
+          )}
           <button
             type="button"
             onClick={remove}
@@ -380,6 +379,17 @@ function FolderSidebar({ folders, active, onPick, onChanged, total, teamId }) {
     onChanged()
   }
 
+  // Dropping a paper on a folder files it there; dropping it on 未分类 takes
+  // it out of every folder.
+  const file = async (paperId, folderId) => {
+    try {
+      await api.movePaper(paperId, folderId, teamId)
+      onChanged()
+    } catch {
+      setError(t('errorNetwork'))
+    }
+  }
+
   const move = async (folderId, parentId) => {
     try {
       await api.moveFolder(folderId, parentId, teamId)
@@ -400,6 +410,7 @@ function FolderSidebar({ folders, active, onPick, onChanged, total, teamId }) {
         onRename={rename}
         onDelete={remove}
         onMove={move}
+        onFilePaper={file}
         totalCount={total}
         unfiledCount={unfiled?.count ?? 0}
       />

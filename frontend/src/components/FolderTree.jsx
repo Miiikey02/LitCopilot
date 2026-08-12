@@ -15,6 +15,13 @@ import Icon from './Icon'
 // every folder also has an explicit "move to" menu that says exactly where
 // things will land. The menu is the reliable path; the drag is the shortcut.
 
+// Papers and folders can both be dragged onto a folder, and during `dragover`
+// the payload is unreadable — only the list of types is. Naming the type is
+// what lets a folder tell "file this paper here" from "nest this folder here".
+export const PAPER_DRAG = 'application/x-gaze-paper'
+
+const isPaperDrag = (e) => e.dataTransfer.types.includes(PAPER_DRAG)
+
 const descendantsOf = (id, all) => {
   const out = new Set()
   const walk = (parent) => {
@@ -102,6 +109,13 @@ function Node({ folder, all, childrenOf, depth, ctx }) {
           ctx.setDropTarget(undefined)
         }}
         onDragOver={(e) => {
+          if (isPaperDrag(e)) {
+            e.preventDefault()
+            e.stopPropagation()
+            e.dataTransfer.dropEffect = 'move'
+            if (ctx.dropTarget !== folder.id) ctx.setDropTarget(folder.id)
+            return
+          }
           if (!ctx.dragging || ctx.dragging === folder.id) return
           if (descendantsOf(ctx.dragging, all).has(folder.id)) return
           e.preventDefault()
@@ -112,7 +126,11 @@ function Node({ folder, all, childrenOf, depth, ctx }) {
         onDrop={(e) => {
           e.preventDefault()
           e.stopPropagation()
-          if (ctx.dragging && ctx.dragging !== folder.id) ctx.onMove(ctx.dragging, folder.id)
+          const paperId = e.dataTransfer.getData(PAPER_DRAG)
+          if (paperId) ctx.onFilePaper(Number(paperId), folder.id)
+          else if (ctx.dragging && ctx.dragging !== folder.id) {
+            ctx.onMove(ctx.dragging, folder.id)
+          }
           ctx.setDragging(null)
           ctx.setDropTarget(undefined)
         }}
@@ -145,7 +163,7 @@ function Node({ folder, all, childrenOf, depth, ctx }) {
               happen rather than leaving the reader to infer it from a colour. */}
           {isDropTarget ? (
             <span className="ml-auto shrink-0 whitespace-nowrap pl-1 text-xs font-medium text-blue-700">
-              {t('dropInside')}
+              {t(ctx.dragging ? 'dropInside' : 'fileHere')}
             </span>
           ) : (
             <span className="ml-auto shrink-0 pl-1 text-xs text-slate-400">
@@ -214,6 +232,7 @@ export default function FolderTree({
   onRename,
   onDelete,
   onMove,
+  onFilePaper,
   totalCount,
   unfiledCount,
 }) {
@@ -229,6 +248,7 @@ export default function FolderTree({
     onRename,
     onDelete,
     onMove,
+    onFilePaper,
     dragging,
     setDragging,
     dropTarget,
@@ -257,15 +277,33 @@ export default function FolderTree({
             <span className="text-xs text-slate-400">{totalCount}</span>
           </button>
         </li>
-        <li>
+        <li
+          onDragOver={(e) => {
+            if (!isPaperDrag(e)) return
+            e.preventDefault()
+            e.dataTransfer.dropEffect = 'move'
+            setDropTarget('unfiled')
+          }}
+          onDragLeave={() => setDropTarget((v) => (v === 'unfiled' ? undefined : v))}
+          onDrop={(e) => {
+            e.preventDefault()
+            const paperId = e.dataTransfer.getData(PAPER_DRAG)
+            if (paperId) onFilePaper(Number(paperId), null)
+            setDropTarget(undefined)
+          }}
+        >
           <button
             onClick={() => onPick('unfiled')}
-            className={viewClass(active === 'unfiled')}
+            className={`${viewClass(active === 'unfiled')} ${
+              dropTarget === 'unfiled' ? 'bg-blue-100 ring-2 ring-inset ring-blue-400' : ''
+            }`}
           >
             <span className="w-[18px] shrink-0" aria-hidden="true" />
             <Icon name="inbox" />
             <span className="flex-1 text-left">{t('unfiled')}</span>
-            <span className="text-xs text-slate-400">{unfiledCount}</span>
+            <span className="text-xs text-slate-400">
+              {dropTarget === 'unfiled' ? t('fileHere') : unfiledCount}
+            </span>
           </button>
         </li>
       </ul>
