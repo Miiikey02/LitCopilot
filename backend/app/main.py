@@ -14,7 +14,7 @@ from pathlib import Path
 
 from collections import OrderedDict
 from time import monotonic
-from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -555,7 +555,9 @@ UPLOAD_PREFIX = "upload:"
 
 @app.post("/api/paper/upload", response_model=UploadResponse)
 async def paper_upload(
-    file: UploadFile = File(...), user: str | None = Depends(optional_user)
+    background: BackgroundTasks,
+    file: UploadFile = File(...),
+    user: str | None = Depends(optional_user),
 ) -> UploadResponse:
     """Take a PDF the reader already has and open 精读模式 on it.
 
@@ -565,9 +567,10 @@ async def paper_upload(
     """
     data = await file.read()
     try:
-        record = uploads.save(data, user)
+        record = uploads.save(data)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    background.add_task(uploads.persist, record, data, user)
     return UploadResponse(
         identifier=f"{UPLOAD_PREFIX}{record['id']}",
         title=record["title"],

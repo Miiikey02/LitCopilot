@@ -214,15 +214,26 @@ def save(data: bytes, user_id: str | None = None) -> dict:
     _INDEX.move_to_end(uid)
     _sweep()
 
-    # The local copy is only a cache. The instance's filesystem is wiped on
-    # every restart — routine on a free tier — and an upload that disappears
-    # minutes after the reader opened it is worse than one that never worked.
-    if has_db():
-        try:
-            db.put_upload(record, data, user_id)
-        except Exception:  # noqa: BLE001 - the reader still works this session
-            pass
     return record
+
+
+def persist(record: dict, data: bytes, user_id: str | None) -> None:
+    """Write an upload to the database, off the request's critical path.
+
+    The local copy is only a cache: the instance's filesystem is wiped on every
+    restart — routine on a free tier — and an upload that disappears minutes
+    after the reader opened it is worse than one that never worked. Writing 8MB
+    to Postgres took about ten seconds of the caller's time, though, and the
+    reader is served from the cache either way, so it happens after the
+    response. The exposure is a crash in those few seconds, which costs a
+    re-upload rather than a wrong answer.
+    """
+    if not has_db():
+        return
+    try:
+        db.put_upload(record, data, user_id)
+    except Exception:  # noqa: BLE001 - the reader still works this session
+        pass
 
 
 def _rehydrate(uid: str) -> dict | None:
