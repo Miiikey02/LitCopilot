@@ -22,6 +22,9 @@ from time import monotonic
 
 import pypdfium2 as pdfium
 
+from .. import db
+from ..config import has_db
+
 _DIR = Path(tempfile.gettempdir()) / "gaze-uploads"
 _INDEX: "OrderedDict[str, dict]" = OrderedDict()
 _TTL = 12 * 3600.0
@@ -150,7 +153,7 @@ def _title_from(meta_title: str, blocks: list[dict]) -> str:
     return "Uploaded PDF"
 
 
-def save(data: bytes) -> dict:
+def save(data: bytes, user_id: str | None = None) -> dict:
     """Store an uploaded PDF and return what the reader needs to show it.
 
     Raises ValueError when the bytes are not a usable PDF.
@@ -210,6 +213,35 @@ def save(data: bytes) -> dict:
     _INDEX[uid] = record
     _INDEX.move_to_end(uid)
     _sweep()
+
+    # The local copy is only a cache. The instance's filesystem is wiped on
+    # every restart — routine on a free tier — and an upload that disappears
+    # minutes after the reader opened it is worse than one that never worked.
+    if has_db():
+        try:
+            db.put_upload(record, data, user_id)
+        except Exception:  # noqa: BLE001 - the reader still works this session
+            pass
+    return record
+
+
+def _rehydrate(uid: str) -> dict | None:
+    """Pull an upload back from the database after a restart."""
+    if not has_db():
+        return None
+    try:
+        stored = db.get_upload(uid, with_data=True)
+    except Exception:  # noqa: BLE001
+        return None
+    if stored is None:
+        return None
+    _DIR.mkdir(parents=True, exist_ok=True)
+    path = _DIR / f"{uid}.pdf"
+    path.write_bytes(stored.pop("data"))
+    record = {**stored, "path": str(path), "stamp": monotonic()}
+    _INDEX[uid] = record
+    _INDEX.move_to_end(uid)
+    _sweep()
     return record
 
 
@@ -220,7 +252,8 @@ def get(uid: str) -> dict | None:
     if record and Path(record["path"]).exists():
         _INDEX.move_to_end(uid)
         return record
-    return None
+    _INDEX.pop(uid, None)
+    return _rehydrate(uid)
 
 
 def file_bytes(uid: str) -> bytes | None:

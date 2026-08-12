@@ -554,7 +554,9 @@ UPLOAD_PREFIX = "upload:"
 
 
 @app.post("/api/paper/upload", response_model=UploadResponse)
-async def paper_upload(file: UploadFile = File(...)) -> UploadResponse:
+async def paper_upload(
+    file: UploadFile = File(...), user: str | None = Depends(optional_user)
+) -> UploadResponse:
     """Take a PDF the reader already has and open 精读模式 on it.
 
     The route exists because most biomedical PDFs cannot be fetched by a
@@ -563,7 +565,7 @@ async def paper_upload(file: UploadFile = File(...)) -> UploadResponse:
     """
     data = await file.read()
     try:
-        record = uploads.save(data)
+        record = uploads.save(data, user)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return UploadResponse(

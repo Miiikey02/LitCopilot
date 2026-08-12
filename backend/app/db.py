@@ -114,6 +114,22 @@ CREATE TABLE IF NOT EXISTS search_history (
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Uploaded PDFs. The bytes live here rather than on disk because the instance's
+-- filesystem is wiped on every restart, which on a free tier is routine: an
+-- upload would vanish minutes later and the reader would 404 on a paper the
+-- user had just handed us.
+CREATE TABLE IF NOT EXISTS uploads (
+    id         TEXT PRIMARY KEY,
+    user_id    UUID,
+    title      TEXT,
+    pages      INTEGER,
+    blocks     JSONB,
+    body       TEXT,
+    data       BYTEA NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS uploads_created_idx ON uploads (created_at);
 CREATE INDEX IF NOT EXISTS saved_papers_user_idx ON saved_papers (user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS search_history_user_idx ON search_history (user_id, created_at DESC);
 """
@@ -881,3 +897,58 @@ def list_history(user_id: str, limit: int = 30) -> list[dict]:
 def clear_history(user_id: str) -> None:
     with _get_pool().connection() as conn:
         conn.execute("DELETE FROM search_history WHERE user_id = %s", (user_id,))
+
+
+# --- Uploaded PDFs -------------------------------------------------------
+
+
+def put_upload(record: dict, data: bytes, user_id: str | None) -> None:
+    """Persist an uploaded PDF and its extracted text."""
+    with _get_pool().connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO uploads (id, user_id, title, pages, blocks, body, data)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (id) DO NOTHING
+            """,
+            (
+                record["id"],
+                user_id,
+                record["title"],
+                record["pages"],
+                json.dumps(record["blocks"]),
+                record["text"],
+                data,
+            ),
+        )
+
+
+def get_upload(uid: str, with_data: bool = False) -> dict | None:
+    """An uploaded PDF. `with_data` also returns the bytes, which are large."""
+    cols = "id, title, pages, blocks, body" + (", data" if with_data else "")
+    with _get_pool().connection() as conn:
+        row = conn.execute(
+            f"SELECT {cols} FROM uploads WHERE id = %s", (uid,)
+        ).fetchone()
+    if row is None:
+        return None
+    record = {
+        "id": row["id"],
+        "title": row["title"] or "",
+        "pages": row["pages"] or 0,
+        "blocks": row["blocks"] or [],
+        "text": row["body"] or "",
+    }
+    if with_data:
+        record["data"] = bytes(row["data"])
+    return record
+
+
+def purge_uploads(older_than_hours: int = 72) -> int:
+    """Drop uploads past their keep-window. Returns how many went."""
+    with _get_pool().connection() as conn:
+        cur = conn.execute(
+            "DELETE FROM uploads WHERE created_at < now() - make_interval(hours => %s)",
+            (older_than_hours,),
+        )
+        return cur.rowcount or 0
