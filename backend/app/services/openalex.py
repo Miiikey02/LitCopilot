@@ -45,6 +45,27 @@ def _oa_pdf(item: dict) -> str:
     ).get("oa_url") or ""
 
 
+def _oa_pdf_direct(item: dict) -> str:
+    """A link to the PDF file itself, not to a page that offers one.
+
+    `_oa_pdf` happily falls back to a landing page, which is right for "where
+    can I read this" but useless for showing the file. Every open location is
+    checked because the best one often records only a landing page while a
+    mirror carries the actual PDF.
+    """
+    seen: list[dict] = []
+    for key in ("best_oa_location", "primary_location"):
+        loc = item.get(key)
+        if loc:
+            seen.append(loc)
+    seen.extend(item.get("locations") or [])
+    for loc in seen:
+        url = (loc or {}).get("pdf_url") or ""
+        if url and (loc.get("is_oa") or loc is seen[0]):
+            return url
+    return ""
+
+
 async def search_openalex(
     query: str, limit: int = MAX_RESULTS, sort: str = "relevance"
 ) -> list[Paper]:
@@ -103,6 +124,7 @@ async def search_openalex(
                 first_author_family=first_family,
                 pub_date=item.get("publication_date") or "",
                 oa_url=_oa_pdf(item),
+                pdf_url=_oa_pdf_direct(item),
                 retraction_status="retracted" if item.get("is_retracted") else "",
             )
         )
@@ -113,7 +135,7 @@ async def search_openalex(
 
 _OA_FIELDS = (
     "id,doi,display_name,publication_year,publication_date,authorships,"
-    "primary_location,open_access,best_oa_location,cited_by_count,"
+    "primary_location,open_access,best_oa_location,locations,cited_by_count,"
     "referenced_works,related_works,is_retracted,abstract_inverted_index"
 )
 
@@ -153,6 +175,7 @@ def _to_paper(item: dict) -> Paper:
         first_author_family=authors[0].split()[-1] if authors else "",
         pub_date=item.get("publication_date") or "",
         oa_url=_oa_pdf(item),
+        pdf_url=_oa_pdf_direct(item),
         retraction_status="retracted" if item.get("is_retracted") else "",
     )
 

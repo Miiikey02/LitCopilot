@@ -442,10 +442,18 @@ _MAX_PDF_BYTES = 40 * 1024 * 1024
 
 
 def _pdf_url_for(paper) -> str:
-    """The open-access PDF for this paper, or "" when there isn't one."""
-    pmcid = _pmcid_from(paper)
-    if pmcid:
-        return f"https://pmc.ncbi.nlm.nih.gov/articles/{pmcid}/pdf/"
+    """The open-access PDF for this paper, or "" when there isn't one.
+
+    Deliberately NOT PMC's /articles/<id>/pdf/ route: that returns a
+    "Preparing to download" interstitial guarded by a proof-of-work anti-bot
+    challenge. Passing that challenge would mean writing a bot-detection
+    bypass, which we don't do even for content that is free to read — so the
+    PDF comes from the publisher's own open-access copy instead, and papers
+    without one simply have no PDF view.
+    """
+    direct = paper.pdf_url or ""
+    if direct:
+        return direct
     oa = paper.oa_url or ""
     return oa if ".pdf" in oa.lower() else ""
 

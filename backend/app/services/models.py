@@ -30,6 +30,10 @@ class Paper:
     # Direct link to a legally free full text (PMC, OpenAlex/S2 open access,
     # bioRxiv PDF). Empty when the paper is paywalled.
     oa_url: str = ""
+    # A link to the PDF file itself, where a source gives one. Distinct from
+    # `oa_url`, which may point at a landing page — fine for "go read this",
+    # useless for displaying the file.
+    pdf_url: str = ""
     # Research-integrity status: "" (nothing known), "retracted", or "concern"
     # (an editorial expression of concern). Citing retracted work is a real
     # hazard in a thesis or grant, so this is surfaced prominently.
