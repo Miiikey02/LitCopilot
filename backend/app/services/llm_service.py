@@ -535,6 +535,14 @@ are not sources you may cite — you have not seen them. Attribute such a claim 
 the source you were actually given ("[Tribble, 2021] reports a completed trial"),
 never to the study it cites ("[Hui et al., 2020]").
 5. Write in the RESPONSE LANGUAGE stated in the user message, naturally.
+5b. LENGTH — this is the difference between the two modes and it is not
+optional. The answer must run to AT LEAST SIX substantial paragraphs. Work
+through: what is established and how firmly; where the evidence is strong and
+where it is thin; how the study designs differ and what that does to
+comparability; what the clinical or experimental implications are; and what a
+reader planning work should do next. A reader chose deep research over the quick
+summary precisely because they wanted this. A short answer here is a failure of
+the task, not concision — the quick mode already exists for brevity.
 6. Do not reproduce source text verbatim — paraphrase.
 
 Produce a structured brief. For evidence_type use exactly one of:
@@ -545,7 +553,7 @@ Produce a structured brief. For evidence_type use exactly one of:
 
 Return ONLY a JSON object of this exact shape:
 {
-  "answer": "<the cited brief, 6-10 substantial paragraphs, in the response language. This is a research report, not a summary: work through what is established, how strong the evidence is, where the study designs differ, and what follows for someone planning work. A reader chose this over the quick summary because they wanted the detail.>",
+  "answer": "<the full brief, in the response language, at the length rule 5b requires>",
   "contradictions": ["<where studies disagree, with citations>"],
   "gaps": ["<what the evidence does not yet answer>"],
   "sources": [
