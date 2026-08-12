@@ -209,6 +209,7 @@ class DeepResearchRequest(BaseModel):
     query: str
     lang: Optional[str] = None
     include_preprints: bool = True
+    sources: Optional[list[str]] = None
     # Papers to retrieve per sub-question; the merged set is capped separately.
     per_question: int = 8
 

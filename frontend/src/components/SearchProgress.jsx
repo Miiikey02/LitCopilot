@@ -23,13 +23,24 @@ const DEEP_STAGES = [
   { key: 'stageSynthesize', icon: 'quote', at: 26000 },
 ]
 
-const SOURCES = ['PubMed', 'Semantic Scholar', 'OpenAlex', 'bioRxiv']
+// Shown while retrieval runs, so it must name the databases actually being
+// queried — a chip for a source the reader switched off would be the progress
+// display claiming work that is not happening.
+const SOURCE_LABELS = {
+  pubmed: 'PubMed',
+  semantic_scholar: 'Semantic Scholar',
+  openalex: 'OpenAlex',
+  biorxiv: 'bioRxiv',
+}
 
-export default function SearchProgress({ deep = false }) {
+export default function SearchProgress({ deep = false, sources }) {
   const { t } = useTranslation()
   const [stage, setStage] = useState(0)
   const [elapsed, setElapsed] = useState(0)
   const stages = deep ? DEEP_STAGES : STAGES
+  const queried = (sources?.length ? sources : Object.keys(SOURCE_LABELS)).map(
+    (key) => SOURCE_LABELS[key] || key
+  )
   const retrieveIndex = stages.findIndex((s) => s.key === 'stageRetrieve')
 
   useEffect(() => {
@@ -86,7 +97,7 @@ export default function SearchProgress({ deep = false }) {
                   {/* During retrieval, show the four databases being queried. */}
                   {i === retrieveIndex && (done || active) && (
                     <div className="ml-7 mt-1.5 flex flex-wrap gap-1.5">
-                      {SOURCES.map((src, k) => (
+                      {queried.map((src, k) => (
                         <span
                           key={src}
                           style={{ animationDelay: `${k * 120}ms` }}

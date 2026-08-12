@@ -116,6 +116,7 @@ async def search(
             include_preprints=req.include_preprints,
             sort=sort,
             exact_query=exact,
+            sources=req.sources,
         )
     )[:limit]
 
@@ -166,7 +167,11 @@ async def search(
     if answer:
         seed_messages.append({"role": "assistant", "content": answer})
     session_id = sessions.create_session(
-        papers, seed_messages, lang, include_preprints=req.include_preprints
+        papers,
+        seed_messages,
+        lang,
+        include_preprints=req.include_preprints,
+        sources=req.sources,
     )
 
     return SearchResponse(
@@ -214,7 +219,12 @@ async def deep_research(
     per_q = max(3, min(req.per_question, 15))
     results = await asyncio.gather(
         *[
-            retrieve(s["search"], limit=per_q, include_preprints=req.include_preprints)
+            retrieve(
+                s["search"],
+                limit=per_q,
+                include_preprints=req.include_preprints,
+                sources=req.sources,
+            )
             for s in subs
         ],
         return_exceptions=True,
@@ -265,7 +275,7 @@ async def deep_research(
     if answer:
         seed.append({"role": "assistant", "content": answer})
     session_id = sessions.create_session(
-        papers, seed, lang, include_preprints=req.include_preprints
+        papers, seed, lang, include_preprints=req.include_preprints, sources=req.sources
     )
 
     return DeepResearchResponse(
@@ -969,6 +979,7 @@ async def chat(
             search_query,
             limit=8,
             include_preprints=sess.get("include_preprints", True),
+            sources=sess.get("sources"),
         )
         added = sessions.add_papers(req.session_id, new_papers)
         if added:

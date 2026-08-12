@@ -47,7 +47,8 @@ export const search = (
   lang,
   limit,
   includePreprints = true,
-  sort = 'relevance'
+  sort = 'relevance',
+  sources = null
 ) =>
   jsonPost('/api/search', {
     query,
@@ -55,14 +56,16 @@ export const search = (
     limit: limit ?? null,
     include_preprints: includePreprints,
     sort,
+    sources,
   })
 
 // --- Deep research (planned multi-step review) ---
-export const deepResearch = (query, lang, includePreprints = true) =>
+export const deepResearch = (query, lang, includePreprints = true, sources = null) =>
   jsonPost('/api/deep-research', {
     query,
     lang: lang || null,
     include_preprints: includePreprints,
+    sources,
   })
 
 // --- Single paper: deep read, graph, entities, evidence ---

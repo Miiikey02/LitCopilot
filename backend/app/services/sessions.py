@@ -30,6 +30,7 @@ def create_session(
     messages: list[dict],
     lang: str,
     include_preprints: bool = True,
+    sources: list[str] | None = None,
 ) -> str:
     """Start a session seeded with the initial search's papers + first exchange."""
     session_id = uuid.uuid4().hex
@@ -38,6 +39,8 @@ def create_session(
         "messages": list(messages),
         "lang": lang,
         "include_preprints": include_preprints,
+        # Follow-up searches stay within the databases the reader chose.
+        "sources": sources,
         "updated": time(),
     }
     _sessions.move_to_end(session_id)

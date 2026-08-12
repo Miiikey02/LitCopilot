@@ -13,6 +13,7 @@ import Icon from './components/Icon'
 import SearchProgress from './components/SearchProgress'
 import HeroEmpty from './components/HeroEmpty'
 import SegmentedControl from './components/SegmentedControl'
+import SourcePicker, { ALL_SOURCES } from './components/SourcePicker'
 import DeepResearchView from './components/DeepResearchView'
 import LookupResult from './components/LookupResult'
 import { supabase, authEnabled } from './lib/supabase'
@@ -20,13 +21,22 @@ import { exportMarkdown, exportPdf } from './lib/exportResult'
 
 // Layout choice is a workspace preference, so it outlives a single search.
 const VIEW_KEY = 'gaze.sourcesView'
+const DBS_KEY = 'gaze.databases'
 
 export default function App() {
   const { t, i18n } = useTranslation()
   const [tab, setTab] = useState('search') // 'search' | 'library'
   const [query, setQuery] = useState('')
   const [limit, setLimit] = useState(15) // how many papers to retrieve per search
-  const [includePreprints, setIncludePreprints] = useState(true) // bioRxiv preprints
+  const [databases, setDatabases] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(DBS_KEY) || 'null')
+      const kept = Array.isArray(saved) ? saved.filter((k) => ALL_SOURCES.includes(k)) : []
+      return kept.length ? kept : ALL_SOURCES
+    } catch {
+      return ALL_SOURCES
+    }
+  })
   const [sortBy, setSortBy] = useState('relevance') // 'relevance' | 'date'
   const [wideSources, setWideSources] = useState(
     () => localStorage.getItem(VIEW_KEY) === 'wide'
@@ -132,6 +142,10 @@ export default function App() {
       // Sort is applied at the source query, so a change means a new search;
       // the caller passes it explicitly to avoid racing the state update.
       const sort = overrides.sort || sortBy
+      // Passed explicitly rather than read from state: changing the databases
+      // re-runs immediately, before React has committed the new value.
+      const dbs = overrides.sources || databases
+      const includePreprints = dbs.includes('biorxiv')
       setLoading(true)
       setError('')
       setLookup(null)
@@ -151,7 +165,7 @@ export default function App() {
         if (overrides.deep ?? deepMode) {
           // Deep research returns a brief plus its notebook; reuse the same
           // sources panel and follow-up session as a quick search.
-          const d = await api.deepResearch(text, lang, includePreprints)
+          const d = await api.deepResearch(text, lang, includePreprints, dbs)
           setDeep(d)
           setResult({
             original_query: d.original_query,
@@ -165,7 +179,7 @@ export default function App() {
           loadHistory()
           return
         }
-        const data = await api.search(text, lang, limit, includePreprints, sort)
+        const data = await api.search(text, lang, limit, includePreprints, sort, dbs)
         setResult(data)
         loadHistory()
       } catch (err) {
@@ -175,7 +189,7 @@ export default function App() {
         setLoading(false)
       }
     },
-    [loading, loadHistory, limit, includePreprints, sortBy, deepMode, lookupMode, t, i18n]
+    [loading, loadHistory, limit, databases, sortBy, deepMode, lookupMode, t, i18n]
   )
 
   const onFindTrials = async () => {
@@ -454,15 +468,16 @@ export default function App() {
               <option value="relevance">{t('sortRelevance')}</option>
               <option value="date">{t('sortDate')}</option>
             </select>
-            <label className="ml-2 inline-flex cursor-pointer items-center gap-1.5">
-              <input
-                type="checkbox"
-                checked={includePreprints}
-                onChange={(e) => setIncludePreprints(e.target.checked)}
-                className="h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-              />
-              {t('includePreprints')}
-            </label>
+            <SourcePicker
+              value={databases}
+              onChange={(next) => {
+                setDatabases(next)
+                localStorage.setItem(DBS_KEY, JSON.stringify(next))
+                if (query.trim() && !loading) {
+                  runSearch(query, { sources: next })
+                }
+              }}
+            />
           
               </>
             )}
@@ -516,7 +531,7 @@ export default function App() {
           </p>
         )}
 
-        {loading && <SearchProgress deep={deepMode} />}
+        {loading && <SearchProgress deep={deepMode} sources={databases} />}
 
         {error && (
           <div className="mb-6 rounded-lg border border-red-200 bg-red-50 p-4 text-red-800">

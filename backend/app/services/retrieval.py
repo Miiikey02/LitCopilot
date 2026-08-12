@@ -141,12 +141,16 @@ def dedupe(papers: list[Paper]) -> list[Paper]:
     return kept
 
 
+SOURCES = ("pubmed", "semantic_scholar", "openalex", "biorxiv")
+
+
 async def retrieve(
     english_query: str,
     limit: int,
     include_preprints: bool = True,
     sort: str = "relevance",
     exact_query: str | None = None,
+    sources: list[str] | None = None,
 ) -> list[Paper]:
     """Fetch from PubMed + Semantic Scholar + OpenAlex (+ bioRxiv), then dedupe.
 
@@ -167,15 +171,23 @@ async def retrieve(
     the topic and miss the very paper being asked for.
     """
 
+    # Which databases to ask. Order is deliberate — PubMed's curated records
+    # win on merge — so the caller's choice filters this list rather than
+    # reordering it.
+    wanted = set(sources) if sources else set(SOURCES)
+    if not include_preprints:
+        wanted.discard("biorxiv")
+    if not wanted:  # a search of nothing has no useful meaning
+        wanted = set(SOURCES)
+
     def _source_tasks(q: str) -> list:
-        tasks = [
-            search_pubmed(q, retmax=limit, sort=sort),
-            search_semantic_scholar(q, limit=limit, sort=sort),
-            search_openalex(q, limit=limit, sort=sort),
-        ]
-        if include_preprints:
-            tasks.append(search_biorxiv(q, limit=limit, sort=sort))
-        return tasks
+        builders = {
+            "pubmed": lambda: search_pubmed(q, retmax=limit, sort=sort),
+            "semantic_scholar": lambda: search_semantic_scholar(q, limit=limit, sort=sort),
+            "openalex": lambda: search_openalex(q, limit=limit, sort=sort),
+            "biorxiv": lambda: search_biorxiv(q, limit=limit, sort=sort),
+        }
+        return [build() for key, build in builders.items() if key in wanted]
 
     queries = [english_query]
     if exact_query and exact_query.strip() != english_query.strip():
