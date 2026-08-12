@@ -37,6 +37,9 @@ export default function ReaderPage() {
   const [tab, setTab] = useState('read')
   const [turns, setTurns] = useState([])
   const [chatting, setChatting] = useState(false)
+  const [conversationId, setConversationId] = useState(null)
+  const [threads, setThreads] = useState([])
+  const [showThreads, setShowThreads] = useState(false)
   const [activeId, setActiveId] = useState(null)
   const [error, setError] = useState('')
   const [split, setSplit] = useState(58) // % width of the article pane
@@ -116,6 +119,37 @@ export default function ReaderPage() {
     }
   }, [onDrag])
 
+  // Earlier readings of this same paper, so reopening it does not start over.
+  const loadThreads = useCallback(async () => {
+    try {
+      const all = await api.listConversations('paper')
+      setThreads(all.filter((c) => c.seed_query === identifier))
+    } catch {
+      setThreads([]) // history is a convenience; never block the reader
+    }
+  }, [identifier])
+
+  useEffect(() => {
+    loadThreads()
+  }, [loadThreads])
+
+  const openThread = async (id) => {
+    try {
+      const conv = await api.getConversation(id)
+      const restored = []
+      for (const msg of conv.messages || []) {
+        if (msg.role === 'user') restored.push({ q: msg.content, a: '' })
+        else if (restored.length) restored[restored.length - 1].a = msg.content
+      }
+      setTurns(restored)
+      setConversationId(id)
+      setShowThreads(false)
+      setTab('chat')
+    } catch {
+      /* leave the current thread alone */
+    }
+  }
+
   const loadGraph = async () => {
     if (graph) return
     setGraph({ nodes: [], edges: [], loading: true })
@@ -149,14 +183,23 @@ export default function ReaderPage() {
     setChatting(true)
     setTurns((p) => [...p, { q: question || t(`intent_${intent}`), selection, a: '' }])
     try {
-      const res = selection
-        ? await api.paperAsk(identifier, selection, question, intent, lang)
-        : await api.chat(read?.session_id, question, lang)
+      // Selection questions and typed questions are the same conversation
+      // about the same paper, so they share one endpoint and one saved thread.
+      const res = await api.paperAsk(
+        identifier,
+        selection,
+        question,
+        intent,
+        lang,
+        conversationId
+      )
+      if (res.conversation_id) setConversationId(res.conversation_id)
       setTurns((p) =>
         p.map((x, i) =>
           i === p.length - 1 ? { ...x, a: res.answer, warning: res.warning } : x
         )
       )
+      loadThreads()
     } catch {
       setTurns((p) =>
         p.map((x, i) => (i === p.length - 1 ? { ...x, warning: t('errorNetwork') } : x))
@@ -440,6 +483,50 @@ export default function ReaderPage() {
 
             {tab === 'chat' && (
               <div>
+                {(threads.length > 0 || turns.length > 0) && (
+                  <div className="mb-3 flex items-center gap-2">
+                    {threads.length > 0 && (
+                      <button
+                        onClick={() => setShowThreads((v) => !v)}
+                        className="inline-flex items-center gap-1 rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-600 transition-colors hover:border-blue-300 hover:text-blue-700"
+                      >
+                        <Icon name="clock" />
+                        {t('readerThreads', { n: threads.length })}
+                      </button>
+                    )}
+                    {turns.length > 0 && (
+                      <button
+                        onClick={() => {
+                          setTurns([])
+                          setConversationId(null)
+                        }}
+                        className="text-xs text-slate-400 transition-colors hover:text-slate-700"
+                      >
+                        {t('readerNewThread')}
+                      </button>
+                    )}
+                  </div>
+                )}
+                {showThreads && (
+                  <ul className="animate-expand mb-3 divide-y divide-slate-100 overflow-hidden rounded-md border border-slate-200">
+                    {threads.map((c) => (
+                      <li key={c.id}>
+                        <button
+                          onClick={() => openThread(c.id)}
+                          className={`block w-full px-3 py-2 text-left text-xs transition-colors hover:bg-slate-50 ${
+                            c.id === conversationId ? 'bg-blue-50' : ''
+                          }`}
+                        >
+                          <span className="block truncate text-slate-700">{c.title}</span>
+                          <span className="text-slate-400">
+                            {t('messageCount', { n: c.message_count })} ·{' '}
+                            {new Date(c.updated_at).toLocaleDateString()}
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
                 {!turns.length && !chatting && (
                   <div className="mt-6 text-center">
                     <Icon name="sparkles" className="mx-auto h-6 w-6 text-slate-300" />

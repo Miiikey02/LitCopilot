@@ -309,10 +309,13 @@ class AskRequest(BaseModel):
     question: str = ""
     intent: str = ""  # translate | explain | biology | free
     lang: Optional[str] = None
+    # Continue an existing reading thread; omitted starts a new one.
+    conversation_id: Optional[int] = None
 
 
 class AskResponse(BaseModel):
     answer: str = ""
+    conversation_id: Optional[int] = None  # the thread this turn belongs to
     warning: Optional[str] = None
 
 

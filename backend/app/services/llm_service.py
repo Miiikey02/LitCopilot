@@ -776,10 +776,16 @@ async def explain_selection(
     # Send the whole paper as context where we have it: the answer to "what does
     # ERK5 mean here" usually lives in a different section from the selection.
     body = paper.full_text or paper.abstract or ""
+    # A question typed into the bar has no selection attached. Showing the model
+    # an empty quotation would imply the reader highlighted nothing on purpose,
+    # so the block is simply left out and the question stands on its own.
+    quoted = (
+        f"THE READER SELECTED:\n\"\"\"{selection[:2000]}\"\"\"\n\n" if selection.strip() else ""
+    )
     user = (
         f"RESPONSE LANGUAGE: {_lang_name(lang)}.\n\n"
         f"Paper: {paper.title} ({paper.year}, {paper.venue})\n\n"
-        f"THE READER SELECTED:\n\"\"\"{selection[:2000]}\"\"\"\n\n"
+        f"{quoted}"
         f"THEIR QUESTION:\n{ask}\n\n"
         f"PAPER TEXT FOR CONTEXT:\n{body[:18000]}"
     )

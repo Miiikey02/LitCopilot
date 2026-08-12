@@ -734,6 +734,21 @@ async def paper_pdf(id: str, g: str = "", user: str | None = Depends(optional_us
     )
 
 
+def _asked_with_context(req: AskRequest) -> str:
+    """The question as the reader will want to see it again.
+
+    A selection question makes no sense on its own once reopened — "翻译" tells
+    you nothing — so the passage it was about is stored with it.
+    """
+    question = req.question.strip() or {
+        "translate": "翻译这段文字",
+        "biology": "这段文字的生物学意义是什么？",
+        "explain": "解释这段文字",
+    }.get(req.intent, "这段文字是什么意思？")
+    selection = req.selection.strip()
+    return f"「{selection[:400]}」\n\n{question}" if selection else question
+
+
 @app.post("/api/paper/ask", response_model=AskResponse)
 async def paper_ask(
     req: AskRequest, user: str | None = Depends(optional_user)
@@ -759,7 +774,29 @@ async def paper_ask(
         return AskResponse(
             warning="回答失败，请重试。" if lang == "zh" else "Could not answer. Please retry."
         )
-    return AskResponse(answer=answer)
+
+    # Keep the thread, so reopening a paper does not lose what you already
+    # asked of it. Stored under its own kind and tagged with the paper, so a
+    # reading conversation is not mixed in with search history.
+    conversation_id = req.conversation_id
+    asked = req.question.strip() or req.selection.strip()
+    if user and answer and asked:
+        try:
+            if conversation_id is None:
+                conversation_id = db.create_conversation(
+                    user, "paper", asked, seed_query=req.identifier
+                )
+            db.append_messages(
+                user,
+                conversation_id,
+                [
+                    {"role": "user", "content": _asked_with_context(req)},
+                    {"role": "assistant", "content": answer},
+                ],
+            )
+        except Exception:  # noqa: BLE001 - saving must not lose the answer
+            pass
+    return AskResponse(answer=answer, conversation_id=conversation_id)
 
 
 @app.post("/api/paper/connected", response_model=ConnectedResponse)

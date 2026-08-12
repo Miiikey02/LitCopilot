@@ -93,13 +93,14 @@ export const paperUpload = async (file) => {
   }
   return r.json()
 }
-export const paperAsk = (identifier, selection, question, intent, lang) =>
+export const paperAsk = (identifier, selection, question, intent, lang, conversationId) =>
   jsonPost('/api/paper/ask', {
     identifier,
     selection,
     question: question || '',
     intent: intent || 'free',
     lang: lang || null,
+    conversation_id: conversationId ?? null,
   })
 
 // --- Research agent (multi-turn follow-ups) ---
