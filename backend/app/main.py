@@ -37,6 +37,7 @@ from .schemas import (
     FeedbackResponse,
     ConnectedResponse,
     DeepRead,
+    ImportJob,
     GraphEvidenceRequest,
     GraphEvidenceResponse,
     PaperReadResponse,
@@ -53,7 +54,7 @@ from .schemas import (
     TrialsResponse,
     UploadResponse,
 )
-from .services import llm_service, sessions, uploads
+from .services import imports, llm_service, sessions, uploads
 from .services.models import Paper
 from .services.openalex import _norm_title, connected_papers, resolve_work
 from .services.openalex import take_notes as oa_notes
@@ -86,6 +87,11 @@ def _startup() -> None:
         moved, left = db.migrate_uploads_to_storage()
         if moved or left:
             print(f"[startup] moved {moved} upload(s) to storage, {left} to go")
+        # Background work does not survive a restart; say so rather than
+        # leaving an import sitting at "running" forever.
+        stalled = db.stop_stale_import_jobs()
+        if stalled:
+            print(f"[startup] marked {stalled} interrupted import(s) as stopped")
     except Exception as exc:  # noqa: BLE001
         print(redact(f"[startup] database unavailable: {type(exc).__name__}: {exc}"))
 
@@ -911,6 +917,145 @@ async def paper_upload(
         blocks=[ArticleBlock(**b) for b in record["blocks"]],
         paper=SourceCard(**record["card"]),
     )
+
+
+# A reference export is text, and 8MB of it is tens of thousands of records —
+# far past anything a lab exports, and past what one job should attempt.
+MAX_IMPORT_BYTES = 8 * 1024 * 1024
+MAX_IMPORT_ENTRIES = 2000
+
+
+async def _import_resolve(entry: dict) -> dict | None:
+    """Look one imported reference up, preferring the indexed record.
+
+    Deliberately lighter than the reader's resolver: that one also fetches
+    open-access full text, which is right for one paper someone is about to
+    read and wrong for three hundred being filed — it would multiply every
+    import by an extra PMC round trip nobody asked for.
+    """
+    ident = imports.identifier_for(entry)
+    if not ident:
+        return None
+    paper = None
+    try:
+        work = await resolve_work(ident)
+        if work is not None:
+            paper = _oa_to_paper(work)
+    except Exception:  # noqa: BLE001 - one index being down is not a failure
+        paper = None
+    if paper is None:
+        try:
+            paper = (
+                await fetch_by_doi(ident)
+                if ident.lower().startswith("10.")
+                else await fetch_by_title(ident)
+            )
+        except Exception:  # noqa: BLE001
+            paper = None
+    if paper is not None:
+        return paper.to_card()
+    # Nothing recognised it. Keep what the file said rather than dropping the
+    # reference — a thesis or an in-press paper is still a reference.
+    return imports.fallback_card(entry) if entry.get("title") else None
+
+
+async def _run_import(
+    job_id: int,
+    user: str,
+    entries: list[dict],
+    folder_id: int | None,
+    team_id: int | None,
+) -> None:
+    def store(card: dict) -> str:
+        if db.paper_exists(user, card, team_id):
+            return "duplicate"
+        db.save_paper(user, card, [], folder_id, team_id)
+        return "added"
+
+    def progress(counts: dict) -> None:
+        db.update_import_job(job_id, **counts)
+
+    try:
+        counts = await imports.run_job(entries, _import_resolve, store, progress)
+        db.update_import_job(job_id, status="done", **counts)
+    except Exception as exc:  # noqa: BLE001
+        db.update_import_job(
+            job_id, status="stopped", note=f"{type(exc).__name__}: {exc}"[:300]
+        )
+
+
+@app.post("/api/library/import", response_model=ImportJob)
+async def library_import(
+    request: Request,
+    background: BackgroundTasks,
+    filename: str = "",
+    fmt: str = "",
+    folder_id: int | None = None,
+    team_id: int | None = None,
+    user: str = Depends(current_user),
+) -> ImportJob:
+    """Import a reference library exported from EndNote, Zotero, PubMed, …
+
+    The file arrives as the raw request body, the same as an uploaded PDF and
+    for the same reason: there is one field, and multipart parsing buys nothing
+    but latency.
+    """
+    if not has_db():
+        raise HTTPException(status_code=503, detail="Library storage unavailable")
+    raw = await request.body()
+    if len(raw) > MAX_IMPORT_BYTES:
+        raise HTTPException(status_code=413, detail="File too large")
+    if not raw.strip():
+        raise HTTPException(status_code=400, detail="Empty file")
+    # Exports are variously UTF-8, UTF-8 with a BOM, or Latin-1 from older
+    # EndNote. Decoding must not be the thing that fails an import.
+    try:
+        text = raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        text = raw.decode("latin-1", errors="replace")
+
+    entries, used = imports.parse(text, filename, fmt)
+    if not entries:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "无法识别这个文件的格式。支持 RIS、BibTeX、EndNote (.enw/.xml)、"
+                "PubMed (.nbib)、CSL-JSON，或直接粘贴 DOI / PMID 列表。"
+            ),
+        )
+    entries = imports.dedupe(entries)[:MAX_IMPORT_ENTRIES]
+
+    job_id = _guard_import(
+        db.create_import_job, user, entries, filename, used, folder_id, team_id
+    )
+    background.add_task(_run_import, job_id, user, entries, folder_id, team_id)
+    return ImportJob(id=job_id, filename=filename, format=used, total=len(entries))
+
+
+def _guard_import(fn, *args):
+    try:
+        return fn(*args)
+    except db.NotAMember:
+        raise HTTPException(status_code=403, detail="Not a member of this team")
+
+
+@app.get("/api/library/import/{job_id}", response_model=ImportJob)
+def library_import_status(job_id: int, user: str = Depends(current_user)) -> ImportJob:
+    job = db.get_import_job(user, job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Import not found")
+    return ImportJob(**{k: (v or ("" if k in ("filename", "format", "note") else 0))
+                        for k, v in job.items()
+                        if k in ImportJob.model_fields})
+
+
+@app.get("/api/library/imports", response_model=list[ImportJob])
+def library_imports(user: str = Depends(current_user)) -> list[ImportJob]:
+    return [
+        ImportJob(**{k: (v or ("" if k in ("filename", "format", "note") else 0))
+                     for k, v in job.items() if k in ImportJob.model_fields})
+        for job in db.recent_import_jobs(user)
+    ]
 
 
 @app.get("/api/paper/upload/{uid}/file")

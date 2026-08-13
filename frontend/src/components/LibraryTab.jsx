@@ -7,6 +7,7 @@ import FolderTree, { PAPER_DRAG } from './FolderTree'
 import NotePanel from './NotePanel'
 import CiteButton from './CiteButton'
 import BulkExport from './BulkExport'
+import ImportPanel from './ImportPanel'
 import WorkspaceBar from './WorkspaceBar'
 
 const sourceLabel = {
@@ -437,6 +438,7 @@ export default function LibraryTab() {
   const [teams, setTeams] = useState([])
   // null = personal library; otherwise the active team's id (as a string).
   const [activeTeam, setActiveTeam] = useState(null)
+  const [importing, setImporting] = useState(false)
 
   const [loadError, setLoadError] = useState('')
 
@@ -531,6 +533,28 @@ export default function LibraryTab() {
           folderId={activeFolder}
           onDone={load}
         />
+
+        {/* Bringing a whole existing library in, as opposed to one PDF. Sits
+            beside the PDF drop because both answer "how do I get my papers in
+            here" — the difference is only whether you have one or three
+            hundred. */}
+        <button
+          onClick={() => setImporting(true)}
+          className="mb-4 inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-700 transition-colors hover:border-blue-300 hover:bg-white hover:text-blue-700"
+        >
+          <Icon name="download" />
+          {t('importOpen')}
+        </button>
+
+        {importing && (
+          <ImportPanel
+            folders={folders}
+            folderId={activeFolder && activeFolder !== 'unfiled' ? activeFolder : null}
+            teamId={activeTeam}
+            onClose={() => setImporting(false)}
+            onChanged={load}
+          />
+        )}
 
         {/* Ask questions across the papers you've saved */}
         <LibraryChat

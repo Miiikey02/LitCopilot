@@ -109,6 +109,34 @@ export const paperUpload = async (file) => {
   }
   return r.json()
 }
+// --- Importing someone else's reference library ---
+//
+// Raw body again, for the same reason as the PDF upload. The file may be a
+// RIS/BibTeX/EndNote/PubMed export or a pasted list of DOIs; the server works
+// out which from the content, so the name is a hint rather than a decision.
+export const libraryImport = async (content, filename, folderId, teamId) => {
+  const token = await getAccessToken()
+  const headers = { 'Content-Type': 'text/plain; charset=utf-8' }
+  if (token) headers.Authorization = `Bearer ${token}`
+  const params = new URLSearchParams({ filename: filename || '' })
+  if (folderId) params.set('folder_id', String(folderId))
+  if (teamId) params.set('team_id', String(teamId))
+  const r = await fetch(`/api/library/import?${params}`, {
+    method: 'POST',
+    headers,
+    body: content,
+  })
+  if (!r.ok) {
+    const detail = await r.json().catch(() => ({}))
+    const err = new Error(detail.detail || 'import failed')
+    err.status = r.status
+    throw err
+  }
+  return r.json()
+}
+export const importStatus = (jobId) => req(`/api/library/import/${jobId}`)
+export const recentImports = () => req('/api/library/imports')
+
 export const paperAsk = (identifier, selection, question, intent, lang, conversationId) =>
   jsonPost('/api/paper/ask', {
     identifier,

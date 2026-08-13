@@ -74,6 +74,16 @@ export const UPDATES = [
         en: 'The database picker now appears in deep research too — it had only been showing in quick search.',
       },
       {
+        kind: 'feature',
+        zh: '新增「导入文献库」：可直接导入 EndNote、Zotero、Mendeley、PubMed 导出的文件（RIS、BibTeX、.enw、.xml、.nbib、CSL-JSON），也可以粘贴一列 DOI / PMID。导入时会逐条去数据库核对，补全作者、期刊、年份与引用格式；文件里重复的、以及文库里已有的，都只算一次。可以指定存入哪个文件夹。',
+        en: 'Import an existing library: files exported from EndNote, Zotero, Mendeley or PubMed (RIS, BibTeX, .enw, .xml, .nbib, CSL-JSON), or a pasted list of DOIs and PMIDs. Each reference is looked up and filled in with authors, journal, year and citation key; repeats within the file and papers already in your library are counted, not duplicated. You choose which folder they land in.',
+      },
+      {
+        kind: 'change',
+        zh: '上传的 PDF 改存到文件存储服务，不再占用数据库空间——这样才装得下一整个实验室的文献库。另外，即使原始 PDF 不在了，精读模式仍然可以打开：正文与结论是分开保存的，丢的只是 PDF 视图。',
+        en: 'Uploaded PDFs now live in file storage rather than in the database, which is what makes importing a whole lab library possible. And if an original PDF is ever missing, close reading still opens — the extracted text is stored separately, so only the PDF pane is lost.',
+      },
+      {
         kind: 'change',
         zh: '「深度研究」与「精读模式」换用了会先推理再作答的模型：研究简报、单篇精读、划词提问与实体抽取都由它来写。同一个问题，简报从一段变成了六段，每句结论都带引用，并能指出研究之间的分歧。代价是等待——深度研究要三到五分钟，精读约一分半，请让它写完。「快速求索」仍用原来的快模型，速度不变。',
         en: 'Deep research and close reading now run on a model that reasons before it answers — the brief, the appraisal, selection questions and entity extraction all come from it. On the same question the brief went from one paragraph to six, every claim carrying its citation, and it now names where studies disagree. The cost is waiting: three to five minutes for deep research, about ninety seconds for a close reading. Quick search keeps the fast model and is unchanged.',

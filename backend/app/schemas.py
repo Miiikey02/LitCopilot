@@ -358,6 +358,21 @@ class UploadResponse(BaseModel):
     paper: Optional[SourceCard] = None  # resolved authors, journal, year, DOI
 
 
+class ImportJob(BaseModel):
+    """Progress of an import of someone else's reference library."""
+
+    id: int
+    filename: str = ""
+    format: str = ""
+    status: str = "running"  # running | done | stopped
+    total: int = 0
+    done: int = 0
+    added: int = 0
+    duplicates: int = 0
+    failed: int = 0
+    note: str = ""
+
+
 class AskRequest(BaseModel):
     identifier: str
     selection: str = ""

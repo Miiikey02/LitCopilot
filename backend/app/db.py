@@ -168,6 +168,30 @@ CREATE TABLE IF NOT EXISTS feedback (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- An import of someone else's reference library. Progress lives in the
+-- database rather than in memory because these runs are minutes long: the
+-- instance can restart mid-import, and a job that vanishes without saying how
+-- far it got is worse than one that admits it stopped.
+CREATE TABLE IF NOT EXISTS import_jobs (
+    id         BIGSERIAL PRIMARY KEY,
+    user_id    UUID NOT NULL,
+    team_id    BIGINT REFERENCES teams(id) ON DELETE CASCADE,
+    folder_id  BIGINT REFERENCES folders(id) ON DELETE SET NULL,
+    filename   TEXT,
+    format     TEXT,
+    status     TEXT NOT NULL DEFAULT 'running',  -- running | done | stopped
+    total      INTEGER NOT NULL DEFAULT 0,
+    done       INTEGER NOT NULL DEFAULT 0,
+    added      INTEGER NOT NULL DEFAULT 0,
+    duplicates INTEGER NOT NULL DEFAULT 0,
+    failed     INTEGER NOT NULL DEFAULT 0,
+    entries    JSONB,   -- what was parsed, so a stopped job can say what is left
+    note       TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS import_jobs_user_idx ON import_jobs (user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS feedback_created_idx ON feedback (created_at DESC);
 CREATE INDEX IF NOT EXISTS uploads_created_idx ON uploads (created_at);
 CREATE INDEX IF NOT EXISTS saved_papers_user_idx ON saved_papers (user_id, created_at DESC);
@@ -544,6 +568,107 @@ def save_paper(
                 (existing["id"], tag),
             )
         return _row_to_paper(existing, _tags_for(conn, existing["id"]))
+
+
+def paper_exists(user_id: str, card: dict, team_id: int | None = None) -> bool:
+    """Whether this workspace already holds this paper.
+
+    save_paper is idempotent, but silently so — it cannot tell an import
+    whether it added a reference or recognised one. An import that reports
+    "300 added" when 280 were already there has told the user nothing.
+    """
+    scope_sql, params = _paper_scope(user_id, team_id)
+    with _get_pool().connection() as conn:
+        row = conn.execute(
+            f"SELECT 1 FROM saved_papers p WHERE {scope_sql} AND p.dedup_key = %s",
+            [*params, _dedup_key(card)],
+        ).fetchone()
+    return row is not None
+
+
+# --- Import jobs ---------------------------------------------------------
+
+
+def create_import_job(
+    user_id: str,
+    entries: list[dict],
+    filename: str,
+    fmt: str,
+    folder_id: int | None,
+    team_id: int | None,
+) -> int:
+    with _get_pool().connection() as conn:
+        _assert_member(conn, user_id, team_id)
+        row = conn.execute(
+            """INSERT INTO import_jobs
+                 (user_id, team_id, folder_id, filename, format, total, entries)
+               VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
+            (
+                user_id,
+                team_id,
+                folder_id,
+                filename[:200],
+                fmt,
+                len(entries),
+                json.dumps(entries, ensure_ascii=False),
+            ),
+        ).fetchone()
+        return int(row["id"])
+
+
+def update_import_job(job_id: int, **fields) -> None:
+    """Write progress. Unknown columns are ignored rather than raising."""
+    allowed = {"status", "done", "added", "duplicates", "failed", "note"}
+    sets = {k: v for k, v in fields.items() if k in allowed}
+    if not sets:
+        return
+    assignments = ", ".join(f"{k} = %s" for k in sets)
+    with _get_pool().connection() as conn:
+        conn.execute(
+            f"UPDATE import_jobs SET {assignments}, updated_at = now() WHERE id = %s",
+            [*sets.values(), job_id],
+        )
+
+
+def get_import_job(user_id: str, job_id: int) -> dict | None:
+    with _get_pool().connection() as conn:
+        row = conn.execute(
+            """SELECT id, filename, format, status, total, done, added, duplicates,
+                      failed, note, folder_id, created_at, updated_at
+                 FROM import_jobs WHERE id = %s AND user_id = %s""",
+            (job_id, user_id),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def recent_import_jobs(user_id: str, limit: int = 10) -> list[dict]:
+    with _get_pool().connection() as conn:
+        rows = conn.execute(
+            """SELECT id, filename, format, status, total, done, added, duplicates,
+                      failed, note, created_at
+                 FROM import_jobs WHERE user_id = %s
+                ORDER BY created_at DESC LIMIT %s""",
+            (user_id, limit),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def stop_stale_import_jobs() -> int:
+    """Mark jobs that were running when the process died.
+
+    Background work does not survive a restart, and on a free instance restarts
+    are routine. Left alone these sit at "running" forever, which reads as a
+    hang; saying they stopped, and how far they got, at least tells the truth.
+    """
+    with _get_pool().connection() as conn:
+        cur = conn.execute(
+            """UPDATE import_jobs
+                  SET status = 'stopped',
+                      note = 'interrupted by a server restart',
+                      updated_at = now()
+                WHERE status = 'running'"""
+        )
+        return cur.rowcount or 0
 
 
 def list_saved(
