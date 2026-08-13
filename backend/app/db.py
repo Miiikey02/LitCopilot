@@ -790,11 +790,25 @@ def rename_folder(
 
 
 def delete_folder(user_id: str, folder_id: int, team_id: int | None = None) -> bool:
-    """Delete a folder; its papers are kept and become unfiled."""
+    """Delete a folder; its papers are kept and become unfiled.
+
+    In a shared workspace, deleting is limited to whoever made the folder and
+    the workspace admin — the same rule as saved papers. Creating, renaming and
+    re-nesting stay open to every member, because organising a shared shelf is
+    collaborative and all of it is reversible; deleting a branch someone else
+    built is the one action that is not.
+    """
     with _get_pool().connection() as conn:
         _assert_member(conn, user_id, team_id)
         if not _accessible_folder(conn, user_id, folder_id, team_id):
             return False
+        if team_id is not None:
+            row = conn.execute(
+                "SELECT user_id FROM folders WHERE id = %s", (folder_id,)
+            ).fetchone()
+            made_by = str(row["user_id"]) if row else ""
+            if made_by != user_id and not _is_owner(conn, user_id, team_id):
+                raise NotPermitted("only the person who made it, or an admin")
         cur = conn.execute("DELETE FROM folders WHERE id = %s", (folder_id,))
         return cur.rowcount > 0
 

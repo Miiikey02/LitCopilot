@@ -74,6 +74,11 @@ export const UPDATES = [
         en: 'The database picker now appears in deep research too — it had only been showing in quick search.',
       },
       {
+        kind: 'change',
+        zh: '共享工作区里，文件夹只能由创建者本人或管理员删除；新建、重命名、调整层级仍对所有成员开放。',
+        en: 'In a shared workspace, a folder can only be deleted by whoever created it or by an admin. Creating, renaming and re-nesting stay open to every member.',
+      },
+      {
         kind: 'fix',
         zh: '任何检索模式下，被判定与问题无关的文献都不会出现在来源列表里（此前快速检索仍会显示，深度研究里偶尔还会漏出一行内部标记）。',
         en: 'Papers judged unrelated to the question no longer appear in the source list in any mode — quick search was still showing them, and deep research occasionally leaked an internal marker.',

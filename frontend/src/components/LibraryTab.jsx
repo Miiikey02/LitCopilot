@@ -374,7 +374,14 @@ function FolderSidebar({ folders, active, onPick, onChanged, total, teamId }) {
 
   const remove = async (folder) => {
     if (!window.confirm(t('deleteFolderConfirm', { name: folder.name }))) return
-    await api.deleteFolder(folder.id, teamId)
+    try {
+      await api.deleteFolder(folder.id, teamId)
+    } catch (err) {
+      // A shared workspace refuses deletions that are not yours; say why
+      // rather than appearing to do nothing.
+      setError(err?.status === 403 ? t('ownerOnlyFolder') : t('errorNetwork'))
+      return
+    }
     if (active === String(folder.id)) onPick(null)
     onChanged()
   }
