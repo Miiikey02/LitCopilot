@@ -269,6 +269,64 @@ def save(source, user_id: str | None = None) -> dict:
     return _finish(uid, path)
 
 
+async def write_stream(chunks) -> tuple[str, Path, str]:
+    """Write an uploaded PDF to disk, returning (id, path, sha256).
+
+    Separate from extraction so the caller can check whether these exact bytes
+    are already stored before spending fifteen seconds re-reading them.
+    """
+    uid, path = _new_path()
+    written = 0
+    digest = hashlib.sha256()
+    try:
+        with path.open("wb") as out:
+            async for chunk in chunks:
+                if not chunk:
+                    continue
+                written += len(chunk)
+                _check_chunk(written == len(chunk), chunk, written)
+                digest.update(chunk)
+                out.write(chunk)
+        if written == 0:
+            raise ValueError("empty file")
+    except ValueError:
+        path.unlink(missing_ok=True)
+        raise
+    return uid, path, digest.hexdigest()
+
+
+def finish(uid: str, path: Path) -> dict:
+    """Extract text and build the record. Raises ValueError on an unusable PDF."""
+    return _finish(uid, path)
+
+
+def discard(path: Path) -> None:
+    Path(path).unlink(missing_ok=True)
+
+
+def rehydrate_file(record: dict) -> None:
+    """Make sure the cached record has its bytes on disk to serve."""
+    path = Path(record["path"])
+    if path.exists():
+        return
+    try:
+        stored = db.get_upload(record["id"], with_data=True)
+    except Exception:  # noqa: BLE001
+        return
+    if stored:
+        _DIR.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(stored["data"])
+
+
+def adopt(record: dict) -> dict:
+    """Put a record fetched from the database into the local cache."""
+    record.setdefault("stamp", monotonic())
+    _INDEX[record["id"]] = record
+    _INDEX.move_to_end(record["id"])
+    _sweep()
+    return record
+
+
 async def save_stream(chunks) -> dict:
     """Store an uploaded PDF straight from the request body.
 
@@ -364,6 +422,9 @@ def persist(record: dict, user_id: str | None) -> None:
         return
     try:
         db.put_upload(record, Path(record["path"]).read_bytes(), user_id)
+        # Scratch uploads accumulate otherwise: nothing was ever cleaning them
+        # up, and each one is megabytes in a database sized in hundreds.
+        db.purge_uploads()
     except Exception:  # noqa: BLE001 - the reader still works this session
         pass
 

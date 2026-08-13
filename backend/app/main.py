@@ -78,6 +78,10 @@ def _startup() -> None:
     # missing/unreachable DB must not stop the app from booting.
     try:
         db.init_db()
+        # Scratch uploads are megabytes each and nothing was clearing them.
+        gone = db.purge_uploads()
+        if gone:
+            print(f"[startup] cleared {gone} unsaved upload(s)")
     except Exception as exc:  # noqa: BLE001
         print(redact(f"[startup] database unavailable: {type(exc).__name__}: {exc}"))
 
@@ -851,9 +855,36 @@ async def paper_upload(
     instance for no benefit.
     """
     try:
-        record = await uploads.save_stream(request.stream())
+        uid, path, sha = await uploads.write_stream(request.stream())
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    # The same paper uploaded twice is one file. Checked before extraction,
+    # which is the slow part, and before storing a second copy of megabytes in
+    # a database measured in hundreds of them.
+    if has_db():
+        try:
+            existing = db.find_upload_by_hash(user, sha)
+        except Exception:  # noqa: BLE001
+            existing = None
+        if existing:
+            uploads.discard(path)
+            record = uploads.adopt({**existing, "path": str(path)})
+            uploads.rehydrate_file(record)
+            card = record.get("card") or {}
+            return UploadResponse(
+                identifier=f"{UPLOAD_PREFIX}{record['id']}",
+                title=card.get("title") or record["title"],
+                pages=record["pages"],
+                blocks=[ArticleBlock(**b) for b in record["blocks"]],
+                paper=SourceCard(**card) if card else None,
+            )
+
+    try:
+        record = uploads.finish(uid, path)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    record["sha256"] = sha
     record["card"] = await _card_for_upload(record)
     background.add_task(uploads.persist, record, user)
     return UploadResponse(

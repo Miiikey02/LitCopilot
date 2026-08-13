@@ -141,10 +141,13 @@ CREATE TABLE IF NOT EXISTS uploads (
     body       TEXT,
     card       JSONB,  -- resolved bibliographic record, so an upload looks like any other paper
     data       BYTEA NOT NULL,
+    sha256     TEXT,          -- same bytes uploaded twice reuse one row
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 ALTER TABLE uploads ADD COLUMN IF NOT EXISTS card JSONB;
+ALTER TABLE uploads ADD COLUMN IF NOT EXISTS sha256 TEXT;
+CREATE INDEX IF NOT EXISTS uploads_sha_idx ON uploads (user_id, sha256);
 ALTER TABLE conversations ADD COLUMN IF NOT EXISTS sources JSONB;
 ALTER TABLE conversations ADD COLUMN IF NOT EXISTS state JSONB;
 ALTER TABLE folders ADD COLUMN IF NOT EXISTS parent_id BIGINT REFERENCES folders(id) ON DELETE SET NULL;
@@ -1039,8 +1042,8 @@ def put_upload(record: dict, data: bytes, user_id: str | None) -> None:
     with _get_pool().connection() as conn:
         conn.execute(
             """
-            INSERT INTO uploads (id, user_id, title, pages, blocks, body, data, card)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO uploads (id, user_id, title, pages, blocks, body, data, card, sha256)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (id) DO NOTHING
             """,
             (
@@ -1052,6 +1055,7 @@ def put_upload(record: dict, data: bytes, user_id: str | None) -> None:
                 record["text"],
                 data,
                 json.dumps(record.get("card")) if record.get("card") else None,
+                record.get("sha256"),
             ),
         )
 
@@ -1079,13 +1083,37 @@ def get_upload(uid: str, with_data: bool = False) -> dict | None:
 
 
 def purge_uploads(older_than_hours: int = 72) -> int:
-    """Drop uploads past their keep-window. Returns how many went."""
+    """Drop scratch uploads. Returns how many went.
+
+    An upload that someone saved to a library is theirs and is kept forever; one
+    that was read once and never saved is a temporary file, and each is
+    megabytes in a database measured in hundreds of them.
+    """
     with _get_pool().connection() as conn:
         cur = conn.execute(
-            "DELETE FROM uploads WHERE created_at < now() - make_interval(hours => %s)",
+            """DELETE FROM uploads u
+                WHERE u.created_at < now() - make_interval(hours => %s)
+                  AND NOT EXISTS (
+                    SELECT 1 FROM saved_papers p
+                     WHERE p.source_id = 'upload:' || u.id
+                  )""",
             (older_than_hours,),
         )
         return cur.rowcount or 0
+
+
+def find_upload_by_hash(user_id: str | None, sha: str) -> dict | None:
+    """An upload of these exact bytes already stored for this person."""
+    if not sha:
+        return None
+    with _get_pool().connection() as conn:
+        row = conn.execute(
+            """SELECT id FROM uploads
+                WHERE sha256 = %s AND user_id IS NOT DISTINCT FROM %s
+                ORDER BY created_at LIMIT 1""",
+            (sha, user_id),
+        ).fetchone()
+    return get_upload(row["id"]) if row else None
 
 
 def upload_owner(uid: str) -> str | None:

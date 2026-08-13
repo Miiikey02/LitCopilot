@@ -75,6 +75,11 @@ export const UPDATES = [
       },
       {
         kind: 'change',
+        zh: '同一份 PDF 重复上传不再重复占用空间——识别到内容相同就直接复用；没有存进文库的上传文件会在三天后自动清理，存进文库的一直保留。',
+        en: 'Uploading the same PDF twice no longer stores it twice — identical bytes reuse the existing file. Uploads never saved to a library are cleared after three days; anything saved is kept.',
+      },
+      {
+        kind: 'change',
         zh: '共享工作区里，文件夹只能由创建者本人或管理员删除；新建、重命名、调整层级仍对所有成员开放。',
         en: 'In a shared workspace, a folder can only be deleted by whoever created it or by an admin. Creating, renaming and re-nesting stay open to every member.',
       },
