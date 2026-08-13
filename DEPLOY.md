@@ -60,7 +60,8 @@ fly volumes create litcopilot_data --size 1 --region hkg
 | Var | Required | Default | Purpose |
 |-----|----------|---------|---------|
 | `DEEPSEEK_API_KEY` | ✅ (secret) | — | DeepSeek auth |
-| `DEEPSEEK_MODEL` | | `deepseek-chat` | `deepseek-reasoner` also works |
+| `DEEPSEEK_MODEL` | | `deepseek-v4-flash` | Bulk work: expansion, translation, quick search |
+| `DEEPSEEK_MODEL_PRO` | | `deepseek-v4-pro` | Deep research and 精读模式 |
 | `NCBI_API_KEY` | | — | Raises PubMed limit 3→10 req/sec |
 | `MAX_RESULTS` | | `18` | Default result count |
 | `DB_PATH` | | image: `/app/backend/data/litcopilot.db` | SQLite location (mount a volume here to persist) |

@@ -78,8 +78,13 @@ uvicorn app.main:app --reload --port 8000
 ```
 
 Required env var: `DEEPSEEK_API_KEY`. Optional: `NCBI_API_KEY` (raises the
-PubMed rate limit from 3/sec to 10/sec), `DEEPSEEK_MODEL` (default
-`deepseek-chat`), `MAX_RESULTS` (default 18).
+PubMed rate limit from 3/sec to 10/sec), `MAX_RESULTS` (default 18).
+
+Two models are used. `DEEPSEEK_MODEL` (default `deepseek-v4-flash`) carries the
+high-volume mechanical work — query expansion, translation, the quick-search
+brief. `DEEPSEEK_MODEL_PRO` (default `deepseek-v4-pro`) carries deep research
+and close reading, where the output is what a researcher acts on. Set both to
+the same value to run on one model.
 
 Health check: `curl http://localhost:8000/api/health`
 
