@@ -153,6 +153,10 @@ Keep it SHORT: 2-3 tight paragraphs, roughly 150-250 words. This is a quick
 orientation, not a review — a reader who wants depth runs deep research, and
 padding this out only makes the two modes read the same.
 5. Do NOT reproduce abstract text verbatim — paraphrase in your own words.
+6b. Set "relevant": false for any source that does not bear on the question.
+Retrieval casts a wide net and pulls in strays; anything marked false is removed
+before the reader sees it, so marking one costs nothing, while leaving a stray
+marked true puts an unrelated paper in a list someone is trusting.
 6. A source marked RETRACTED or with an expression of concern must NOT be used
 to support a claim as if it were sound evidence. If you mention it at all, say
 plainly that it has been retracted (or questioned) and advise against relying
@@ -168,7 +172,7 @@ Return ONLY a JSON object of this exact shape and nothing else:
 {
   "answer": "<the synthesized answer in the response language>",
   "sources": [
-    {"index": 1, "title_localized": "...", "relevance": "..."},
+    {"index": 1, "title_localized": "...", "relevance": "...", "relevant": true},
     ...
   ]
 }"""
@@ -231,6 +235,8 @@ async def synthesize(query: str, lang: str, papers: list[Paper]) -> dict:
                 localized = ""
             papers[idx].title_zh = localized
             papers[idx].relevance_zh = s.get("relevance", "")
+            if s.get("relevant") is False:
+                papers[idx].irrelevant = True
 
     return {"answer": data.get("answer", "").strip()}
 
@@ -450,7 +456,7 @@ async def localize_papers(papers: list[Paper], question: str, lang: str) -> None
             # An explicit "no" is worth more than parsing the prose note for
             # the word "irrelevant" in two languages.
             if s.get("relevant") is False:
-                papers[idx].relevance_zh = "__IRRELEVANT__"
+                papers[idx].irrelevant = True
 
 
 # --- Deep research: plan, evidence typing, contradictions ------------------
@@ -628,7 +634,7 @@ async def synthesize_deep(
             # An explicit "no" is worth more than parsing the prose note for
             # the word "irrelevant" in two languages.
             if s.get("relevant") is False:
-                papers[idx].relevance_zh = "__IRRELEVANT__"
+                papers[idx].irrelevant = True
             papers[idx].evidence_type = (s.get("evidence_type") or "").strip().lower()
 
     return {

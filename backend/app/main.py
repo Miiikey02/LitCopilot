@@ -263,6 +263,16 @@ def _reads_uncovered(answer: str) -> bool:
     return bool(_UNCOVERED.search(answer or ""))
 
 
+def _presentable(papers: list) -> list:
+    """Papers fit to show. Drops anything the synthesis judged off-topic.
+
+    Applied on every path rather than only deep research: retrieval casts a
+    wide net everywhere, so a stray can surface in any mode, and a reader
+    trusting the list cannot tell one from the rest.
+    """
+    return [p for p in papers if not getattr(p, "irrelevant", False)]
+
+
 def _reads_irrelevant(note: str) -> bool:
     """Whether our own relevance note admits the paper does not belong.
 
@@ -381,7 +391,7 @@ async def deep_research(
     cited = {key for key in _cited_keys(answer, contradictions, gaps)}
     kept = [
         p
-        for p in papers
+        for p in _presentable(papers)
         if p.citation_key() in cited
         or (p.relevance_zh and not _reads_irrelevant(p.relevance_zh))
     ]
@@ -1196,7 +1206,8 @@ async def chat(
     sess["lang"] = lang  # follow the current UI language
 
     def _cards() -> list[SourceCard]:
-        return [SourceCard(**p.to_card()) for p in sess["papers"]]
+        # A follow-up inherits the corpus, so it inherits the filter too.
+        return [SourceCard(**p.to_card()) for p in _presentable(sess["papers"])]
 
     if not llm_service.has_llm_key():
         return ChatResponse(

@@ -44,6 +44,10 @@ class Paper:
     # Study design label assigned during deep research: "rct" | "cohort" |
     # "case" | "preclinical" | "invitro" | "review" | "guideline" | "other".
     evidence_type: str = ""
+    # Set when the synthesis judged this paper not to bear on the question.
+    # A flag, not a marker written into a display field: the previous version
+    # stuffed a sentinel into relevance_zh and it reached the screen.
+    irrelevant: bool = False
 
     # Populated later by the synthesis/translation step:
     title_zh: str = ""  # Chinese translation of the title
