@@ -15,7 +15,9 @@ services:
       - key: DEEPSEEK_API_KEY
         sync: false            # set this in the Render dashboard (kept secret)
       - key: DEEPSEEK_MODEL
-        value: deepseek-chat
+        value: deepseek-v4-flash
+      - key: DEEPSEEK_MODEL_PRO
+        value: deepseek-v4-pro
       # Supabase Postgres — data now lives here, so it survives redeploys.
       - key: DATABASE_URL
         sync: false            # Session-pooler URI, incl. the DB password

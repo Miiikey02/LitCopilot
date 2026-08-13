@@ -75,6 +75,11 @@ export const UPDATES = [
       },
       {
         kind: 'change',
+        zh: '「深度研究」与「精读模式」换用了更强的模型：研究简报、单篇精读、划词提问与实体抽取都由它来写。代价是更慢——一份深度简报可能需要一两分钟，请等它写完。「快速求索」仍用原来的快模型，速度不变。',
+        en: 'Deep research and close reading now run on a stronger model — the brief, the appraisal, selection questions and entity extraction all come from it. The trade is speed: a deep brief can take a minute or two, so give it time. Quick search keeps the fast model and is as quick as before.',
+      },
+      {
+        kind: 'change',
         zh: '同一份 PDF 重复上传不再重复占用空间——识别到内容相同就直接复用；没有存进文库的上传文件会在三天后自动清理，存进文库的一直保留。',
         en: 'Uploading the same PDF twice no longer stores it twice — identical bytes reuse the existing file. Uploads never saved to a library are cleared after three days; anything saved is kept.',
       },

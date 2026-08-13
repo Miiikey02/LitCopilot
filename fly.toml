@@ -10,7 +10,8 @@ primary_region = "hkg"        # Hong Kong — low latency for CN/APAC users; cha
   dockerfile = "Dockerfile"
 
 [env]
-  DEEPSEEK_MODEL = "deepseek-chat"
+  DEEPSEEK_MODEL = "deepseek-v4-flash"
+  DEEPSEEK_MODEL_PRO = "deepseek-v4-pro"
   FRONTEND_DIST = "/app/frontend/dist"
   DB_PATH = "/app/backend/data/litcopilot.db"
 

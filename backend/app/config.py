@@ -13,9 +13,24 @@ load_dotenv()
 
 # --- LLM provider: DeepSeek (OpenAI-compatible API) ---
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
-# Query understanding, translation, and synthesis all use one chat model.
-# deepseek-chat (DeepSeek-V3) is the default; deepseek-reasoner (R1) also works.
-DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+# Two models, split by what the work costs to get wrong.
+#
+# The default carries the high-volume, mechanical work: query expansion,
+# translation, relevance lines, the short quick-search brief. A faster model is
+# the right trade there — those calls happen on every search, and a stronger
+# model would not translate a title any better.
+#
+# The "pro" model carries deep research and close reading: planning
+# sub-questions, writing a full brief from thirty papers, appraising a single
+# paper's methods, answering a question about a passage. Those are the outputs a
+# researcher actually acts on, they run far less often, and a wrong one costs
+# more than the token difference.
+#
+# Note that "deepseek-chat" and "deepseek-reasoner" are now both aliases onto
+# deepseek-v4-flash — DeepSeek retired the V3/R1 names, so the alias no longer
+# says which model answers. Both are named explicitly here for that reason.
+DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash")
+DEEPSEEK_MODEL_PRO = os.getenv("DEEPSEEK_MODEL_PRO", "deepseek-v4-pro")
 # DeepSeek's OpenAI-compatible endpoint. "/v1" also works; it is unrelated to the
 # model version.
 DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")

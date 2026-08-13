@@ -25,6 +25,7 @@ from ..config import (
     DEEPSEEK_API_KEY,
     DEEPSEEK_BASE_URL,
     DEEPSEEK_MODEL,
+    DEEPSEEK_MODEL_PRO,
     has_llm_key,
 )
 from .models import Paper
@@ -39,14 +40,20 @@ def _get_client() -> AsyncOpenAI:
     return _client
 
 
-async def _chat(system: str, user: str, max_tokens: int) -> tuple[str, str]:
+async def _chat(
+    system: str, user: str, max_tokens: int, pro: bool = False
+) -> tuple[str, str]:
     """One chat-completion round-trip.
+
+    `pro=True` sends the call to the stronger model. It is opt-in rather than
+    the default so that adding a new call site cannot silently make every
+    search more expensive — the callers that need it say so.
 
     Returns (text, finish_reason). A finish_reason of "length" means the model
     was cut off by max_tokens and the output is likely truncated.
     """
     resp = await _get_client().chat.completions.create(
-        model=DEEPSEEK_MODEL,
+        model=DEEPSEEK_MODEL_PRO if pro else DEEPSEEK_MODEL,
         max_tokens=max_tokens,
         messages=[
             {"role": "system", "content": system},
@@ -487,7 +494,7 @@ async def plan_subquestions(query: str, lang: str) -> list[dict]:
         f"Research question:\n{query}"
     )
     try:
-        raw, _ = await _chat(_PLAN_SYSTEM, user, max_tokens=800)
+        raw, _ = await _chat(_PLAN_SYSTEM, user, max_tokens=800, pro=True)
         data = _extract_json(raw)
     except Exception:  # noqa: BLE001 - fall back to a single pass
         return [{"question": query, "search": await expand_query(query, lang)}]
@@ -615,7 +622,7 @@ async def synthesize_deep(
     data = None
     last_err: Exception | None = None
     for max_tokens in (5000, 7000):
-        raw, finish = await _chat(_DEEP_SYSTEM, user, max_tokens=max_tokens)
+        raw, finish = await _chat(_DEEP_SYSTEM, user, max_tokens=max_tokens, pro=True)
         try:
             candidate = _extract_json(raw)
         except (ValueError, json.JSONDecodeError) as e:
@@ -745,7 +752,7 @@ async def read_paper(paper: Paper, lang: str) -> dict:
         f"Text available: {kind}\n\n"
         f"{body[:24000]}"
     )
-    raw, _ = await _chat(_READ_SYSTEM, user, max_tokens=2500)
+    raw, _ = await _chat(_READ_SYSTEM, user, max_tokens=2500, pro=True)
     data = _extract_json(raw)
     # The model is asked for {text, quote} but sometimes returns bare strings.
     # Normalise to the object shape so the reader has one thing to render, and
@@ -827,7 +834,7 @@ async def explain_selection(
         f"THEIR QUESTION:\n{ask}\n\n"
         f"PAPER TEXT FOR CONTEXT:\n{body[:18000]}"
     )
-    out, _ = await _chat(_ASK_SYSTEM, user, max_tokens=900)
+    out, _ = await _chat(_ASK_SYSTEM, user, max_tokens=900, pro=True)
     return out
 
 
@@ -862,6 +869,10 @@ async def extract_entities(paper: Paper) -> dict:
             _ENTITY_SYSTEM,
             f"Title: {paper.title}\n\n{body[:18000]}",
             max_tokens=1200,
+            # Extraction, but of gene and pathway names the reader will click
+            # through to a reference database — a plausible-looking wrong symbol
+            # is worse here than in prose.
+            pro=True,
         )
         data = _extract_json(raw)
     except Exception:  # noqa: BLE001 - entities are a bonus, never fatal
