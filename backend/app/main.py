@@ -581,17 +581,28 @@ async def paper_read(
                 else "DEEPSEEK_API_KEY is not configured; deep read is unavailable."
             ),
         )
+    # The appraisal and the entity list read the same article and need nothing
+    # from each other, so they go out together. Run in sequence they added up:
+    # on the reasoning model each takes the best part of a minute, and the
+    # reader is staring at a spinner for the sum of them.
+    read_task, entity_task = await asyncio.gather(
+        llm_service.read_paper(paper, lang),
+        llm_service.extract_entities(paper),
+        return_exceptions=True,
+    )
     read = None
     warning = None
     try:
-        read = DeepRead(**await llm_service.read_paper(paper, lang))
-    except Exception:  # noqa: BLE001
+        if isinstance(read_task, BaseException):
+            raise read_task
+        read = DeepRead(**read_task)
+    except Exception:  # noqa: BLE001 - a bad shape fails the same as a bad call
         warning = (
             "精读生成失败，请稍后重试。"
             if lang == "zh"
             else "Could not generate the deep read. Please retry."
         )
-    entities = await llm_service.extract_entities(paper)
+    entities = {} if isinstance(entity_task, BaseException) else entity_task
     # A session scoped to this one paper, so the reader's follow-up questions
     # answer from the article they are looking at and not a fresh search.
     session_id = sessions.create_session([paper], [], lang)

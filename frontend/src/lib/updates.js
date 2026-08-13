@@ -75,8 +75,8 @@ export const UPDATES = [
       },
       {
         kind: 'change',
-        zh: '「深度研究」与「精读模式」换用了更强的模型：研究简报、单篇精读、划词提问与实体抽取都由它来写。代价是更慢——一份深度简报可能需要一两分钟，请等它写完。「快速求索」仍用原来的快模型，速度不变。',
-        en: 'Deep research and close reading now run on a stronger model — the brief, the appraisal, selection questions and entity extraction all come from it. The trade is speed: a deep brief can take a minute or two, so give it time. Quick search keeps the fast model and is as quick as before.',
+        zh: '「深度研究」与「精读模式」换用了会先推理再作答的模型：研究简报、单篇精读、划词提问与实体抽取都由它来写。同一个问题，简报从一段变成了六段，每句结论都带引用，并能指出研究之间的分歧。代价是等待——深度研究要三到五分钟，精读约一分半，请让它写完。「快速求索」仍用原来的快模型，速度不变。',
+        en: 'Deep research and close reading now run on a model that reasons before it answers — the brief, the appraisal, selection questions and entity extraction all come from it. On the same question the brief went from one paragraph to six, every claim carrying its citation, and it now names where studies disagree. The cost is waiting: three to five minutes for deep research, about ninety seconds for a close reading. Quick search keeps the fast model and is unchanged.',
       },
       {
         kind: 'change',
