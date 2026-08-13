@@ -439,9 +439,11 @@ def _rehydrate(uid: str) -> dict | None:
         return None
     if stored is None:
         return None
-    _DIR.mkdir(parents=True, exist_ok=True)
     path = _DIR / f"{uid}.pdf"
-    path.write_bytes(stored.pop("data"))
+    data = stored.pop("data", None)
+    if data is not None:
+        _DIR.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
     record = {**stored, "path": str(path), "stamp": monotonic()}
     _INDEX[uid] = record
     _INDEX.move_to_end(uid)
@@ -450,16 +452,31 @@ def _rehydrate(uid: str) -> dict | None:
 
 
 def get(uid: str) -> dict | None:
-    """The stored upload, or None once it has expired or was never there."""
+    """The stored upload, or None once it has expired or was never there.
+
+    A record without its file is still a record: the blocks and text extracted
+    at upload time are what 精读模式 reads, and they are stored apart from the
+    bytes. Losing the file costs the PDF pane and nothing else, so it must not
+    take the paper down with it.
+    """
     _sweep()
     record = _INDEX.get(uid)
     if record and Path(record["path"]).exists():
         _INDEX.move_to_end(uid)
         return record
     _INDEX.pop(uid, None)
-    return _rehydrate(uid)
+    return _rehydrate(uid) or (record if record and record.get("blocks") else None)
+
+
+def has_file(uid: str) -> bool:
+    """Whether the original PDF can actually be served for this upload."""
+    record = get(uid)
+    return bool(record and Path(record["path"]).exists())
 
 
 def file_bytes(uid: str) -> bytes | None:
     record = get(uid)
-    return Path(record["path"]).read_bytes() if record else None
+    if not record:
+        return None
+    path = Path(record["path"])
+    return path.read_bytes() if path.exists() else None

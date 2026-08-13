@@ -63,6 +63,17 @@ SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
 # Optional: leave empty when the project uses asymmetric (RS256/ES256) keys.
 SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET", "")
 
+# --- File storage: Supabase Storage ---
+# Uploaded PDFs are files, and a relational database is the wrong place to keep
+# files: the free tier measures the database in hundreds of megabytes and a
+# single paper is several of them, so a lab importing one reference library
+# would exhaust it. Storage is priced and sized for exactly this.
+#
+# Settings → API → service_role key. It bypasses row-level security, so it is a
+# server-only secret and must never reach the browser.
+SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "")
+SUPABASE_BUCKET = os.getenv("SUPABASE_BUCKET", "gaze-uploads")
+
 
 def has_llm_key() -> bool:
     return bool(DEEPSEEK_API_KEY.strip())
@@ -74,6 +85,11 @@ def has_db() -> bool:
 
 def has_auth() -> bool:
     return bool(SUPABASE_URL or SUPABASE_JWT_SECRET)
+
+
+def has_blob_storage() -> bool:
+    """Whether uploaded files can go to Storage instead of a database column."""
+    return bool(SUPABASE_URL and SUPABASE_SERVICE_KEY)
 
 
 _URL_CREDENTIALS = re.compile(r"(?i)(://[^:/@\s]+:)[^@\s]+(@)")
@@ -88,7 +104,13 @@ def redact(text: str) -> str:
     in the hosting dashboard and easy to paste into a chat.
     """
     text = _URL_CREDENTIALS.sub(r"\1***\2", text)
-    for secret in (DATABASE_URL, DEEPSEEK_API_KEY, SUPABASE_JWT_SECRET, NCBI_API_KEY):
+    for secret in (
+        DATABASE_URL,
+        DEEPSEEK_API_KEY,
+        SUPABASE_JWT_SECRET,
+        SUPABASE_SERVICE_KEY,
+        NCBI_API_KEY,
+    ):
         if secret and len(secret) > 6:
             text = text.replace(secret, "***")
     return text

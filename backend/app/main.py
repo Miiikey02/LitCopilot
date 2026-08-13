@@ -82,6 +82,10 @@ def _startup() -> None:
         gone = db.purge_uploads()
         if gone:
             print(f"[startup] cleared {gone} unsaved upload(s)")
+        # A batch at a time, so a large backlog does not delay the first request.
+        moved, left = db.migrate_uploads_to_storage()
+        if moved or left:
+            print(f"[startup] moved {moved} upload(s) to storage, {left} to go")
     except Exception as exc:  # noqa: BLE001
         print(redact(f"[startup] database unavailable: {type(exc).__name__}: {exc}"))
 
@@ -688,8 +692,10 @@ async def paper_article(
             paper=SourceCard(**card),
             blocks=[ArticleBlock(**b) for b in record["blocks"]],
             has_full_text=True,
-            # The only PDF we can reliably display is one the reader gave us.
-            has_pdf=True,
+            # The only PDF we can reliably display is one the reader gave us —
+            # and only while we still hold the bytes. Claiming a pane we cannot
+            # fill sends the reader to a broken frame instead of the article.
+            has_pdf=uploads.has_file(record["id"]),
             # The map and cross-paper evidence need an indexed identifier.
             has_neighbours=bool((record.get("card") or {}).get("doi")),
             pdf_embed=(

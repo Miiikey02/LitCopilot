@@ -18,6 +18,10 @@ services:
         value: deepseek-v4-flash
       - key: DEEPSEEK_MODEL_PRO
         value: deepseek-v4-pro
+      - key: SUPABASE_SERVICE_KEY
+        sync: false            # set in the Render dashboard (kept secret)
+      - key: SUPABASE_BUCKET
+        value: gaze-uploads
       # Supabase Postgres — data now lives here, so it survives redeploys.
       - key: DATABASE_URL
         sync: false            # Session-pooler URI, incl. the DB password

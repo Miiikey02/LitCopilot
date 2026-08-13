@@ -62,6 +62,8 @@ fly volumes create litcopilot_data --size 1 --region hkg
 | `DEEPSEEK_API_KEY` | ✅ (secret) | — | DeepSeek auth |
 | `DEEPSEEK_MODEL` | | `deepseek-v4-flash` | Bulk work: expansion, translation, quick search |
 | `DEEPSEEK_MODEL_PRO` | | `deepseek-v4-pro` | Deep research and 精读模式 |
+| `SUPABASE_SERVICE_KEY` | | — | service_role key. Sends uploaded PDFs to Supabase Storage instead of a database column. Server-only — never expose it to the browser |
+| `SUPABASE_BUCKET` | | `gaze-uploads` | Private bucket for uploaded files; created on first use |
 | `NCBI_API_KEY` | | — | Raises PubMed limit 3→10 req/sec |
 | `MAX_RESULTS` | | `18` | Default result count |
 | `DB_PATH` | | image: `/app/backend/data/litcopilot.db` | SQLite location (mount a volume here to persist) |

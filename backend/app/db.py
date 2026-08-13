@@ -20,6 +20,7 @@ from psycopg.rows import dict_row
 from psycopg_pool import ConnectionPool
 
 from .config import DATABASE_URL
+from .services import blobstore
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS teams (
@@ -147,6 +148,11 @@ CREATE TABLE IF NOT EXISTS uploads (
 
 ALTER TABLE uploads ADD COLUMN IF NOT EXISTS card JSONB;
 ALTER TABLE uploads ADD COLUMN IF NOT EXISTS sha256 TEXT;
+-- The bytes moved to Supabase Storage. `data` stays for rows written before the
+-- move and for deployments with no Storage configured, so it can no longer be
+-- NOT NULL: exactly one of the two columns holds the file.
+ALTER TABLE uploads ADD COLUMN IF NOT EXISTS storage_key TEXT;
+ALTER TABLE uploads ALTER COLUMN data DROP NOT NULL;
 CREATE INDEX IF NOT EXISTS uploads_sha_idx ON uploads (user_id, sha256);
 ALTER TABLE conversations ADD COLUMN IF NOT EXISTS sources JSONB;
 ALTER TABLE conversations ADD COLUMN IF NOT EXISTS state JSONB;
@@ -1038,12 +1044,19 @@ def clear_history(user_id: str) -> None:
 
 
 def put_upload(record: dict, data: bytes, user_id: str | None) -> None:
-    """Persist an uploaded PDF and its extracted text."""
+    """Persist an uploaded PDF and its extracted text.
+
+    The bytes go to Storage when it is configured, and only fall back into the
+    `data` column when that fails — a slow, expensive write beats losing the
+    file the reader just handed over.
+    """
+    key = blobstore.put(record["id"], data) if blobstore.enabled() else None
     with _get_pool().connection() as conn:
         conn.execute(
             """
-            INSERT INTO uploads (id, user_id, title, pages, blocks, body, data, card, sha256)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO uploads
+                (id, user_id, title, pages, blocks, body, data, card, sha256, storage_key)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (id) DO NOTHING
             """,
             (
@@ -1053,16 +1066,19 @@ def put_upload(record: dict, data: bytes, user_id: str | None) -> None:
                 record["pages"],
                 json.dumps(record["blocks"]),
                 record["text"],
-                data,
+                None if key else data,
                 json.dumps(record.get("card")) if record.get("card") else None,
                 record.get("sha256"),
+                key,
             ),
         )
 
 
 def get_upload(uid: str, with_data: bool = False) -> dict | None:
     """An uploaded PDF. `with_data` also returns the bytes, which are large."""
-    cols = "id, title, pages, blocks, body, card" + (", data" if with_data else "")
+    cols = "id, title, pages, blocks, body, card, storage_key" + (
+        ", data" if with_data else ""
+    )
     with _get_pool().connection() as conn:
         row = conn.execute(
             f"SELECT {cols} FROM uploads WHERE id = %s", (uid,)
@@ -1078,7 +1094,12 @@ def get_upload(uid: str, with_data: bool = False) -> dict | None:
         "card": row["card"],
     }
     if with_data:
-        record["data"] = bytes(row["data"])
+        data = blobstore.get(row["storage_key"]) if row["storage_key"] else None
+        if data is None and row["data"] is not None:
+            data = bytes(row["data"])  # written before the move, or no Storage
+        # May be None: the extracted text is stored separately and still opens
+        # in the reader, so a missing file costs the PDF pane, not the paper.
+        record["data"] = data
     return record
 
 
@@ -1090,16 +1111,56 @@ def purge_uploads(older_than_hours: int = 72) -> int:
     megabytes in a database measured in hundreds of them.
     """
     with _get_pool().connection() as conn:
-        cur = conn.execute(
+        rows = conn.execute(
             """DELETE FROM uploads u
                 WHERE u.created_at < now() - make_interval(hours => %s)
                   AND NOT EXISTS (
                     SELECT 1 FROM saved_papers p
                      WHERE p.source_id = 'upload:' || u.id
-                  )""",
+                  )
+             RETURNING u.storage_key""",
             (older_than_hours,),
-        )
-        return cur.rowcount or 0
+        ).fetchall()
+    # Deleting the row is not deleting the file once the file lives elsewhere;
+    # without this, purging would free nothing and Storage would grow forever.
+    keys = [r["storage_key"] for r in rows if r["storage_key"]]
+    if keys:
+        blobstore.delete(keys)
+    return len(rows)
+
+
+def migrate_uploads_to_storage(limit: int = 25) -> tuple[int, int]:
+    """Move file bytes out of the `data` column into Storage.
+
+    Returns (moved, remaining). Batched and called at startup rather than run as
+    one migration: the rows are megabytes each, the free instance is small, and
+    a boot that has to shift a gigabyte before serving a request is a boot that
+    times out. Anything not yet moved still reads from `data`, so a half-done
+    migration is a working system.
+    """
+    if not blobstore.enabled():
+        return 0, 0
+    with _get_pool().connection() as conn:
+        rows = conn.execute(
+            """SELECT id, data FROM uploads
+                WHERE storage_key IS NULL AND data IS NOT NULL
+                ORDER BY created_at LIMIT %s""",
+            (limit,),
+        ).fetchall()
+        moved = 0
+        for row in rows:
+            key = blobstore.put(row["id"], bytes(row["data"]))
+            if not key:
+                break  # Storage is unwell; leave the rest where they are
+            conn.execute(
+                "UPDATE uploads SET storage_key = %s, data = NULL WHERE id = %s",
+                (key, row["id"]),
+            )
+            moved += 1
+        remaining = conn.execute(
+            "SELECT count(*) AS n FROM uploads WHERE storage_key IS NULL AND data IS NOT NULL"
+        ).fetchone()["n"]
+    return moved, remaining
 
 
 def find_upload_by_hash(user_id: str | None, sha: str) -> dict | None:
