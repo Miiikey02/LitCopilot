@@ -56,6 +56,11 @@ export default function App() {
   const [error, setError] = useState('')
   const [result, setResult] = useState(null)
   const [history, setHistory] = useState([])
+  // What is typed into the rail's search box, and the settled value the
+  // request actually uses. Searching on every keystroke would fire a query per
+  // character, and every one of them scans message bodies.
+  const [historyQuery, setHistoryQuery] = useState('')
+  const [historySearch, setHistorySearch] = useState('')
   const [trials, setTrials] = useState(null)
   const [trialsLoading, setTrialsLoading] = useState(false)
   const [chatTurns, setChatTurns] = useState([]) // follow-up research thread
@@ -149,11 +154,16 @@ export default function App() {
       return
     }
     try {
-      setHistory(await api.listConversations('search'))
+      setHistory(await api.listConversations('search', undefined, historySearch))
     } catch {
       /* history is non-critical */
     }
-  }, [signedIn])
+  }, [signedIn, historySearch])
+
+  useEffect(() => {
+    const timer = setTimeout(() => setHistorySearch(historyQuery.trim()), 250)
+    return () => clearTimeout(timer)
+  }, [historyQuery])
 
   useEffect(() => {
     loadHistory()
@@ -492,6 +502,8 @@ export default function App() {
         tab={tab}
         onTab={setTab}
         history={history}
+        historyQuery={historyQuery}
+        onHistoryQuery={setHistoryQuery}
         onOpenThread={onOpenThread}
         onDeleteThread={onDeleteThread}
         onClearHistory={onClearHistory}

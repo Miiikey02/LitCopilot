@@ -165,6 +165,9 @@ class ConversationSummary(BaseModel):
     team_id: Optional[int] = None
     message_count: int
     updated_at: str
+    # Why this thread matched a search: a window of the first matching message.
+    # Empty when the caller was not searching, or the match was in the title.
+    snippet: str = ""
 
 
 class ConversationMessage(BaseModel):

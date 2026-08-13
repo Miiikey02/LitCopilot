@@ -1034,15 +1034,37 @@ def list_conversations(
     limit: int = 50,
     team_id: int | None = None,
     scope_team: bool = False,
+    q: str | None = None,
 ) -> list[dict]:
     """Threads for this user, optionally narrowed to one workspace.
 
     `scope_team` is what makes a workspace's threads its own: without it a
     library conversation started in a lab workspace shows up in the personal
     library and in every other lab, because they are all the same user's rows.
+
+    `q` searches the whole thread, not just its title. What people remember
+    about a past search is rarely the question they typed — it is a paper they
+    saw or a phrase in the answer — so the question, every message, and the
+    titles of the papers it cited are all matched, and the first matching
+    message comes back as a snippet so the reader can see why it matched.
+
+    ILIKE rather than full-text search, deliberately: Postgres tokenises by
+    whitespace, so a to_tsvector index would not match anything inside a
+    Chinese sentence without a segmenter. Substring matching is what actually
+    works in both languages, and at one user's thread count it is cheap.
     """
+    search = (q or "").strip()
+    like = _like_pattern(search)
     clauses = ["c.user_id = %s"]
     params: list = [user_id]
+    # The snippet subquery sits in the SELECT list, so its parameter binds
+    # before any in the WHERE clause.
+    snippet_sql = "NULL AS snippet"
+    if search:
+        snippet_sql = """(SELECT m.content FROM conversation_messages m
+                           WHERE m.conversation_id = c.id AND m.content ILIKE %s
+                           ORDER BY m.id LIMIT 1) AS snippet"""
+        params.insert(0, like)
     if kind:
         clauses.append("c.kind = %s")
         params.append(kind)
@@ -1052,12 +1074,21 @@ def list_conversations(
         else:
             clauses.append("c.team_id = %s")
             params.append(team_id)
+    if search:
+        clauses.append(
+            """(c.title ILIKE %s OR c.seed_query ILIKE %s
+                OR c.sources::text ILIKE %s
+                OR EXISTS (SELECT 1 FROM conversation_messages m
+                            WHERE m.conversation_id = c.id AND m.content ILIKE %s))"""
+        )
+        params += [like, like, like, like]
     params.append(limit)
     with _get_pool().connection() as conn:
         rows = conn.execute(
             f"""SELECT c.id, c.kind, c.title, c.seed_query, c.team_id, c.updated_at,
                        (SELECT COUNT(*) FROM conversation_messages m
-                         WHERE m.conversation_id = c.id) AS message_count
+                         WHERE m.conversation_id = c.id) AS message_count,
+                       {snippet_sql}
                 FROM conversations c
                 WHERE {' AND '.join(clauses)}
                 ORDER BY c.updated_at DESC
@@ -1073,9 +1104,40 @@ def list_conversations(
             "team_id": r["team_id"],
             "message_count": r["message_count"],
             "updated_at": r["updated_at"].isoformat(),
+            "snippet": _excerpt(r["snippet"], search),
         }
         for r in rows
     ]
+
+
+def _like_pattern(term: str) -> str:
+    """Wrap a search term for ILIKE, treating its characters as characters.
+
+    `%` and `_` are wildcards to LIKE, so an unescaped `_` quietly matches any
+    character — searching "IL_6" would return "IL-6" and "IL6" as well, and
+    a lone "%" would match every row. Backslash goes first, or escaping the
+    others would then be escaped in turn.
+    """
+    escaped = term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"%{escaped}%"
+
+
+def _excerpt(text: str | None, term: str, width: int = 110) -> str:
+    """A short window of `text` around `term`, so a hit shows its context.
+
+    Returning the whole message would fill the rail with an answer; returning
+    its first line would usually miss the match, which is the one part the
+    reader is looking for.
+    """
+    if not text or not term:
+        return ""
+    body = " ".join(text.split())
+    at = body.lower().find(term.lower())
+    if at < 0:
+        return body[:width] + ("…" if len(body) > width else "")
+    start = max(0, at - width // 3)
+    end = min(len(body), start + width)
+    return ("…" if start else "") + body[start:end] + ("…" if end < len(body) else "")
 
 
 def get_conversation(user_id: str, conversation_id: int) -> dict | None:

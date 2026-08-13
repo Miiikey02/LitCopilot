@@ -207,13 +207,18 @@ def list_conversations(
     kind: str | None = None,
     team: int | None = None,
     scope: str | None = None,
+    q: str | None = None,
     user: str = Depends(current_user),
 ) -> list[ConversationSummary]:
-    """Saved threads. `scope=workspace` narrows to the given workspace."""
+    """Saved threads. `scope=workspace` narrows to the given workspace.
+
+    `q` searches within them — the question asked, every message, and the
+    papers cited — rather than only the titles shown in the rail.
+    """
     return [
         ConversationSummary(**c)
         for c in db.list_conversations(
-            user, kind, team_id=team, scope_team=(scope == "workspace")
+            user, kind, team_id=team, scope_team=(scope == "workspace"), q=q
         )
     ]
 

@@ -75,6 +75,11 @@ export const UPDATES = [
       },
       {
         kind: 'feature',
+        zh: '左侧的检索记录可以搜索了：不只搜标题，也搜你问过的问题、对话里的每一句回答，以及那次检索引用过的文献标题——命中的那句会显示出来并高亮。中英文都可以。',
+        en: 'The history in the left rail is searchable — not just titles, but the questions you asked, every line of the answers, and the titles of the papers each search cited. The matching line is shown with the term highlighted. Works in Chinese and English.',
+      },
+      {
+        kind: 'feature',
         zh: '新增「导入文献库」：可直接导入 EndNote、Zotero、Mendeley、PubMed 导出的文件（RIS、BibTeX、.enw、.xml、.nbib、CSL-JSON），也可以粘贴一列 DOI / PMID。导入时会逐条去数据库核对，补全作者、期刊、年份与引用格式；文件里重复的、以及文库里已有的，都只算一次。可以指定存入哪个文件夹。',
         en: 'Import an existing library: files exported from EndNote, Zotero, Mendeley or PubMed (RIS, BibTeX, .enw, .xml, .nbib, CSL-JSON), or a pasted list of DOIs and PMIDs. Each reference is looked up and filled in with authors, journal, year and citation key; repeats within the file and papers already in your library are counted, not duplicated. You choose which folder they land in.',
       },

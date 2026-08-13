@@ -160,9 +160,12 @@ export const chat = (sessionId, message, lang, conversationId, forceSearch = fal
 // --- Saved conversations ---
 // `teamId === undefined` lists across workspaces; pass it (null for personal)
 // to get only the threads belonging to the workspace being looked at.
-export const listConversations = (kind, teamId) => {
+// `q` searches within the threads — the question, every message, and the
+// papers cited — not just the titles the rail shows.
+export const listConversations = (kind, teamId, q) => {
   const qs = new URLSearchParams()
   if (kind) qs.set('kind', kind)
+  if (q) qs.set('q', q)
   if (teamId !== undefined) {
     qs.set('scope', 'workspace')
     if (teamId) qs.set('team', teamId)
