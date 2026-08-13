@@ -40,6 +40,19 @@ def _get_client() -> AsyncOpenAI:
     return _client
 
 
+# The pro model thinks before it answers, and its thinking is billed and
+# capped as output: reasoning tokens come out of the same max_tokens budget as
+# the reply. Appraising a 20,000-character article took more than 2,500 tokens
+# of reasoning on its own, which left nothing for the answer — the call returned
+# finish_reason="length" with completely empty content, and every caller here
+# parses JSON, so an empty string surfaced to the reader as "生成失败".
+#
+# So callers keep passing the size of the answer they want, and the reasoning
+# allowance is added here. It is deliberately generous: the ceiling is 65,536,
+# unused budget costs nothing, and running out again is silent.
+_REASONING_HEADROOM = 12000
+
+
 async def _chat(
     system: str, user: str, max_tokens: int, pro: bool = False
 ) -> tuple[str, str]:
@@ -47,21 +60,31 @@ async def _chat(
 
     `pro=True` sends the call to the stronger model. It is opt-in rather than
     the default so that adding a new call site cannot silently make every
-    search more expensive — the callers that need it say so.
+    search more expensive — the callers that need it say so. `max_tokens` means
+    room for the answer either way; see _REASONING_HEADROOM.
 
     Returns (text, finish_reason). A finish_reason of "length" means the model
     was cut off by max_tokens and the output is likely truncated.
     """
     resp = await _get_client().chat.completions.create(
         model=DEEPSEEK_MODEL_PRO if pro else DEEPSEEK_MODEL,
-        max_tokens=max_tokens,
+        max_tokens=max_tokens + _REASONING_HEADROOM if pro else max_tokens,
         messages=[
             {"role": "system", "content": system},
             {"role": "user", "content": user},
         ],
     )
     choice = resp.choices[0]
-    return (choice.message.content or "").strip(), (choice.finish_reason or "")
+    text = (choice.message.content or "").strip()
+    if not text and choice.finish_reason == "length":
+        # Nothing but reasoning came back. Say so rather than handing an empty
+        # string to a JSON parser, which reports a syntax error and hides the
+        # cause — that is exactly how this went unnoticed once already.
+        raise RuntimeError(
+            "model spent its whole token budget on reasoning and returned no "
+            f"answer (max_tokens={max_tokens}, headroom={_REASONING_HEADROOM})"
+        )
+    return text, (choice.finish_reason or "")
 
 
 # CJK Unified Ideographs range — cheap, deterministic, no API call needed.
