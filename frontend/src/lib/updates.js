@@ -94,6 +94,11 @@ export const UPDATES = [
         en: 'Skills: write down how you like things done and the librarian follows it — folders named by grant number, every note stating whether a study was in humans or animals, reviews kept separately. You do not have to phrase it well: describe it in plain language and it is drafted into a skill for you to edit, or press "save this as a skill" after a run that went the way you wanted. In a lab workspace a skill can be shared with everyone, which is how a group writes its conventions down once. A skill changes how work is done, never the rules: changes still need approval, papers are still never invented, retractions are still flagged.',
       },
       {
+        kind: 'fix',
+        zh: '某个数据库没有响应时，结果上方会写明「本次检索未包含：OpenAlex」这类提示。此前任何一个库出问题都是静默跳过的——号称检索四个库，实际可能只搜了两个，而且看不出来。',
+        en: 'When a database does not answer, the result now says so — "Not included this time: OpenAlex". Previously any source could drop out silently, so a search advertising four databases could quietly be searching two with nothing to show for it.',
+      },
+      {
         kind: 'change',
         zh: '关联图谱建好后会缓存几小时：再打开同一篇是秒开，也少一次被数据源限流的机会。取数失败的图不会被缓存，免得一次限流变成这篇文献的长期答案。',
         en: 'A built paper map is cached for a few hours: opening the same paper again is instant, and it is one less chance to be rate-limited. A map that failed to fetch is never cached, so one throttled minute cannot become the paper\u2019s standing answer.',

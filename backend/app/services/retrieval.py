@@ -151,6 +151,7 @@ async def retrieve(
     sort: str = "relevance",
     exact_query: str | None = None,
     sources: list[str] | None = None,
+    report: dict | None = None,
 ) -> list[Paper]:
     """Fetch from PubMed + Semantic Scholar + OpenAlex (+ bioRxiv), then dedupe.
 
@@ -169,6 +170,13 @@ async def retrieve(
     specific paper (a pasted title or DOI). We then additionally search that
     verbatim and pin title matches to the front — expansion alone would look for
     the topic and miss the very paper being asked for.
+
+    `report`, if given, is filled with how many papers each source contributed.
+    Failing soft keeps the pipeline alive but makes an outage invisible: a
+    database that has stopped answering looks exactly like one with nothing to
+    say, and a product that claims four sources can quietly be searching two.
+    A dict rather than a changed return type, because three callers want the
+    papers and only one wants the diagnosis.
     """
 
     # Which databases to ask. Order is deliberate — PubMed's curated records
@@ -180,23 +188,37 @@ async def retrieve(
     if not wanted:  # a search of nothing has no useful meaning
         wanted = set(SOURCES)
 
-    def _source_tasks(q: str) -> list:
+    def _source_tasks(q: str) -> tuple[list, list[str]]:
         builders = {
             "pubmed": lambda: search_pubmed(q, retmax=limit, sort=sort),
             "semantic_scholar": lambda: search_semantic_scholar(q, limit=limit, sort=sort),
             "openalex": lambda: search_openalex(q, limit=limit, sort=sort),
             "biorxiv": lambda: search_biorxiv(q, limit=limit, sort=sort),
         }
-        return [build() for key, build in builders.items() if key in wanted]
+        chosen = [(key, build) for key, build in builders.items() if key in wanted]
+        return [build() for _, build in chosen], [key for key, _ in chosen]
 
     queries = [english_query]
     if exact_query and exact_query.strip() != english_query.strip():
         queries.append(exact_query.strip())
 
-    per_query = [_source_tasks(q) for q in queries]
+    built = [_source_tasks(q) for q in queries]
+    per_query = [tasks for tasks, _ in built]
+    keys_per_query = [keys for _, keys in built]
     results = await asyncio.gather(
         *[t for tasks in per_query for t in tasks], return_exceptions=True
     )
+
+    if report is not None:
+        counts: dict[str, int] = {}
+        flat_keys = [k for keys in keys_per_query for k in keys]
+        for key, result in zip(flat_keys, results):
+            got = len(result) if isinstance(result, list) else 0
+            counts[key] = counts.get(key, 0) + got
+        report["counts"] = counts
+        # A source that was asked and returned nothing at all. On a broad
+        # query that is a failure far more often than it is a fact.
+        report["silent"] = [k for k, n in counts.items() if n == 0]
 
     # Keep source order pubmed → s2 → openalex → biorxiv (PubMed wins merges),
     # but interleave so the downstream [:limit] cap includes a mix from each

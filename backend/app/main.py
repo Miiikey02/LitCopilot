@@ -147,6 +147,25 @@ def _save_search_thread(
         return conversation_id
 
 
+_SOURCE_NAMES = {
+    "pubmed": "PubMed",
+    "semantic_scholar": "Semantic Scholar",
+    "openalex": "OpenAlex",
+    "biorxiv": "bioRxiv",
+}
+
+
+def _quiet_sources(report: dict, papers: list) -> list[str]:
+    """Sources that were asked and returned nothing.
+
+    Only meaningful when something else did answer: a query that finds nothing
+    anywhere is a query about nothing, not four simultaneous outages.
+    """
+    if not papers:
+        return []
+    return [_SOURCE_NAMES.get(k, k) for k in report.get("silent") or []]
+
+
 @app.post("/api/search", response_model=SearchResponse)
 async def search(
     req: SearchRequest, user: str | None = Depends(optional_user)
@@ -165,6 +184,7 @@ async def search(
     # A pasted title or DOI is a request for one specific paper, so search the
     # user's exact words too — expansion alone finds the topic, not the paper.
     exact = query if looks_like_known_item(query) else None
+    report: dict = {}
     papers = (
         await retrieve(
             english_query,
@@ -173,6 +193,7 @@ async def search(
             sort=sort,
             exact_query=exact,
             sources=req.sources,
+            report=report,
         )
     )[:limit]
 
@@ -206,6 +227,18 @@ async def search(
                 if lang == "zh"
                 else "Failed to generate the synthesized answer (invalid key, quota, or network). Search results are shown; please retry."
             )
+
+    # A database that answered with nothing is worth saying out loud. Silent
+    # degradation is how a product that claims four sources ends up searching
+    # two without anyone noticing.
+    quiet = _quiet_sources(report, papers)
+    if quiet and not warning:
+        warning = (
+            f"本次检索未包含：{'、'.join(quiet)}（数据源暂时无响应）。结果来自其余数据库。"
+            if lang == "zh"
+            else f"Not included this time: {', '.join(quiet)} (no response). "
+                 "Results come from the remaining databases."
+        )
 
     cards = [SourceCard(**p.to_card()) for p in papers]
 
