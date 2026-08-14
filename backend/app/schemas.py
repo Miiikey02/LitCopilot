@@ -99,6 +99,8 @@ class SavedPaper(SourceCard):
     tags: list[str] = []
     notes: str = ""  # the user's own note on this paper
     folder_id: Optional[int] = None  # None = unfiled
+    # Where this paper is in the reading of it: "" | toread | reading | read | cited
+    read_state: str = ""
     added_by: str = ""  # email of whoever saved it (shown in team libraries)
     created_at: str
 
@@ -199,7 +201,7 @@ class LibrarianRequest(BaseModel):
 class LibrarianAction(BaseModel):
     """One proposed change. Nothing here has happened yet."""
 
-    kind: str  # create_folder | move_papers | add_tags | write_note
+    kind: str  # create_folder | move_papers | add_tags | write_note | set_reading_state
     name: str = ""
     parent: Optional[str] = None
     folder: str = ""
@@ -207,6 +209,7 @@ class LibrarianAction(BaseModel):
     paper_id: Optional[int] = None
     tags: list[str] = []
     note: str = ""
+    state: str = ""
 
 
 class LibrarianResponse(BaseModel):
@@ -224,6 +227,19 @@ class LibrarianApplied(BaseModel):
     applied: int = 0
     failed: int = 0
     details: list[str] = []
+    # Hand back to /library/undo/{id} to put the library as it was.
+    undo_id: Optional[int] = None
+
+
+class LibraryUndone(BaseModel):
+    reverted: int = 0
+    failed: int = 0
+    missing: bool = False
+    already: bool = False
+
+
+class ReadState(BaseModel):
+    state: str = ""  # "" | toread | reading | read | cited
 
 
 class ConversationSummary(BaseModel):

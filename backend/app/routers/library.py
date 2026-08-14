@@ -22,6 +22,8 @@ from ..schemas import (
     LibrarianApply,
     LibrarianRequest,
     LibrarianResponse,
+    LibraryUndone,
+    ReadState,
     LocalMatch,
     LocalMatchRequest,
     LocalMatchResponse,
@@ -72,10 +74,38 @@ def list_library(
     folder: str | None = None,
     q: str | None = None,
     team: int | None = None,
+    state: str | None = None,
     user: str = Depends(current_user),
 ) -> list[SavedPaper]:
-    """List saved papers; `folder` is a folder id or "unfiled", `q` free text."""
-    return [SavedPaper(**p) for p in _guard(db.list_saved, user, tag, folder, q, team)]
+    """List saved papers.
+
+    `folder` is a folder id or "unfiled", `q` is free text, and `state` filters
+    by reading state — "unset" for the pile nobody has triaged yet.
+    """
+    return [
+        SavedPaper(**p)
+        for p in _guard(db.list_saved, user, tag, folder, q, team, state)
+    ]
+
+
+@router.patch("/library/{paper_id}/state")
+def set_read_state(
+    paper_id: int,
+    body: ReadState,
+    team: int | None = None,
+    user: str = Depends(current_user),
+) -> dict:
+    """Mark where this paper is in the reading of it."""
+    if not _guard(db.set_read_state, user, paper_id, body.state, team):
+        raise HTTPException(status_code=404, detail="Paper not found or bad state")
+    return {"ok": True}
+
+
+@router.get("/library/states")
+def read_state_counts(
+    team: int | None = None, user: str = Depends(current_user)
+) -> dict:
+    return _guard(db.read_state_counts, user, team)
 
 
 @router.patch("/library/{paper_id}/notes")
@@ -306,6 +336,12 @@ def library_agent_apply(
     if not actions:
         return LibrarianApplied()
     return LibrarianApplied(**_guard(librarian.apply, user, actions, req.team_id))
+
+
+@router.post("/library/undo/{undo_id}", response_model=LibraryUndone)
+def library_undo(undo_id: int, user: str = Depends(current_user)) -> LibraryUndone:
+    """Put the library back as it was before that batch of changes."""
+    return LibraryUndone(**_guard(librarian.undo, user, undo_id))
 
 
 # --- Saved conversations ---------------------------------------------------

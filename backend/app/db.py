@@ -191,6 +191,27 @@ CREATE TABLE IF NOT EXISTS import_jobs (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- Where a paper is in the reading of it. A library that only records whether
+-- something was saved cannot answer "what should I read next", which is the
+-- question a researcher actually has most mornings.
+-- '' (unset) | toread | reading | read | cited
+ALTER TABLE saved_papers ADD COLUMN IF NOT EXISTS read_state TEXT NOT NULL DEFAULT '';
+CREATE INDEX IF NOT EXISTS saved_papers_state_idx ON saved_papers (user_id, read_state);
+
+-- What it would take to put the library back as it was. Written before a batch
+-- of changes, not after: the agent can restructure a shelf in one click, and
+-- an undo is what makes that safe to use boldly rather than nervously.
+CREATE TABLE IF NOT EXISTS library_undo (
+    id         BIGSERIAL PRIMARY KEY,
+    user_id    UUID NOT NULL,
+    team_id    BIGINT REFERENCES teams(id) ON DELETE CASCADE,
+    label      TEXT NOT NULL DEFAULT '',
+    inverse    JSONB NOT NULL,   -- low-level ops, applied in reverse
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    undone_at  TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS library_undo_user_idx ON library_undo (user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS import_jobs_user_idx ON import_jobs (user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS feedback_created_idx ON feedback (created_at DESC);
 CREATE INDEX IF NOT EXISTS uploads_created_idx ON uploads (created_at);
@@ -282,6 +303,7 @@ def _row_to_paper(row: dict, tags: list[str]) -> dict:
         "retraction_status": row["retraction_status"] or "",
         "notes": row["notes"] or "",
         "folder_id": row["folder_id"],
+        "read_state": row.get("read_state") or "",
         "tags": tags,
         "created_at": row["created_at"].isoformat(),
     }
@@ -570,6 +592,104 @@ def save_paper(
         return _row_to_paper(existing, _tags_for(conn, existing["id"]))
 
 
+READ_STATES = ("", "toread", "reading", "read", "cited")
+
+
+def set_read_state(
+    user_id: str, paper_id: int, state: str, team_id: int | None = None
+) -> bool:
+    """Where this paper is in the reading of it. '' clears the mark."""
+    if state not in READ_STATES:
+        return False
+    with _get_pool().connection() as conn:
+        _assert_member(conn, user_id, team_id)
+        if not _accessible_paper(conn, user_id, paper_id, team_id):
+            return False
+        cur = conn.execute(
+            "UPDATE saved_papers SET read_state = %s WHERE id = %s", (state, paper_id)
+        )
+        return cur.rowcount > 0
+
+
+def read_state_counts(user_id: str, team_id: int | None = None) -> dict:
+    scope_sql, params = _paper_scope(user_id, team_id)
+    with _get_pool().connection() as conn:
+        rows = conn.execute(
+            f"""SELECT p.read_state AS s, count(*) AS n FROM saved_papers p
+                 WHERE {scope_sql} GROUP BY p.read_state""",
+            params,
+        ).fetchall()
+    return {(r["s"] or "unset"): r["n"] for r in rows}
+
+
+# --- Undo -----------------------------------------------------------------
+
+
+def record_undo(
+    user_id: str, team_id: int | None, label: str, inverse: list[dict]
+) -> int | None:
+    """Store what it would take to put things back. Returns the undo id."""
+    if not inverse:
+        return None
+    with _get_pool().connection() as conn:
+        row = conn.execute(
+            """INSERT INTO library_undo (user_id, team_id, label, inverse)
+               VALUES (%s,%s,%s,%s) RETURNING id""",
+            (user_id, team_id, label[:200], json.dumps(inverse, ensure_ascii=False)),
+        ).fetchone()
+        return int(row["id"])
+
+
+def get_undo(user_id: str, undo_id: int) -> dict | None:
+    with _get_pool().connection() as conn:
+        row = conn.execute(
+            """SELECT id, label, inverse, team_id, created_at, undone_at
+                 FROM library_undo WHERE id = %s AND user_id = %s""",
+            (undo_id, user_id),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def mark_undone(user_id: str, undo_id: int) -> bool:
+    with _get_pool().connection() as conn:
+        cur = conn.execute(
+            """UPDATE library_undo SET undone_at = now()
+                WHERE id = %s AND user_id = %s AND undone_at IS NULL""",
+            (undo_id, user_id),
+        )
+        return cur.rowcount > 0
+
+
+def paper_snapshot(user_id: str, paper_ids: list[int], team_id: int | None = None) -> dict:
+    """Folder, note, state and tags for these papers, as they are right now.
+
+    Read before a change so the inverse can be computed from what was actually
+    there, rather than from what the change assumed was there.
+    """
+    if not paper_ids:
+        return {}
+    scope_sql, params = _paper_scope(user_id, team_id)
+    with _get_pool().connection() as conn:
+        rows = conn.execute(
+            f"""SELECT p.id, p.folder_id, p.notes, p.read_state,
+                       COALESCE(array_agg(t.tag) FILTER (WHERE t.tag IS NOT NULL), '{{}}') AS tags
+                  FROM saved_papers p
+             LEFT JOIN paper_tags t ON t.paper_id = p.id
+                 WHERE {scope_sql} AND p.id = ANY(%s)
+              GROUP BY p.id, p.folder_id, p.notes, p.read_state""",
+            [*params, [int(i) for i in paper_ids]],
+        ).fetchall()
+    return {
+        r["id"]: {
+            "folder_id": r["folder_id"],
+            "notes": r["notes"] or "",
+            "read_state": r["read_state"] or "",
+            "tags": list(r["tags"] or []),
+        }
+        for r in rows
+    }
+
+
 def paper_exists(user_id: str, card: dict, team_id: int | None = None) -> bool:
     """Whether this workspace already holds this paper.
 
@@ -677,6 +797,7 @@ def list_saved(
     folder: str | None = None,
     q: str | None = None,
     team_id: int | None = None,
+    state: str | None = None,
 ) -> list[dict]:
     """List a workspace's saved papers, optionally filtered by tag/folder/text.
 
@@ -696,6 +817,11 @@ def list_saved(
     elif folder:
         clauses.append("p.folder_id = %s")
         params.append(int(folder))
+    if state:
+        # "unset" is a filter in its own right: the pile nobody has triaged yet
+        # is exactly what someone wants to see when they open the library.
+        clauses.append("p.read_state = %s")
+        params.append("" if state == "unset" else state)
     if q and q.strip():
         clauses.append(
             "(p.title ILIKE %s OR p.title_zh ILIKE %s OR p.venue ILIKE %s"

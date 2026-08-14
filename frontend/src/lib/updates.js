@@ -75,6 +75,16 @@ export const UPDATES = [
       },
       {
         kind: 'feature',
+        zh: '文献可以标记阅读状态了：待读 / 在读 / 已读 / 已引用。文库顶部可按状态筛选，「未标记」单独一类——批量导入之后，那一堆还没分拣的就在这里。整理助手也看得到状态，可以问它「接下来该读哪几篇」。',
+        en: 'Papers now carry a reading state — to read, reading, read, cited. Filter the library by it from the top, including an Unmarked bucket, which is where a bulk import lands before anyone has triaged it. The librarian can see the state too, so "what should I read next" is now a question it can answer.',
+      },
+      {
+        kind: 'feature',
+        zh: '整理助手的每次改动都可以撤销：应用之后会出现「撤销这些改动」，点一下文库就回到改动前——文件夹、归档、标签、笔记、阅读状态都会还原（改动前已有的标签不会被误删）。',
+        en: 'Every batch of librarian changes can be undone. After applying, an Undo appears; one click puts the library back exactly as it was — folders, filing, tags, notes and reading state all restored, and tags that were already there are not removed by mistake.',
+      },
+      {
+        kind: 'feature',
         zh: '新增「整理本地文件夹」：授权电脑上存放 PDF 的那个文件夹，Gaze 会读取每个 PDF 的 DOI，与文库比对，然后建议把 `1-s2.0-S00928674…-main.pdf` 这类文件名改成「作者, 年份 - 标题.pdf」，并按文库里的文件夹分目录存放；同时告诉你哪些文献存了却没有本地文件。文件不会上传，只有 DOI 和标题会发到服务器；不会删除任何文件，所有改动先列出来，并写入文件夹内的日志以便还原。需要 Chrome / Edge 等 Chromium 内核浏览器。',
         en: 'Tidy a local folder: grant Gaze the folder where your PDFs live and it reads each one for its DOI, matches it against your library, and proposes turning `1-s2.0-S00928674…-main.pdf` into “Author, Year - Title.pdf”, filed into sub-folders matching your library. It also tells you which saved papers have no file. Nothing is uploaded — only a DOI and title reach the server — nothing is ever deleted, every change is listed first, and a log is written inside the folder so it can be undone. Chromium browsers (Chrome, Edge) only.',
       },

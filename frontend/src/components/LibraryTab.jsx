@@ -6,6 +6,7 @@ import Icon from './Icon'
 import FolderTree, { PAPER_DRAG } from './FolderTree'
 import NotePanel from './NotePanel'
 import CiteButton from './CiteButton'
+import ReadState, { ReadStateFilter } from './ReadState'
 import BulkExport from './BulkExport'
 import ImportPanel from './ImportPanel'
 import LibrarianPanel from './LibrarianPanel'
@@ -214,6 +215,12 @@ function LibraryCard({ paper, folders = [], teamId, onChanged }) {
           {t('addedBy', { who: paper.added_by })}
         </p>
       )}
+
+      {/* Reading state belongs with the paper's own facts rather than with the
+          buttons: it is something true about the paper, not an action. */}
+      <div className="mt-2">
+        <ReadState paper={paper} teamId={teamId} onChanged={onChanged} />
+      </div>
 
       {/* Your own note on this paper — also used by library chat as evidence */}
       <div className="mt-3">
@@ -436,6 +443,8 @@ export default function LibraryTab() {
   const [folders, setFolders] = useState([])
   const [activeTag, setActiveTag] = useState(null)
   const [activeFolder, setActiveFolder] = useState(null) // null | id string | 'unfiled'
+  const [activeState, setActiveState] = useState(null) // null | a reading state | 'unset'
+  const [stateCounts, setStateCounts] = useState({})
   const [query, setQuery] = useState('')
   const [teams, setTeams] = useState([])
   // null = personal library; otherwise the active team's id (as a string).
@@ -448,14 +457,16 @@ export default function LibraryTab() {
 
   const load = async () => {
     try {
-      const [ps, ts, fs] = await Promise.all([
-        api.listLibrary(activeTag, activeFolder, query, activeTeam),
+      const [ps, ts, fs, cs] = await Promise.all([
+        api.listLibrary(activeTag, activeFolder, query, activeTeam, activeState),
         api.listTags(activeTeam),
         api.listFolders(activeTeam),
+        api.readStateCounts(activeTeam).catch(() => ({})),
       ])
       setPapers(ps)
       setTags(ts)
       setFolders(fs)
+      setStateCounts(cs || {})
       setLoadError('')
     } catch {
       // Surface the failure instead of silently rendering an empty library,
@@ -469,7 +480,7 @@ export default function LibraryTab() {
     const id = setTimeout(load, query ? 250 : 0)
     return () => clearTimeout(id)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTag, activeFolder, query, activeTeam])
+  }, [activeTag, activeFolder, query, activeTeam, activeState])
 
   const loadTeams = async () => {
     try {
@@ -530,6 +541,11 @@ export default function LibraryTab() {
           {/* Exports whatever the folder/tag/search filters currently show, so
               "everything in this folder" is one click rather than a selection. */}
           <BulkExport papers={papers} queryLabel={t('libraryTitle')} />
+        </div>
+
+        {/* Triage across the top: the pile, what is open, what is finished. */}
+        <div className="mb-4">
+          <ReadStateFilter active={activeState} counts={stateCounts} onPick={setActiveState} />
         </div>
 
         <UploadPdf

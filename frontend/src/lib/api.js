@@ -221,8 +221,20 @@ const ws = (params = {}, teamId) => {
   return s ? `?${s}` : ''
 }
 
-export const listLibrary = (tag, folder, q, teamId) =>
-  req(`/api/library${ws({ tag, folder, q }, teamId)}`)
+export const listLibrary = (tag, folder, q, teamId, state) =>
+  req(`/api/library${ws({ tag, folder, q, state }, teamId)}`)
+
+// Where a paper is in the reading of it: '' | toread | reading | read | cited.
+export const setReadState = (id, state, teamId) =>
+  req(`/api/library/${id}/state${ws({}, teamId)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ state }),
+  })
+export const readStateCounts = (teamId) => req(`/api/library/states${ws({}, teamId)}`)
+
+// Put the library back as it was before a batch of agent changes.
+export const undoLibrary = (undoId) => jsonPost(`/api/library/undo/${undoId}`, {})
 
 export const setNotes = (id, notes, teamId) =>
   req(`/api/library/${id}/notes${ws({}, teamId)}`, {

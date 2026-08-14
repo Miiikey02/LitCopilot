@@ -47,9 +47,12 @@ the study did, what it found, and why this paper is worth keeping. Two or \
 three sentences. Never invent findings — you have the title, authors, journal, \
 year and the user's own notes, and nothing else. If that is not enough to say \
 anything specific, say what the paper appears to be about and no more.
-6. If the request is a question rather than a task, just answer it. Not every \
+6. Reading state (toread / reading / read / cited) says where a paper is in \
+the reading of it. Use it when asked what to read next, or to triage a pile: \
+propose marking, do not guess that something has been read.
+7. If the request is a question rather than a task, just answer it. Not every \
 message needs a tool call.
-7. Reply in RESPONSE LANGUAGE. Keep it short: the proposed changes are listed \
+8. Reply in RESPONSE LANGUAGE. Keep it short: the proposed changes are listed \
 in the interface, so do not repeat them all in prose."""
 
 # Read tools run for real; write tools are recorded and answered with a stub.
@@ -154,9 +157,30 @@ TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "set_reading_state",
+            "description": (
+                "Propose marking where papers are in the reading of them: "
+                "toread, reading, read, cited, or empty to clear the mark."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "paper_ids": {"type": "array", "items": {"type": "integer"}},
+                    "state": {
+                        "type": "string",
+                        "enum": ["toread", "reading", "read", "cited", ""],
+                    },
+                },
+                "required": ["paper_ids", "state"],
+            },
+        },
+    },
 ]
 
-_WRITES = {"create_folder", "move_papers", "add_tags", "write_note"}
+_WRITES = {"create_folder", "move_papers", "add_tags", "write_note", "set_reading_state"}
 
 
 def _papers_for_prompt(rows: list[dict]) -> list[dict]:
@@ -170,6 +194,7 @@ def _papers_for_prompt(rows: list[dict]) -> list[dict]:
             "journal": r.get("venue", ""),
             "tags": r.get("tags") or [],
             "folder_id": r.get("folder_id"),
+            "read_state": r.get("read_state") or "unset",
             "note": (r.get("notes") or "")[:300],
         }
         for r in rows
@@ -226,6 +251,14 @@ def _stage(name: str, args: dict) -> dict | None:
         ids = [int(i) for i in (args.get("paper_ids") or []) if str(i).lstrip("-").isdigit()]
         tags = [str(t).strip() for t in (args.get("tags") or []) if str(t).strip()]
         return {"kind": "add_tags", "paper_ids": ids, "tags": tags} if ids and tags else None
+    if name == "set_reading_state":
+        ids = [int(i) for i in (args.get("paper_ids") or []) if str(i).lstrip("-").isdigit()]
+        state = (args.get("state") or "").strip()
+        return (
+            {"kind": "set_reading_state", "paper_ids": ids, "state": state}
+            if ids and state in db.READ_STATES
+            else None
+        )
     if name == "write_note":
         note = (args.get("note") or "").strip()
         paper_id = args.get("paper_id")
@@ -247,6 +280,8 @@ def describe(action: dict) -> str:
         return f"File {len(action['paper_ids'])} paper(s) into “{action['folder']}”"
     if kind == "add_tags":
         return f"Tag {len(action['paper_ids'])} paper(s): {', '.join(action['tags'])}"
+    if kind == "set_reading_state":
+        return f"Mark {len(action['paper_ids'])} paper(s) as {action['state'] or 'unmarked'}"
     if kind == "write_note":
         return f"Write a note on paper {action['paper_id']}"
     return kind or "?"
@@ -334,15 +369,22 @@ async def converse(
 
 
 def apply(user: str, actions: list[dict], team_id: int | None = None) -> dict:
-    """Carry out approved actions. Returns what happened, per action.
+    """Carry out approved actions, recording what would put them back.
 
     Folder names are resolved here rather than in the plan, and creations run
     first, so "make a folder and put these in it" works as one approval. Every
     call is scoped to the user by the db layer, so an action naming someone
     else's paper id fails rather than reaching across libraries.
+
+    The inverse is built from what was actually there a moment before each
+    change, not from what the action assumed — a paper the plan thought was
+    unfiled may have been moved since, and putting it back where it really was
+    is the only undo worth having. A folder is only removed on undo if this run
+    is what created it.
     """
     done: list[str] = []
     failed: list[str] = []
+    inverse: list[dict] = []
 
     def folder_id_for(name: str) -> int | None:
         if not name or name.lower() == "unfiled":
@@ -363,34 +405,127 @@ def apply(user: str, actions: list[dict], team_id: int | None = None) -> dict:
         try:
             if kind == "create_folder":
                 parent = action.get("parent")
+                existed = folder_id_for(action["name"])
                 created = db.create_folder(
                     user, action["name"], team_id, folder_id_for(parent) if parent else None
                 )
+                if created and not existed:
+                    inverse.append({"op": "rmfolder", "folder_id": created["id"]})
                 # A name already in use is the desired end state, not a failure.
-                (done if created or folder_id_for(action["name"]) else failed).append(label)
+                (done if created or existed else failed).append(label)
+
             elif kind == "move_papers":
                 target = action["folder"]
                 fid = folder_id_for(target)
                 if fid is None and target.lower() != "unfiled":
                     failed.append(label)
                     continue
-                moved = sum(
-                    1 for pid in action["paper_ids"]
-                    if db.set_paper_folder(user, int(pid), fid, team_id)
-                )
+                before = db.paper_snapshot(user, action["paper_ids"], team_id)
+                moved = 0
+                for pid in action["paper_ids"]:
+                    if db.set_paper_folder(user, int(pid), fid, team_id):
+                        moved += 1
+                        was = before.get(int(pid), {})
+                        inverse.append(
+                            {"op": "folder", "paper_id": int(pid),
+                             "folder_id": was.get("folder_id")}
+                        )
                 (done if moved else failed).append(label)
+
             elif kind == "add_tags":
-                added = sum(
-                    1 for pid in action["paper_ids"] for tag in action["tags"]
-                    if db.add_tag(user, int(pid), tag, team_id)
-                )
+                before = db.paper_snapshot(user, action["paper_ids"], team_id)
+                added = 0
+                for pid in action["paper_ids"]:
+                    had = set(before.get(int(pid), {}).get("tags") or [])
+                    for tag in action["tags"]:
+                        if db.add_tag(user, int(pid), tag, team_id):
+                            added += 1
+                            # Only remove on undo what was not already there.
+                            if tag not in had:
+                                inverse.append(
+                                    {"op": "untag", "paper_id": int(pid), "tag": tag}
+                                )
                 (done if added else failed).append(label)
+
             elif kind == "write_note":
-                ok = db.set_notes(user, int(action["paper_id"]), action["note"], team_id)
+                pid = int(action["paper_id"])
+                before = db.paper_snapshot(user, [pid], team_id).get(pid, {})
+                ok = db.set_notes(user, pid, action["note"], team_id)
+                if ok:
+                    inverse.append(
+                        {"op": "note", "paper_id": pid, "note": before.get("notes", "")}
+                    )
                 (done if ok else failed).append(label)
+
+            elif kind == "set_reading_state":
+                before = db.paper_snapshot(user, action["paper_ids"], team_id)
+                marked = 0
+                for pid in action["paper_ids"]:
+                    if db.set_read_state(user, int(pid), action["state"], team_id):
+                        marked += 1
+                        inverse.append(
+                            {"op": "state", "paper_id": int(pid),
+                             "state": before.get(int(pid), {}).get("read_state", "")}
+                        )
+                (done if marked else failed).append(label)
+
             else:
                 failed.append(label)
         except Exception:  # noqa: BLE001 - one bad action is not the plan
             failed.append(label)
 
-    return {"applied": len(done), "failed": len(failed), "details": done + failed}
+    undo_id = None
+    if inverse:
+        try:
+            undo_id = db.record_undo(
+                user, team_id, "; ".join(done)[:200] or "library changes", inverse
+            )
+        except Exception:  # noqa: BLE001 - the changes landed; the undo is a bonus
+            undo_id = None
+
+    return {
+        "applied": len(done),
+        "failed": len(failed),
+        "details": done + failed,
+        "undo_id": undo_id,
+    }
+
+
+def undo(user: str, undo_id: int) -> dict:
+    """Put the library back. Returns how much of it went back.
+
+    Applied in reverse, so a folder created and filled in one plan is emptied
+    before it is removed — a folder still holding papers would refuse to go, or
+    worse, take them with it.
+    """
+    record = db.get_undo(user, undo_id)
+    if record is None:
+        return {"reverted": 0, "failed": 0, "missing": True}
+    if record.get("undone_at"):
+        return {"reverted": 0, "failed": 0, "already": True}
+
+    team_id = record.get("team_id")
+    reverted = 0
+    failed = 0
+    for op in reversed(record["inverse"]):
+        kind = op.get("op")
+        try:
+            if kind == "folder":
+                ok = db.set_paper_folder(user, op["paper_id"], op["folder_id"], team_id)
+            elif kind == "note":
+                ok = db.set_notes(user, op["paper_id"], op["note"], team_id)
+            elif kind == "untag":
+                ok = db.remove_tag(user, op["paper_id"], op["tag"], team_id)
+            elif kind == "state":
+                ok = db.set_read_state(user, op["paper_id"], op["state"], team_id)
+            elif kind == "rmfolder":
+                ok = db.delete_folder(user, op["folder_id"], team_id)
+            else:
+                ok = False
+        except Exception:  # noqa: BLE001
+            ok = False
+        reverted += bool(ok)
+        failed += not ok
+
+    db.mark_undone(user, undo_id)
+    return {"reverted": reverted, "failed": failed}

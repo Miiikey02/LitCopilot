@@ -21,6 +21,7 @@ const ICONS = {
   move_papers: 'library',
   add_tags: 'star',
   write_note: 'note',
+  set_reading_state: 'bookOpen',
 }
 
 function ActionList({ actions, applied, busy, onApply, onDismiss }) {
@@ -38,6 +39,12 @@ function ActionList({ actions, applied, busy, onApply, onDismiss }) {
     }
     if (a.kind === 'add_tags') {
       return t('actAddTags', { n: a.paper_ids.length, tags: (a.tags || []).join('、') })
+    }
+    if (a.kind === 'set_reading_state') {
+      return t('actSetState', {
+        n: a.paper_ids.length,
+        state: a.state ? t(`state_${a.state}`) : t('stateUnset'),
+      })
     }
     if (a.kind === 'write_note') return t('actWriteNote')
     return a.kind
@@ -157,6 +164,24 @@ export default function LibrarianPanel({ teamId, onClose, onChanged }) {
     }
   }
 
+  const revert = async (index) => {
+    const undoId = turns[index]?.result?.undo_id
+    if (!undoId) return
+    setApplying(index)
+    setError('')
+    try {
+      await api.undoLibrary(undoId)
+      setTurns((prev) =>
+        prev.map((x, i) => (i === index ? { ...x, reverted: true } : x))
+      )
+      onChanged?.()
+    } catch {
+      setError(t('agentUndoFailed'))
+    } finally {
+      setApplying(-1)
+    }
+  }
+
   const discard = (index) =>
     setTurns((prev) => prev.map((x, i) => (i === index ? { ...x, actions: [] } : x)))
 
@@ -229,6 +254,22 @@ export default function LibrarianPanel({ teamId, onClose, onChanged }) {
                   <p className="mt-1 text-xs text-amber-700">
                     {t('agentSomeFailed', { n: turn.result.failed })}
                   </p>
+                )}
+                {/* Undo is offered right where the change was made, while the
+                    reader is still looking at what it did. Buried in a settings
+                    page it would be found only by someone already alarmed. */}
+                {turn.applied && turn.result?.undo_id && !turn.reverted && (
+                  <button
+                    onClick={() => revert(i)}
+                    disabled={applying === i}
+                    className="mt-1 inline-flex items-center gap-1 text-xs text-slate-500 underline-offset-2 transition-colors hover:text-slate-800 hover:underline disabled:opacity-50"
+                  >
+                    <Icon name="refresh" />
+                    {applying === i ? t('agentUndoing') : t('agentUndo')}
+                  </button>
+                )}
+                {turn.reverted && (
+                  <p className="mt-1 text-xs text-slate-500">{t('agentUndone')}</p>
                 )}
               </div>
             )
