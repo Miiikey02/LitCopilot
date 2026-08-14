@@ -176,7 +176,7 @@ async def _get(client: httpx.AsyncClient, url: str, params: dict, tries: int = 3
             # Carry the code and the first of the body: "did not answer" is
             # true of a 429, a 403 and a network drop alike, and they call for
             # completely different responses.
-            raise httpx.HTTPError(f"HTTP {r.status_code}: {r.text[:120]}")
+            raise httpx.HTTPError(f"HTTP {r.status_code}: {r.text[:400]}")
         return r.json()
     raise httpx.HTTPError(last or "OpenAlex did not answer")
 
@@ -322,7 +322,7 @@ async def _batch_works(
             out.extend(data.get("results") or [])
         except (httpx.HTTPError, ValueError) as exc:
             failed += 1
-            _batch_works.last_error = str(exc)[:120]
+            _batch_works.last_error = str(exc)[:400]
             continue
     return out, failed
 
@@ -455,5 +455,5 @@ async def connected_papers(seed: dict, limit: int = 28) -> dict:
         # asks for a different call entirely.
         out["detail"] = (
             getattr(_batch_works, "last_error", "") or why or "unknown"
-        )[:160]
+        )[:400]
     return out
