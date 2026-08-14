@@ -134,6 +134,11 @@ export const libraryImport = async (content, filename, folderId, teamId) => {
   }
   return r.json()
 }
+// Which of these local PDFs the library already holds. Only a DOI and a title
+// are sent — never the file, never a path on the reader's machine.
+export const matchLocal = (files, teamId) =>
+  jsonPost('/api/library/match-local', { files, team_id: teamId ?? null })
+
 // --- The librarian agent ---
 // It answers with proposals, never edits. Applying them is the second call,
 // made only after the reader has seen what it wants to do.

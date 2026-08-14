@@ -9,6 +9,7 @@ import CiteButton from './CiteButton'
 import BulkExport from './BulkExport'
 import ImportPanel from './ImportPanel'
 import LibrarianPanel from './LibrarianPanel'
+import LocalFolderPanel from './LocalFolderPanel'
 import WorkspaceBar from './WorkspaceBar'
 
 const sourceLabel = {
@@ -441,6 +442,7 @@ export default function LibraryTab() {
   const [activeTeam, setActiveTeam] = useState(null)
   const [importing, setImporting] = useState(false)
   const [librarian, setLibrarian] = useState(false)
+  const [localFolder, setLocalFolder] = useState(false)
 
   const [loadError, setLoadError] = useState('')
 
@@ -557,7 +559,22 @@ export default function LibraryTab() {
             <Icon name="sparkles" className="text-blue-500" />
             {t('agentOpen')}
           </button>
+          <button
+            onClick={() => setLocalFolder(true)}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-700 transition-colors hover:border-blue-300 hover:bg-white hover:text-blue-700"
+          >
+            <Icon name="folder" />
+            {t('localOpen')}
+          </button>
         </div>
+
+        {localFolder && (
+          <LocalFolderPanel
+            teamId={activeTeam}
+            onClose={() => setLocalFolder(false)}
+            onChanged={load}
+          />
+        )}
 
         {librarian && (
           <LibrarianPanel

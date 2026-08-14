@@ -1,6 +1,8 @@
 """Library endpoints: saved papers, tagging, and search history."""
 from __future__ import annotations
 
+import re
+
 from fastapi import APIRouter, Depends, HTTPException
 
 from .. import db
@@ -20,6 +22,9 @@ from ..schemas import (
     LibrarianApply,
     LibrarianRequest,
     LibrarianResponse,
+    LocalMatch,
+    LocalMatchRequest,
+    LocalMatchResponse,
     MoveToFolder,
     NotesUpdate,
     SavedPaper,
@@ -190,6 +195,65 @@ async def library_chat(
     return LibraryChatResponse(
         answer=answer, paper_count=len(papers), conversation_id=conversation_id
     )
+
+
+# --- Matching a local folder of PDFs against the library -------------------
+
+# Titles are compared with punctuation, case and spacing removed. Publishers
+# disagree about hyphens, capitalisation and trailing full stops for the same
+# paper, and a PDF's own metadata title is often the copy-editor's version.
+_TITLE_NOISE = re.compile(r"[^a-z0-9\u4e00-\u9fff]+")
+
+
+def _norm(title: str) -> str:
+    return _TITLE_NOISE.sub("", (title or "").lower())[:120]
+
+
+@router.post("/library/match-local", response_model=LocalMatchResponse)
+def match_local(
+    req: LocalMatchRequest, user: str = Depends(current_user)
+) -> LocalMatchResponse:
+    """Say which of these local PDFs are papers the library already holds.
+
+    Only what the browser could read out of each file is sent — a DOI and a
+    title. No path, no bytes: the folder stays on the reader's machine and the
+    server is told nothing about where it is.
+    """
+    papers = _guard(db.list_saved, user, team_id=req.team_id)
+    folders = {
+        f["id"]: f["name"] for f in _guard(db.list_folders, user, req.team_id)
+        if f["id"] is not None
+    }
+    by_doi = {(p.get("doi") or "").lower(): p for p in papers if p.get("doi")}
+    by_title = {_norm(p.get("title")): p for p in papers if p.get("title")}
+
+    def card(paper: dict, key: str = "", matched_on: str = "") -> LocalMatch:
+        return LocalMatch(
+            key=key,
+            paper_id=paper["id"],
+            citation_key=paper.get("citation_key") or "",
+            title=paper.get("title") or "",
+            year=paper.get("year"),
+            folder=folders.get(paper.get("folder_id"), ""),
+            matched_on=matched_on,
+        )
+
+    matches: list[LocalMatch] = []
+    accounted: set[int] = set()
+    for f in req.files:
+        paper = by_doi.get((f.doi or "").lower()) if f.doi else None
+        how = "doi" if paper else ""
+        if paper is None and f.title:
+            paper = by_title.get(_norm(f.title))
+            how = "title" if paper else ""
+        if paper is None:
+            matches.append(LocalMatch(key=f.key))
+            continue
+        accounted.add(paper["id"])
+        matches.append(card(paper, f.key, how))
+
+    missing = [card(p) for p in papers if p["id"] not in accounted]
+    return LocalMatchResponse(matches=matches, missing=missing)
 
 
 # --- The librarian agent --------------------------------------------------

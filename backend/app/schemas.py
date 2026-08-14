@@ -157,6 +157,36 @@ class LibraryChatResponse(BaseModel):
 # --- Saved conversations ---
 
 
+class LocalFile(BaseModel):
+    """One PDF found in the reader's own folder, as far as it identified itself."""
+
+    key: str  # the client's handle for this file (its path); opaque to us
+    doi: str = ""
+    title: str = ""
+
+
+class LocalMatch(BaseModel):
+    key: str = ""
+    paper_id: Optional[int] = None
+    citation_key: str = ""
+    title: str = ""
+    year: Optional[int] = None
+    folder: str = ""  # the Gaze folder it is filed in, by name
+    matched_on: str = ""  # "doi" | "title" | ""
+
+
+class LocalMatchRequest(BaseModel):
+    files: list[LocalFile] = []
+    team_id: Optional[int] = None
+
+
+class LocalMatchResponse(BaseModel):
+    matches: list[LocalMatch] = []
+    # Papers in the library that no local file accounted for. The other half of
+    # the question: not only "what is this file" but "what am I missing".
+    missing: list[LocalMatch] = []
+
+
 class LibrarianRequest(BaseModel):
     """Ask the agent to organise, annotate or explain the library."""
 
