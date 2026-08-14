@@ -1186,6 +1186,13 @@ async def paper_ask(
     return AskResponse(answer=answer, conversation_id=conversation_id)
 
 
+# A built graph is worth keeping: it costs several OpenAlex calls, it does not
+# change hour to hour, and every repeat view is one more chance to be throttled.
+_GRAPH_CACHE: "OrderedDict[str, tuple[float, dict]]" = OrderedDict()
+_GRAPH_TTL = 6 * 3600.0
+_GRAPH_MAX = 200
+
+
 @app.post("/api/paper/connected", response_model=ConnectedResponse)
 async def paper_connected(req: PaperRequest) -> ConnectedResponse:
     """The similarity graph around one paper (bibliographic coupling)."""
@@ -1195,13 +1202,29 @@ async def paper_connected(req: PaperRequest) -> ConnectedResponse:
     identifier = _indexed_identifier(req.identifier)
     if identifier is None:
         return ConnectedResponse(nodes=[], edges=[], warning="upload has no citation record")
+    cached = _GRAPH_CACHE.get(identifier)
+    if cached is not None and monotonic() - cached[0] <= _GRAPH_TTL:
+        _GRAPH_CACHE.move_to_end(identifier)
+        return ConnectedResponse(**cached[1])
+
     work = await resolve_work(identifier)
     if work is None:
         raise HTTPException(status_code=404, detail="Paper not found")
     try:
         graph = await connected_papers(work)
-    except Exception:  # noqa: BLE001
-        return ConnectedResponse(nodes=[], edges=[], warning="graph unavailable")
+    except Exception as exc:  # noqa: BLE001
+        return ConnectedResponse(
+            nodes=[], edges=[], warning="graph unavailable",
+            detail=f"{type(exc).__name__}: {exc}"[:160],
+        )
+    # Cache only what is worth keeping. A graph that came back starved is a
+    # snapshot of a bad minute, and caching it would make one throttled request
+    # look like a property of the paper for the next hour.
+    if not graph.get("warning"):
+        _GRAPH_CACHE[identifier] = (monotonic(), graph)
+        _GRAPH_CACHE.move_to_end(identifier)
+        while len(_GRAPH_CACHE) > _GRAPH_MAX:
+            _GRAPH_CACHE.popitem(last=False)
     return ConnectedResponse(**graph)
 
 

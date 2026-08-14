@@ -156,15 +156,29 @@ async def _get(client: httpx.AsyncClient, url: str, params: dict, tries: int = 3
     plainly in the index did not exist.
     """
     delay = 0.6
+    last = ""
     for attempt in range(tries):
-        r = await client.get(url, params=_params(params), timeout=25)
+        try:
+            r = await client.get(url, params=_params(params), timeout=25)
+        except httpx.HTTPError as exc:
+            last = type(exc).__name__
+            if attempt < tries - 1:
+                await asyncio.sleep(delay)
+                delay *= 2
+                continue
+            raise
         if r.status_code in (429, 500, 502, 503, 504) and attempt < tries - 1:
+            last = f"HTTP {r.status_code}"
             await asyncio.sleep(delay)
             delay *= 2
             continue
-        r.raise_for_status()
+        if r.status_code >= 400:
+            # Carry the code and the first of the body: "did not answer" is
+            # true of a 429, a 403 and a network drop alike, and they call for
+            # completely different responses.
+            raise httpx.HTTPError(f"HTTP {r.status_code}: {r.text[:120]}")
         return r.json()
-    raise httpx.HTTPError("OpenAlex did not answer")
+    raise httpx.HTTPError(last or "OpenAlex did not answer")
 
 
 def _to_paper(item: dict) -> Paper:
@@ -292,6 +306,7 @@ async def _batch_works(
     """
     out: list[dict] = []
     failed = 0
+    _batch_works.last_error = ""
     for i in range(0, len(ids), 40):
         chunk = [w.rsplit("/", 1)[-1] for w in ids[i : i + 40]]
         try:
@@ -305,8 +320,9 @@ async def _batch_works(
                 },
             )
             out.extend(data.get("results") or [])
-        except (httpx.HTTPError, ValueError):
+        except (httpx.HTTPError, ValueError) as exc:
             failed += 1
+            _batch_works.last_error = str(exc)[:120]
             continue
     return out, failed
 
@@ -326,6 +342,7 @@ async def connected_papers(seed: dict, limit: int = 28) -> dict:
     async with httpx.AsyncClient() as client:
         citing: list[dict] = []
         citing_failed = False
+        why = ""
         try:
             data = await _get(
                 client,
@@ -338,9 +355,10 @@ async def connected_papers(seed: dict, limit: int = 28) -> dict:
                 },
             )
             citing = data.get("results") or []
-        except (httpx.HTTPError, ValueError):
+        except (httpx.HTTPError, ValueError) as exc:
             citing = []
             citing_failed = True
+            why = str(exc)[:120]
 
         fetched, batches_failed = await _batch_works(client, refs + related)
 
@@ -432,4 +450,10 @@ async def connected_papers(seed: dict, limit: int = 28) -> dict:
     out = {"nodes": nodes, "edges": edges}
     if starved:
         out["warning"] = "neighbours unavailable"
+        # Not shown to the reader; it is how the cause gets out of a deployed
+        # instance whose logs are not to hand. A 429 asks for patience, a 403
+        # asks for a different call entirely.
+        out["detail"] = (
+            getattr(_batch_works, "last_error", "") or why or "unknown"
+        )[:160]
     return out

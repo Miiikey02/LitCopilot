@@ -94,6 +94,11 @@ export const UPDATES = [
         en: 'Skills: write down how you like things done and the librarian follows it — folders named by grant number, every note stating whether a study was in humans or animals, reviews kept separately. You do not have to phrase it well: describe it in plain language and it is drafted into a skill for you to edit, or press "save this as a skill" after a run that went the way you wanted. In a lab workspace a skill can be shared with everyone, which is how a group writes its conventions down once. A skill changes how work is done, never the rules: changes still need approval, papers are still never invented, retractions are still flagged.',
       },
       {
+        kind: 'change',
+        zh: '关联图谱建好后会缓存几小时：再打开同一篇是秒开，也少一次被数据源限流的机会。取数失败的图不会被缓存，免得一次限流变成这篇文献的长期答案。',
+        en: 'A built paper map is cached for a few hours: opening the same paper again is instant, and it is one less chance to be rate-limited. A map that failed to fetch is never cached, so one throttled minute cannot become the paper\u2019s standing answer.',
+      },
+      {
         kind: 'fix',
         zh: '关联图谱取不到数据时会说明原因。此前数据源限流的结果和「这篇文献没有关联研究」长得一模一样——都是一张空图；现在会告诉你是限流、过一会儿再试。',
         en: 'When the paper map cannot fetch neighbours it now says so. A rate-limited fetch used to look identical to a paper with no related work — both an empty graph. It now explains that the data source is throttling us and to retry shortly.',

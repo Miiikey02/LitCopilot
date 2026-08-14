@@ -552,6 +552,10 @@ class ConnectedResponse(BaseModel):
     nodes: list[GraphNode] = []
     edges: list[GraphEdge] = []
     warning: Optional[str] = None
+    # Why it was unavailable, in the index's own words. Diagnostic, not shown:
+    # a deployed instance whose logs are not to hand still has to be able to
+    # say whether it was throttled, blocked, or simply unable to connect.
+    detail: Optional[str] = None
 
 
 class GraphEvidenceRequest(BaseModel):
