@@ -16,6 +16,10 @@ from ..schemas import (
     HistoryItem,
     LibraryChatRequest,
     LibraryChatResponse,
+    LibrarianApplied,
+    LibrarianApply,
+    LibrarianRequest,
+    LibrarianResponse,
     MoveToFolder,
     NotesUpdate,
     SavedPaper,
@@ -27,7 +31,7 @@ from ..schemas import (
     TeamJoin,
     TeamMember,
 )
-from ..services import llm_service
+from ..services import librarian, llm_service
 
 router = APIRouter(prefix="/api", tags=["library"])
 
@@ -186,6 +190,58 @@ async def library_chat(
     return LibraryChatResponse(
         answer=answer, paper_count=len(papers), conversation_id=conversation_id
     )
+
+
+# --- The librarian agent --------------------------------------------------
+
+
+@router.post("/library/agent", response_model=LibrarianResponse)
+async def library_agent(
+    req: LibrarianRequest, user: str = Depends(current_user)
+) -> LibrarianResponse:
+    """Ask the agent to organise or annotate the library.
+
+    It returns proposals, never edits. Applying them is a second, explicit
+    call — see /library/agent/apply.
+    """
+    message = req.message.strip()
+    if not message:
+        raise HTTPException(status_code=400, detail="Nothing to do")
+    lang = req.lang or llm_service.detect_language(message)
+    if not llm_service.has_llm_key():
+        return LibrarianResponse(
+            warning=(
+                "未配置 DEEPSEEK_API_KEY，整理助手不可用。"
+                if lang == "zh"
+                else "DEEPSEEK_API_KEY is not configured; the librarian is unavailable."
+            )
+        )
+    try:
+        result = await librarian.converse(
+            user, message, lang, req.history, req.team_id
+        )
+    except db.NotAMember:
+        raise HTTPException(status_code=403, detail="Not a member of this team")
+    except Exception:  # noqa: BLE001
+        return LibrarianResponse(
+            warning=(
+                "整理助手暂时不可用，请稍后重试。"
+                if lang == "zh"
+                else "The librarian is unavailable right now. Please retry."
+            )
+        )
+    return LibrarianResponse(**result)
+
+
+@router.post("/library/agent/apply", response_model=LibrarianApplied)
+def library_agent_apply(
+    req: LibrarianApply, user: str = Depends(current_user)
+) -> LibrarianApplied:
+    """Carry out the proposals the reader approved."""
+    actions = [a.model_dump() for a in req.actions]
+    if not actions:
+        return LibrarianApplied()
+    return LibrarianApplied(**_guard(librarian.apply, user, actions, req.team_id))
 
 
 # --- Saved conversations ---------------------------------------------------

@@ -75,6 +75,11 @@ export const UPDATES = [
       },
       {
         kind: 'feature',
+        zh: '文库多了一个「整理助手」：可以让它按主题分文件夹、把文献归档、打标签，或者替你写每篇文献的笔记（这篇做了什么、发现了什么、为什么值得留着）。它会先读一遍你保存的文献再给方案，所有改动都先列出来——点「应用」之前，文库不会动。',
+        en: 'A librarian in 我的文库: ask it to sort papers into folders by topic, file them, tag them, or write the note for each one — what the study did, what it found, why it is worth keeping. It reads your saved papers first, then lists every change it wants to make. Nothing happens to your library until you press Apply.',
+      },
+      {
+        kind: 'feature',
         zh: '左侧的检索记录可以搜索了：不只搜标题，也搜你问过的问题、对话里的每一句回答，以及那次检索引用过的文献标题——命中的那句会显示出来并高亮。中英文都可以。',
         en: 'The history in the left rail is searchable — not just titles, but the questions you asked, every line of the answers, and the titles of the papers each search cited. The matching line is shown with the term highlighted. Works in Chinese and English.',
       },

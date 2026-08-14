@@ -8,6 +8,7 @@ import NotePanel from './NotePanel'
 import CiteButton from './CiteButton'
 import BulkExport from './BulkExport'
 import ImportPanel from './ImportPanel'
+import LibrarianPanel from './LibrarianPanel'
 import WorkspaceBar from './WorkspaceBar'
 
 const sourceLabel = {
@@ -439,6 +440,7 @@ export default function LibraryTab() {
   // null = personal library; otherwise the active team's id (as a string).
   const [activeTeam, setActiveTeam] = useState(null)
   const [importing, setImporting] = useState(false)
+  const [librarian, setLibrarian] = useState(false)
 
   const [loadError, setLoadError] = useState('')
 
@@ -538,13 +540,32 @@ export default function LibraryTab() {
             beside the PDF drop because both answer "how do I get my papers in
             here" — the difference is only whether you have one or three
             hundred. */}
-        <button
-          onClick={() => setImporting(true)}
-          className="mb-4 inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-700 transition-colors hover:border-blue-300 hover:bg-white hover:text-blue-700"
-        >
-          <Icon name="download" />
-          {t('importOpen')}
-        </button>
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <button
+            onClick={() => setImporting(true)}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-700 transition-colors hover:border-blue-300 hover:bg-white hover:text-blue-700"
+          >
+            <Icon name="download" />
+            {t('importOpen')}
+          </button>
+          {/* The agent sits with the other ways of getting the shelf in order,
+              because that is what it is for — not a chat bolted onto a list. */}
+          <button
+            onClick={() => setLibrarian(true)}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-700 transition-colors hover:border-blue-300 hover:bg-white hover:text-blue-700"
+          >
+            <Icon name="sparkles" className="text-blue-500" />
+            {t('agentOpen')}
+          </button>
+        </div>
+
+        {librarian && (
+          <LibrarianPanel
+            teamId={activeTeam}
+            onClose={() => setLibrarian(false)}
+            onChanged={load}
+          />
+        )}
 
         {importing && (
           <ImportPanel

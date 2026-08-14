@@ -146,22 +146,27 @@ export default function Sidebar({
           {/* Searching the rail searches inside the threads, not just their
               titles — what you remember about an old search is usually a paper
               you saw or a phrase in the answer, not the words you typed. */}
-          <div className="relative px-3 pb-2">
+          {/* text-xs on the wrapper, not just the input: the icons size
+              themselves in em, and inside a plain div they inherit the rail's
+              16px — a 17px magnifier beside 12px text, which is what made this
+              look like a form field dropped into a sidebar. Inset matches the
+              section heading above it. */}
+          <div className="relative px-4 pb-2 text-xs">
             <Icon
               name="search"
-              className="pointer-events-none absolute left-5 top-1/2 -translate-y-1/2 text-slate-400"
+              className="pointer-events-none absolute left-6 top-1/2 -translate-y-1/2 text-slate-400"
             />
             <input
               value={historyQuery || ''}
               onChange={(e) => onHistoryQuery?.(e.target.value)}
               placeholder={t('historySearchPlaceholder')}
-              className="w-full rounded-lg border border-slate-200 bg-slate-50 py-1.5 pl-7 pr-7 text-xs text-slate-700 outline-none transition-colors placeholder:text-slate-400 focus:border-blue-300 focus:bg-white"
+              className="w-full rounded-md border border-slate-200 bg-slate-50 py-1 pl-6 pr-6 text-xs text-slate-700 outline-none transition-colors placeholder:text-slate-400 focus:border-blue-300 focus:bg-white"
             />
             {historyQuery && (
               <button
                 onClick={() => onHistoryQuery?.('')}
                 title={t('clear')}
-                className="absolute right-5 top-1/2 -translate-y-1/2 rounded p-0.5 text-slate-400 transition-colors hover:text-slate-700"
+                className="absolute right-5 top-1/2 -translate-y-1/2 rounded text-slate-400 transition-colors hover:text-slate-700"
               >
                 <Icon name="x" />
               </button>

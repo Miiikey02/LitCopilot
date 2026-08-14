@@ -157,6 +157,45 @@ class LibraryChatResponse(BaseModel):
 # --- Saved conversations ---
 
 
+class LibrarianRequest(BaseModel):
+    """Ask the agent to organise, annotate or explain the library."""
+
+    message: str
+    team_id: Optional[int] = None
+    lang: Optional[str] = None
+    history: list[dict] = []  # prior [{role, content}] turns, newest last
+
+
+class LibrarianAction(BaseModel):
+    """One proposed change. Nothing here has happened yet."""
+
+    kind: str  # create_folder | move_papers | add_tags | write_note
+    name: str = ""
+    parent: Optional[str] = None
+    folder: str = ""
+    paper_ids: list[int] = []
+    paper_id: Optional[int] = None
+    tags: list[str] = []
+    note: str = ""
+
+
+class LibrarianResponse(BaseModel):
+    answer: str = ""
+    actions: list[LibrarianAction] = []
+    warning: Optional[str] = None
+
+
+class LibrarianApply(BaseModel):
+    actions: list[LibrarianAction]
+    team_id: Optional[int] = None
+
+
+class LibrarianApplied(BaseModel):
+    applied: int = 0
+    failed: int = 0
+    details: list[str] = []
+
+
 class ConversationSummary(BaseModel):
     id: int
     kind: str  # "search" | "library"

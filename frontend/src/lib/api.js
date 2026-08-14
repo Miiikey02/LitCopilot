@@ -134,6 +134,19 @@ export const libraryImport = async (content, filename, folderId, teamId) => {
   }
   return r.json()
 }
+// --- The librarian agent ---
+// It answers with proposals, never edits. Applying them is the second call,
+// made only after the reader has seen what it wants to do.
+export const libraryAgent = (message, teamId, lang, history = []) =>
+  jsonPost('/api/library/agent', {
+    message,
+    team_id: teamId ?? null,
+    lang: lang || null,
+    history,
+  })
+export const libraryAgentApply = (actions, teamId) =>
+  jsonPost('/api/library/agent/apply', { actions, team_id: teamId ?? null })
+
 export const importStatus = (jobId) => req(`/api/library/import/${jobId}`)
 export const recentImports = () => req('/api/library/imports')
 
