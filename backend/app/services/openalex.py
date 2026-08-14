@@ -281,9 +281,17 @@ async def resolve_work(identifier: str) -> dict | None:
         return None
 
 
-async def _batch_works(client: httpx.AsyncClient, ids: list[str]) -> list[dict]:
-    """Fetch many works by OpenAlex id, in chunks the filter API accepts."""
+async def _batch_works(
+    client: httpx.AsyncClient, ids: list[str]
+) -> tuple[list[dict], int]:
+    """Fetch many works by id. Returns (works, how many chunks failed).
+
+    The failure count matters: a chunk lost to rate limiting used to vanish
+    into a `continue`, and a graph built from nothing looked exactly like a
+    paper with no neighbours.
+    """
     out: list[dict] = []
+    failed = 0
     for i in range(0, len(ids), 40):
         chunk = [w.rsplit("/", 1)[-1] for w in ids[i : i + 40]]
         try:
@@ -298,8 +306,9 @@ async def _batch_works(client: httpx.AsyncClient, ids: list[str]) -> list[dict]:
             )
             out.extend(data.get("results") or [])
         except (httpx.HTTPError, ValueError):
+            failed += 1
             continue
-    return out
+    return out, failed
 
 
 async def connected_papers(seed: dict, limit: int = 28) -> dict:
@@ -316,6 +325,7 @@ async def connected_papers(seed: dict, limit: int = 28) -> dict:
 
     async with httpx.AsyncClient() as client:
         citing: list[dict] = []
+        citing_failed = False
         try:
             data = await _get(
                 client,
@@ -330,8 +340,17 @@ async def connected_papers(seed: dict, limit: int = 28) -> dict:
             citing = data.get("results") or []
         except (httpx.HTTPError, ValueError):
             citing = []
+            citing_failed = True
 
-        fetched = await _batch_works(client, refs + related)
+        fetched, batches_failed = await _batch_works(client, refs + related)
+
+    # Wanted neighbours and got none of them: that is the index refusing us,
+    # not a paper standing alone in the literature. Saying so lets the reader
+    # retry instead of believing a graph that was never built.
+    starved = (
+        bool(refs or related) and not fetched and not citing
+        and (batches_failed or citing_failed)
+    )
 
     by_id: dict[str, dict] = {}
     for w in fetched + citing:
@@ -410,4 +429,7 @@ async def connected_papers(seed: dict, limit: int = 28) -> dict:
         for (a, b), sim in keep.items()
     ]
 
-    return {"nodes": nodes, "edges": edges}
+    out = {"nodes": nodes, "edges": edges}
+    if starved:
+        out["warning"] = "neighbours unavailable"
+    return out

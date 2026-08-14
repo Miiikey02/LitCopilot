@@ -1235,7 +1235,8 @@ async def paper_evidence(
 
         try:
             async with _httpx.AsyncClient() as client:
-                neighbours = [_oa_to_paper(w) for w in await _batch_works(client, ids)]
+                works, _failed = await _batch_works(client, ids)
+                neighbours = [_oa_to_paper(w) for w in works]
         except Exception:  # noqa: BLE001
             neighbours = []
 

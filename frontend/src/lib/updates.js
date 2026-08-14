@@ -95,6 +95,11 @@ export const UPDATES = [
       },
       {
         kind: 'fix',
+        zh: '关联图谱取不到数据时会说明原因。此前数据源限流的结果和「这篇文献没有关联研究」长得一模一样——都是一张空图；现在会告诉你是限流、过一会儿再试。',
+        en: 'When the paper map cannot fetch neighbours it now says so. A rate-limited fetch used to look identical to a paper with no related work — both an empty graph. It now explains that the data source is throttling us and to retry shortly.',
+      },
+      {
+        kind: 'fix',
         zh: '整理助手现在看得到撤稿与「编辑关注」标记。此前它看不到：被问「有没有问题文献」时会说文库很干净，还会把撤稿论文列进待读、给它写「值得保留作为证据」的笔记。现在它会指名道姓地把这些文献点出来，并说明不能作为证据引用。',
         en: 'The librarian can now see retraction and expression-of-concern flags. It could not before: asked whether anything in the library was problematic it would report the shelf clean, queue a retracted paper for reading, and write a note calling it worth keeping as evidence. It now names such papers and says plainly that they cannot be cited as evidence.',
       },

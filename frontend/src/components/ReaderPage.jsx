@@ -570,7 +570,7 @@ export default function ReaderPage() {
                 {graph?.loading && (
                   <p className="text-sm text-slate-400">{t('buildingGraph')}</p>
                 )}
-                {graph?.nodes?.length > 0 && (
+                {graph?.nodes?.length > 1 && (
                   <>
                     <p className="mb-3 text-xs text-slate-400">{t('graphExplain')}</p>
                     <PaperGraph
@@ -580,9 +580,19 @@ export default function ReaderPage() {
                     />
                   </>
                 )}
-                {graph && !graph.loading && !graph.nodes?.length && (
-                  <p className="text-sm text-slate-400">{t('graphEmpty')}</p>
+                {/* A graph starved by rate limiting used to look exactly like
+                    a paper with no neighbours. It is worth telling the two
+                    apart: one is a fact about the paper, the other is worth
+                    retrying in a minute. */}
+                {graph && !graph.loading && graph.warning === 'neighbours unavailable' && (
+                  <p className="text-sm leading-6 text-amber-700">{t('graphThrottled')}</p>
                 )}
+                {graph &&
+                  !graph.loading &&
+                  !graph.nodes?.length &&
+                  graph.warning !== 'neighbours unavailable' && (
+                    <p className="text-sm text-slate-400">{t('graphEmpty')}</p>
+                  )}
               </div>
             )}
 
