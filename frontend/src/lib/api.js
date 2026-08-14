@@ -139,15 +139,30 @@ export const libraryImport = async (content, filename, folderId, teamId) => {
 export const matchLocal = (files, teamId) =>
   jsonPost('/api/library/match-local', { files, team_id: teamId ?? null })
 
+// --- Skills: the user's own conventions, written down once ---
+export const listSkills = (teamId) => req(`/api/skills${ws({}, teamId)}`)
+export const createSkill = (skill) => jsonPost('/api/skills', skill)
+export const updateSkill = (id, fields) =>
+  req(`/api/skills/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(fields),
+  })
+export const deleteSkill = (id) => req(`/api/skills/${id}`, { method: 'DELETE' })
+// Describe what you want — or paste what just worked — and get a skill back.
+export const draftSkill = (description, lang) =>
+  jsonPost('/api/skills/draft', { description, lang: lang || null })
+
 // --- The librarian agent ---
 // It answers with proposals, never edits. Applying them is the second call,
 // made only after the reader has seen what it wants to do.
-export const libraryAgent = (message, teamId, lang, history = []) =>
+export const libraryAgent = (message, teamId, lang, history = [], skillId = null) =>
   jsonPost('/api/library/agent', {
     message,
     team_id: teamId ?? null,
     lang: lang || null,
     history,
+    skill_id: skillId,
   })
 export const libraryAgentApply = (actions, teamId) =>
   jsonPost('/api/library/agent/apply', { actions, team_id: teamId ?? null })

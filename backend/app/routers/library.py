@@ -27,6 +27,11 @@ from ..schemas import (
     LocalMatch,
     LocalMatchRequest,
     LocalMatchResponse,
+    Skill,
+    SkillCreate,
+    SkillDraft,
+    SkillDraftRequest,
+    SkillUpdate,
     MoveToFolder,
     NotesUpdate,
     SavedPaper,
@@ -311,8 +316,11 @@ async def library_agent(
             )
         )
     try:
+        skill = (
+            db.get_skill(user, req.skill_id, req.team_id) if req.skill_id else None
+        )
         result = await librarian.converse(
-            user, message, lang, req.history, req.team_id
+            user, message, lang, req.history, req.team_id, skill
         )
     except db.NotAMember:
         raise HTTPException(status_code=403, detail="Not a member of this team")
@@ -342,6 +350,61 @@ def library_agent_apply(
 def library_undo(undo_id: int, user: str = Depends(current_user)) -> LibraryUndone:
     """Put the library back as it was before that batch of changes."""
     return LibraryUndone(**_guard(librarian.undo, user, undo_id))
+
+
+# --- Skills: the lab's own conventions, written down ------------------------
+
+
+@router.get("/skills", response_model=list[Skill])
+def list_skills(
+    team: int | None = None, user: str = Depends(current_user)
+) -> list[Skill]:
+    return [Skill(**s) for s in _guard(db.list_skills, user, team)]
+
+
+@router.post("/skills", response_model=Skill)
+def create_skill(req: SkillCreate, user: str = Depends(current_user)) -> Skill:
+    made = _guard(
+        db.create_skill, user, req.name, req.description, req.instructions,
+        req.team_id, req.shared,
+    )
+    if made is None:
+        raise HTTPException(
+            status_code=400,
+            detail="技能需要名称和内容，且最多保存 40 个。",
+        )
+    return Skill(**made)
+
+
+@router.patch("/skills/{skill_id}")
+def update_skill(
+    skill_id: int, req: SkillUpdate, user: str = Depends(current_user)
+) -> dict:
+    if not _guard(db.update_skill, user, skill_id, **req.model_dump(exclude_none=True)):
+        raise HTTPException(status_code=404, detail="Skill not found")
+    return {"ok": True}
+
+
+@router.delete("/skills/{skill_id}")
+def delete_skill(skill_id: int, user: str = Depends(current_user)) -> dict:
+    if not _guard(db.delete_skill, user, skill_id):
+        raise HTTPException(status_code=404, detail="Skill not found")
+    return {"ok": True}
+
+
+@router.post("/skills/draft", response_model=SkillDraft)
+async def draft_skill(
+    req: SkillDraftRequest, user: str = Depends(current_user)
+) -> SkillDraft:
+    """Turn a description — or a transcript of what just worked — into a skill."""
+    text = req.description.strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Nothing to draft from")
+    lang = req.lang or llm_service.detect_language(text)
+    try:
+        return SkillDraft(**await librarian.draft_skill(text, lang))
+    except Exception:  # noqa: BLE001
+        raise HTTPException(status_code=503, detail="Could not draft a skill")
 
 
 # --- Saved conversations ---------------------------------------------------

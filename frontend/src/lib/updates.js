@@ -89,6 +89,11 @@ export const UPDATES = [
         en: 'Tidy a local folder: grant Gaze the folder where your PDFs live and it reads each one for its DOI, matches it against your library, and proposes turning `1-s2.0-S00928674…-main.pdf` into “Author, Year - Title.pdf”, filed into sub-folders matching your library. It also tells you which saved papers have no file. Nothing is uploaded — only a DOI and title reach the server — nothing is ever deleted, every change is listed first, and a log is written inside the folder so it can be undone. Chromium browsers (Chrome, Edge) only.',
       },
       {
+        kind: 'feature',
+        zh: '新增「技能」：把你自己的整理习惯写下来，助手照着做——文件夹按课题号命名、笔记必须写清研究对象是人还是动物、综述单独归档……都可以。不用自己琢磨怎么写：用大白话说一遍你的要求，助手会替你整理成一条技能，你再改。助手做得好的那一次，也可以直接点「把这次的做法存成技能」。在实验室工作区里，技能可以共享给全体成员，等于把本实验室的规范写下来一次、所有人照做。技能只影响「怎么做」：所有改动仍然要你确认，仍然不会编造文献，撤稿仍然会被指出来。',
+        en: 'Skills: write down how you like things done and the librarian follows it — folders named by grant number, every note stating whether a study was in humans or animals, reviews kept separately. You do not have to phrase it well: describe it in plain language and it is drafted into a skill for you to edit, or press "save this as a skill" after a run that went the way you wanted. In a lab workspace a skill can be shared with everyone, which is how a group writes its conventions down once. A skill changes how work is done, never the rules: changes still need approval, papers are still never invented, retractions are still flagged.',
+      },
+      {
         kind: 'fix',
         zh: '整理助手现在看得到撤稿与「编辑关注」标记。此前它看不到：被问「有没有问题文献」时会说文库很干净，还会把撤稿论文列进待读、给它写「值得保留作为证据」的笔记。现在它会指名道姓地把这些文献点出来，并说明不能作为证据引用。',
         en: 'The librarian can now see retraction and expression-of-concern flags. It could not before: asked whether anything in the library was problematic it would report the shelf clean, queue a retracted paper for reading, and write a note calling it worth keeping as evidence. It now names such papers and says plainly that they cannot be cited as evidence.',

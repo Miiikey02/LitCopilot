@@ -211,6 +211,30 @@ CREATE TABLE IF NOT EXISTS library_undo (
     undone_at  TIMESTAMPTZ
 );
 
+-- A skill is the lab's own convention, written down once.
+--
+-- No vendor can guess that a group names folders by grant number, or that
+-- every note must record species and sample size. These are instructions, not
+-- code: a skill composes the tools the agent already has, so it adds no
+-- capability and no attack surface, and everything it does still arrives as a
+-- proposal. `description` says when to use it, and is what lets the agent pick
+-- one on its own rather than waiting to be told.
+CREATE TABLE IF NOT EXISTS skills (
+    id          BIGSERIAL PRIMARY KEY,
+    user_id     UUID NOT NULL,
+    team_id     BIGINT REFERENCES teams(id) ON DELETE CASCADE,
+    name        TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    instructions TEXT NOT NULL,
+    -- Shared skills apply to everyone in the workspace, so a PI can set the
+    -- group's conventions once. Personal ones stay personal.
+    shared      BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS skills_user_idx ON skills (user_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS skills_team_idx ON skills (team_id) WHERE team_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS library_undo_user_idx ON library_undo (user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS import_jobs_user_idx ON import_jobs (user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS feedback_created_idx ON feedback (created_at DESC);
@@ -1627,3 +1651,114 @@ def add_feedback(
             (user_id, (email or "").strip()[:200] or None, message[:4000], (context or "")[:400]),
         )
         return True
+
+# --- Skills ---------------------------------------------------------------
+
+MAX_SKILLS = 40
+
+
+def create_skill(
+    user_id: str,
+    name: str,
+    description: str,
+    instructions: str,
+    team_id: int | None = None,
+    shared: bool = False,
+) -> dict | None:
+    name = (name or "").strip()[:80]
+    instructions = (instructions or "").strip()
+    if not name or not instructions:
+        return None
+    with _get_pool().connection() as conn:
+        _assert_member(conn, user_id, team_id)
+        # A cap, because every skill offered to the agent costs prompt space
+        # and makes choosing between them harder.
+        n = conn.execute(
+            "SELECT count(*) AS n FROM skills WHERE user_id = %s", (user_id,)
+        ).fetchone()["n"]
+        if n >= MAX_SKILLS:
+            return None
+        row = conn.execute(
+            """INSERT INTO skills (user_id, team_id, name, description, instructions, shared)
+               VALUES (%s,%s,%s,%s,%s,%s)
+               RETURNING id, name, description, instructions, shared, team_id, updated_at""",
+            (user_id, team_id, name, (description or "").strip()[:300],
+             instructions[:4000], bool(shared and team_id)),
+        ).fetchone()
+    return _skill_row(row)
+
+
+def _skill_row(row: dict) -> dict:
+    return {
+        "id": row["id"],
+        "name": row["name"],
+        "description": row["description"] or "",
+        "instructions": row["instructions"],
+        "shared": bool(row["shared"]),
+        "team_id": row["team_id"],
+        "updated_at": row["updated_at"].isoformat(),
+    }
+
+
+def list_skills(user_id: str, team_id: int | None = None) -> list[dict]:
+    """This person's skills, plus any shared into the workspace they are in."""
+    with _get_pool().connection() as conn:
+        if team_id is None:
+            rows = conn.execute(
+                """SELECT id, name, description, instructions, shared, team_id, updated_at
+                     FROM skills WHERE user_id = %s AND team_id IS NULL
+                    ORDER BY updated_at DESC""",
+                (user_id,),
+            ).fetchall()
+        else:
+            _assert_member(conn, user_id, team_id)
+            rows = conn.execute(
+                """SELECT id, name, description, instructions, shared, team_id, updated_at
+                     FROM skills
+                    WHERE (user_id = %s AND team_id IS NULL)
+                       OR (team_id = %s AND (shared OR user_id = %s))
+                    ORDER BY shared DESC, updated_at DESC""",
+                (user_id, team_id, user_id),
+            ).fetchall()
+    return [_skill_row(r) for r in rows]
+
+
+def get_skill(user_id: str, skill_id: int, team_id: int | None = None) -> dict | None:
+    """One skill, if this person may use it — their own, or shared to them."""
+    with _get_pool().connection() as conn:
+        row = conn.execute(
+            """SELECT s.id, s.name, s.description, s.instructions, s.shared,
+                      s.team_id, s.updated_at
+                 FROM skills s
+                WHERE s.id = %s
+                  AND (s.user_id = %s
+                       OR (s.shared AND s.team_id IS NOT NULL AND EXISTS (
+                             SELECT 1 FROM team_members m
+                              WHERE m.team_id = s.team_id AND m.user_id = %s)))""",
+            (skill_id, user_id, user_id),
+        ).fetchone()
+    return _skill_row(row) if row else None
+
+
+def update_skill(user_id: str, skill_id: int, **fields) -> bool:
+    """Edit a skill. Only its author may; sharing does not grant editing."""
+    allowed = {"name", "description", "instructions", "shared"}
+    sets = {k: v for k, v in fields.items() if k in allowed and v is not None}
+    if not sets:
+        return False
+    assignments = ", ".join(f"{k} = %s" for k in sets)
+    with _get_pool().connection() as conn:
+        cur = conn.execute(
+            f"UPDATE skills SET {assignments}, updated_at = now()"
+            " WHERE id = %s AND user_id = %s",
+            [*sets.values(), skill_id, user_id],
+        )
+        return cur.rowcount > 0
+
+
+def delete_skill(user_id: str, skill_id: int) -> bool:
+    with _get_pool().connection() as conn:
+        cur = conn.execute(
+            "DELETE FROM skills WHERE id = %s AND user_id = %s", (skill_id, user_id)
+        )
+        return cur.rowcount > 0

@@ -189,6 +189,46 @@ class LocalMatchResponse(BaseModel):
     missing: list[LocalMatch] = []
 
 
+class Skill(BaseModel):
+    """A convention the user wrote down, for the agent to follow."""
+
+    id: int
+    name: str
+    description: str = ""  # when to use it — also what lets the agent pick it
+    instructions: str
+    shared: bool = False
+    team_id: Optional[int] = None
+    updated_at: str = ""
+
+
+class SkillCreate(BaseModel):
+    name: str
+    description: str = ""
+    instructions: str
+    team_id: Optional[int] = None
+    shared: bool = False
+
+
+class SkillUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    instructions: Optional[str] = None
+    shared: Optional[bool] = None
+
+
+class SkillDraftRequest(BaseModel):
+    """Describe what you want, or paste what just worked; get a skill back."""
+
+    description: str
+    lang: Optional[str] = None
+
+
+class SkillDraft(BaseModel):
+    name: str = ""
+    description: str = ""
+    instructions: str = ""
+
+
 class LibrarianRequest(BaseModel):
     """Ask the agent to organise, annotate or explain the library."""
 
@@ -196,6 +236,8 @@ class LibrarianRequest(BaseModel):
     team_id: Optional[int] = None
     lang: Optional[str] = None
     history: list[dict] = []  # prior [{role, content}] turns, newest last
+    # A saved convention to follow this turn. None uses the base behaviour.
+    skill_id: Optional[int] = None
 
 
 class LibrarianAction(BaseModel):

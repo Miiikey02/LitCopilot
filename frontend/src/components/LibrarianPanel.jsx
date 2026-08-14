@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import * as api from '../lib/api'
 import AnswerText from './AnswerText'
 import Icon from './Icon'
+import SkillsPanel from './SkillsPanel'
 
 // An agent that can tidy the library, rather than only describe it.
 //
@@ -103,6 +104,11 @@ export default function LibrarianPanel({ teamId, onClose, onChanged }) {
   const [busy, setBusy] = useState(false)
   const [applying, setApplying] = useState(-1)
   const [error, setError] = useState('')
+  // The convention to work by this turn. Null is the base behaviour.
+  const [skills, setSkills] = useState([])
+  const [skillId, setSkillId] = useState(null)
+  const [managing, setManaging] = useState(false)
+  const [seedSkill, setSeedSkill] = useState(null)
   const box = useRef(null)
   const area = useRef(null)
 
@@ -117,6 +123,19 @@ export default function LibrarianPanel({ teamId, onClose, onChanged }) {
     box.current?.scrollTo({ top: box.current.scrollHeight })
   }, [turns, busy])
 
+  const loadSkills = async () => {
+    try {
+      setSkills(await api.listSkills(teamId))
+    } catch {
+      /* skills are optional; the agent works without them */
+    }
+  }
+
+  useEffect(() => {
+    loadSkills()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [teamId])
+
   const ask = async (text) => {
     const message = (text ?? input).trim()
     if (!message || busy) return
@@ -128,7 +147,7 @@ export default function LibrarianPanel({ teamId, onClose, onChanged }) {
       .map((x) => ({ role: x.role, content: x.content }))
     setTurns((prev) => [...prev, { role: 'user', content: message }])
     try {
-      const r = await api.libraryAgent(message, teamId, i18n.language, history)
+      const r = await api.libraryAgent(message, teamId, i18n.language, history, skillId)
       setTurns((prev) => [
         ...prev,
         {
@@ -180,6 +199,21 @@ export default function LibrarianPanel({ teamId, onClose, onChanged }) {
     } finally {
       setApplying(-1)
     }
+  }
+
+  // The lowest-friction way to write a skill is not to write one: point at a
+  // run that went well and let it be described from that.
+  const saveAsSkill = (index) => {
+    const turn = turns[index]
+    const asked = turns[index - 1]?.content || ''
+    const did = (turn.actions || []).map((a) => JSON.stringify(a)).join('\n')
+    setSeedSkill({
+      name: '',
+      description: '',
+      instructions: '',
+      _from: `${t('skillFromRunPrefix')}\n\n${asked}\n\n${turn.content || ''}\n\n${did}`,
+    })
+    setManaging(true)
   }
 
   const discard = (index) =>
@@ -271,6 +305,15 @@ export default function LibrarianPanel({ teamId, onClose, onChanged }) {
                 {turn.reverted && (
                   <p className="mt-1 text-xs text-slate-500">{t('agentUndone')}</p>
                 )}
+                {turn.applied && !turn.reverted && (
+                  <button
+                    onClick={() => saveAsSkill(i)}
+                    className="mt-1 ml-3 inline-flex items-center gap-1 text-xs text-slate-500 underline-offset-2 transition-colors hover:text-blue-700 hover:underline"
+                  >
+                    <Icon name="flask" />
+                    {t('skillSaveThis')}
+                  </button>
+                )}
               </div>
             )
           )}
@@ -282,6 +325,46 @@ export default function LibrarianPanel({ teamId, onClose, onChanged }) {
         </div>
 
         <div className="border-t border-slate-100 p-3">
+          {/* Which convention to work by. Off by default: the base behaviour is
+              what most requests want, and a skill silently in force would be a
+              surprise the next time the agent did something unexpected. */}
+          <div className="mb-2 flex flex-wrap items-center gap-1.5">
+            <span className="text-xs text-slate-400">{t('skillUsing')}</span>
+            <button
+              onClick={() => setSkillId(null)}
+              className={`rounded-full border px-2 py-0.5 text-xs transition-colors ${
+                skillId === null
+                  ? 'border-slate-900 bg-slate-900 text-white'
+                  : 'border-slate-200 text-slate-600 hover:border-slate-300'
+              }`}
+            >
+              {t('skillNone')}
+            </button>
+            {skills.map((s2) => (
+              <button
+                key={s2.id}
+                onClick={() => setSkillId(s2.id)}
+                title={s2.description}
+                className={`max-w-[12rem] truncate rounded-full border px-2 py-0.5 text-xs transition-colors ${
+                  skillId === s2.id
+                    ? 'border-blue-600 bg-blue-50 text-blue-700'
+                    : 'border-slate-200 text-slate-600 hover:border-blue-300'
+                }`}
+              >
+                {s2.name}
+              </button>
+            ))}
+            <button
+              onClick={() => {
+                setSeedSkill(null)
+                setManaging(true)
+              }}
+              className="rounded-full border border-dashed border-slate-300 px-2 py-0.5 text-xs text-slate-500 transition-colors hover:border-blue-300 hover:text-blue-700"
+            >
+              <Icon name="plus" className="mr-0.5" />
+              {t('skillManage')}
+            </button>
+          </div>
           <div className="flex items-end gap-2">
             <textarea
               ref={area}
@@ -309,6 +392,17 @@ export default function LibrarianPanel({ teamId, onClose, onChanged }) {
           <p className="mt-1 px-1 text-xs text-slate-400">{t('agentSafety')}</p>
         </div>
       </div>
+      {managing && (
+        <SkillsPanel
+          teamId={teamId}
+          seed={seedSkill?._from ? { ...seedSkill, wish: seedSkill._from } : null}
+          onClose={() => {
+            setManaging(false)
+            setSeedSkill(null)
+          }}
+          onChanged={loadSkills}
+        />
+      )}
     </div>
   )
 }
