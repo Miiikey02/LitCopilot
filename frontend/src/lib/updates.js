@@ -89,6 +89,11 @@ export const UPDATES = [
         en: 'Tidy a local folder: grant Gaze the folder where your PDFs live and it reads each one for its DOI, matches it against your library, and proposes turning `1-s2.0-S00928674…-main.pdf` into “Author, Year - Title.pdf”, filed into sub-folders matching your library. It also tells you which saved papers have no file. Nothing is uploaded — only a DOI and title reach the server — nothing is ever deleted, every change is listed first, and a log is written inside the folder so it can be undone. Chromium browsers (Chrome, Edge) only.',
       },
       {
+        kind: 'fix',
+        zh: '整理助手现在看得到撤稿与「编辑关注」标记。此前它看不到：被问「有没有问题文献」时会说文库很干净，还会把撤稿论文列进待读、给它写「值得保留作为证据」的笔记。现在它会指名道姓地把这些文献点出来，并说明不能作为证据引用。',
+        en: 'The librarian can now see retraction and expression-of-concern flags. It could not before: asked whether anything in the library was problematic it would report the shelf clean, queue a retracted paper for reading, and write a note calling it worth keeping as evidence. It now names such papers and says plainly that they cannot be cited as evidence.',
+      },
+      {
         kind: 'feature',
         zh: '文库多了一个「整理助手」：可以让它按主题分文件夹、把文献归档、打标签，或者替你写每篇文献的笔记（这篇做了什么、发现了什么、为什么值得留着）。它会先读一遍你保存的文献再给方案，所有改动都先列出来——点「应用」之前，文库不会动。',
         en: 'A librarian in 我的文库: ask it to sort papers into folders by topic, file them, tag them, or write the note for each one — what the study did, what it found, why it is worth keeping. It reads your saved papers first, then lists every change it wants to make. Nothing happens to your library until you press Apply.',

@@ -47,12 +47,16 @@ the study did, what it found, and why this paper is worth keeping. Two or \
 three sentences. Never invent findings — you have the title, authors, journal, \
 year and the user's own notes, and nothing else. If that is not enough to say \
 anything specific, say what the paper appears to be about and no more.
-6. Reading state (toread / reading / read / cited) says where a paper is in \
+6. `integrity` is "retracted", "concern", or "ok". A retracted paper is not \
+evidence. Never recommend reading or keeping one without saying it is \
+retracted, and when asked about problem papers, name them. Do not say the \
+library is clean unless every paper reads "ok".
+7. Reading state (toread / reading / read / cited) says where a paper is in \
 the reading of it. Use it when asked what to read next, or to triage a pile: \
 propose marking, do not guess that something has been read.
-7. If the request is a question rather than a task, just answer it. Not every \
+8. If the request is a question rather than a task, just answer it. Not every \
 message needs a tool call.
-8. Reply in RESPONSE LANGUAGE. Keep it short: the proposed changes are listed \
+9. Reply in RESPONSE LANGUAGE. Keep it short: the proposed changes are listed \
 in the interface, so do not repeat them all in prose."""
 
 # Read tools run for real; write tools are recorded and answered with a stub.
@@ -195,6 +199,12 @@ def _papers_for_prompt(rows: list[dict]) -> list[dict]:
             "tags": r.get("tags") or [],
             "folder_id": r.get("folder_id"),
             "read_state": r.get("read_state") or "unset",
+            # Whether the paper has been retracted or had concern expressed.
+            # The library has carried this since integrity screening was added
+            # and the agent could not see it — so it recommended keeping a
+            # retracted paper "as evidence", marked it for reading, and told a
+            # reader asking about integrity that the shelf was clean.
+            "integrity": r.get("retraction_status") or "ok",
             "note": (r.get("notes") or "")[:300],
         }
         for r in rows
