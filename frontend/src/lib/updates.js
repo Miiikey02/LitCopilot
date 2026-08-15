@@ -89,6 +89,21 @@ export const UPDATES = [
         en: 'Tidy a local folder: grant Gaze the folder where your PDFs live and it reads each one for its DOI, matches it against your library, and proposes turning `1-s2.0-S00928674…-main.pdf` into “Author, Year - Title.pdf”, filed into sub-folders matching your library. It also tells you which saved papers have no file. Nothing is uploaded — only a DOI and title reach the server — nothing is ever deleted, every change is listed first, and a log is written inside the folder so it can be undone. Chromium browsers (Chrome, Edge) only.',
       },
       {
+        kind: 'change',
+        zh: 'Gaze 名字旁边加了「beta 测试版」标记。现在确实是测试阶段——功能还在变，也还会有做得不对的地方，看到了请直接用左侧的「反馈」告诉我们。',
+        en: 'A “beta” tag now sits beside the Gaze name. It is genuinely a test build: things are still changing and some of them are still wrong. When you hit one, the Feedback button in the left rail is the fastest way to say so.',
+      },
+      {
+        kind: 'change',
+        zh: '几个助手改成直接放在「我的文库」的按钮上：文献管理助手、实验记录助手、课题申报材料助手，以及「创建你自己的助手」。此前它们藏在一个助手内部的切换器里，等于另外两个根本找不到。自己创建的助手也会出现在这一排。',
+        en: 'The assistants now each have their own button in 我的文库 — library, lab notebook, proposal, and “build your own”. They had been hidden behind a switcher inside one of them, which made the other two effectively unfindable. Assistants you build appear in the same row.',
+      },
+      {
+        kind: 'fix',
+        zh: 'Semantic Scholar 之前一直返回「请求过多」，等于四个数据库里有一个长期没在工作——它对未注册的调用有严格限流。现在支持配置 API 密钥（免费申请），并在被限流时自动重试一次。',
+        en: 'Semantic Scholar had been returning “too many requests” continuously — one of the four databases was effectively not working, because its unauthenticated pool is throttled almost permanently. Gaze now supports an API key (free to request) and retries once when throttled.',
+      },
+      {
         kind: 'feature',
         zh: '助手不再只有一个。「整理助手」里可以切换：\n\n· 文献管理助手 —— 分文件夹、归档、打标签、写笔记、标阅读状态。\n· 实验记录助手 —— 用一句话记下今天做了什么、目的是什么、结果如何（结果没出来就留空，它不会替你编），并关联到文库里的文献。文库旁边多了「实验记录」一栏可以查看和补充。\n· 课题申报材料助手 —— 读你自己的文库和实验记录，起草立项依据、研究基础，逐句用你文库里的引用格式标注；文库支撑不了的地方会写一行「缺口：」，而不是替你把话说满。\n\n还可以「创造您自己的助手」：勾选它能接触什么（文献库 / 实验记录 / 只读撰写），再用大白话写一句你希望它怎么做，就成了。',
         en: 'There is more than one assistant now, switchable inside the librarian:\n\n· Library assistant — folders, filing, tags, notes, reading state.\n· Lab notebook assistant — dictate what you did, why, and what happened; an unknown result stays empty rather than being invented, and records link to the papers they came from. A Lab records view sits beside the library.\n· Proposal assistant — drafts the background and preliminary-work sections from your own papers and records, cited with your library\u2019s own keys, and writes a "缺口:" line where your library does not support the claim instead of writing it anyway.\n\nAnd you can build your own: tick what it may touch, say in plain language how it should work.',

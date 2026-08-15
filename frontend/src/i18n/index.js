@@ -7,6 +7,7 @@ const resources = {
   zh: {
     translation: {
       appName: 'Gaze',
+      betaBadge: 'beta 测试版',
       tagline: '生物医学文献研究助手',
       searchPlaceholder: '用中文或英文提问，例如：CRISPR 递送方法治疗囊性纤维化的最新研究',
       searchButton: '检索',
@@ -486,6 +487,7 @@ const resources = {
   en: {
     translation: {
       appName: 'Gaze',
+      betaBadge: 'beta',
       tagline: 'Biomedical literature research copilot',
       searchPlaceholder: 'Ask in Chinese or English, e.g. What is known about CRISPR delivery methods for cystic fibrosis?',
       searchButton: 'Search',

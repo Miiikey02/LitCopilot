@@ -78,8 +78,17 @@ export default function Sidebar({
         }`}
       >
         {!collapsed && (
-          <span className="truncate text-lg font-bold text-slate-900">
-            {t('appName')}
+          <span className="flex min-w-0 items-baseline gap-1.5">
+            <span className="truncate text-lg font-bold text-slate-900">
+              {t('appName')}
+            </span>
+            {/* Said once, where the name is, rather than in a banner people
+                learn to skip. Testers who know a thing is unfinished report
+                what is wrong with it; testers who think it is finished just
+                stop using it. */}
+            <span className="shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium leading-4 text-amber-800">
+              {t('betaBadge')}
+            </span>
           </span>
         )}
         <button
