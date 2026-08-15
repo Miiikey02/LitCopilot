@@ -139,6 +139,29 @@ export const libraryImport = async (content, filename, folderId, teamId) => {
 export const matchLocal = (files, teamId) =>
   jsonPost('/api/library/match-local', { files, team_id: teamId ?? null })
 
+// --- Assistants: a toolset plus instructions, built-in or your own ---
+export const listAssistants = (teamId, lang) =>
+  req(`/api/assistants${ws({ lang }, teamId)}`)
+export const createAssistant = (a) => jsonPost('/api/assistants', a)
+export const updateAssistant = (id, fields) =>
+  req(`/api/assistants/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(fields),
+  })
+export const deleteAssistant = (id) => req(`/api/assistants/${id}`, { method: 'DELETE' })
+
+// --- Experiment records: the lab notebook ---
+export const listRecords = (teamId, q) => req(`/api/records${ws({ q }, teamId)}`)
+export const createRecord = (r) => jsonPost('/api/records', r)
+export const updateRecord = (id, fields) =>
+  req(`/api/records/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(fields),
+  })
+export const deleteRecord = (id) => req(`/api/records/${id}`, { method: 'DELETE' })
+
 // --- Skills: the user's own conventions, written down once ---
 export const listSkills = (teamId) => req(`/api/skills${ws({}, teamId)}`)
 export const createSkill = (skill) => jsonPost('/api/skills', skill)
@@ -156,13 +179,16 @@ export const draftSkill = (description, lang) =>
 // --- The librarian agent ---
 // It answers with proposals, never edits. Applying them is the second call,
 // made only after the reader has seen what it wants to do.
-export const libraryAgent = (message, teamId, lang, history = [], skillId = null) =>
+export const libraryAgent = (
+  message, teamId, lang, history = [], skillId = null, assistant = null
+) =>
   jsonPost('/api/library/agent', {
     message,
     team_id: teamId ?? null,
     lang: lang || null,
     history,
     skill_id: skillId,
+    assistant,
   })
 export const libraryAgentApply = (actions, teamId) =>
   jsonPost('/api/library/agent/apply', { actions, team_id: teamId ?? null })

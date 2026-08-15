@@ -11,6 +11,7 @@ import BulkExport from './BulkExport'
 import ImportPanel from './ImportPanel'
 import LibrarianPanel from './LibrarianPanel'
 import LocalFolderPanel from './LocalFolderPanel'
+import RecordsList from './RecordsList'
 import WorkspaceBar from './WorkspaceBar'
 
 const sourceLabel = {
@@ -452,6 +453,8 @@ export default function LibraryTab() {
   const [importing, setImporting] = useState(false)
   const [librarian, setLibrarian] = useState(false)
   const [localFolder, setLocalFolder] = useState(false)
+  // 'papers' | 'records' — the shelf, or the notebook.
+  const [view, setView] = useState('papers')
 
   const [loadError, setLoadError] = useState('')
 
@@ -543,10 +546,33 @@ export default function LibraryTab() {
           <BulkExport papers={papers} queryLabel={t('libraryTitle')} />
         </div>
 
-        {/* Triage across the top: the pile, what is open, what is finished. */}
-        <div className="mb-4">
-          <ReadStateFilter active={activeState} counts={stateCounts} onPick={setActiveState} />
+        {/* The shelf and the notebook are two halves of the same work, so they
+            sit side by side rather than in different corners of the app. */}
+        <div className="mb-4 flex items-center gap-1.5">
+          {[['papers', t('libraryTitle')], ['records', t('tabRecords')]].map(([key, label]) => (
+            <button
+              key={key}
+              onClick={() => setView(key)}
+              className={`rounded-full border px-3 py-1 text-sm transition-colors ${
+                view === key
+                  ? 'border-slate-900 bg-slate-900 text-white'
+                  : 'border-slate-200 text-slate-600 hover:border-slate-300'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
         </div>
+
+        {view === 'records' && <RecordsList teamId={activeTeam} papers={papers} />}
+
+        {view === 'papers' && (
+          <div className="mb-4">
+            <ReadStateFilter active={activeState} counts={stateCounts} onPick={setActiveState} />
+          </div>
+        )}
+        {view === 'papers' && (
+        <>
 
         <UploadPdf
           teamId={activeTeam}
@@ -685,6 +711,8 @@ export default function LibraryTab() {
               />
             ))}
           </div>
+        )}
+        </>
         )}
       </div>
     </div>

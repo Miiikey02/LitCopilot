@@ -27,6 +27,12 @@ from ..schemas import (
     LocalMatch,
     LocalMatchRequest,
     LocalMatchResponse,
+    Assistant,
+    AssistantCreate,
+    AssistantUpdate,
+    Record,
+    RecordCreate,
+    RecordUpdate,
     Skill,
     SkillCreate,
     SkillDraft,
@@ -320,7 +326,7 @@ async def library_agent(
             db.get_skill(user, req.skill_id, req.team_id) if req.skill_id else None
         )
         result = await librarian.converse(
-            user, message, lang, req.history, req.team_id, skill
+            user, message, lang, req.history, req.team_id, skill, req.assistant
         )
     except db.NotAMember:
         raise HTTPException(status_code=403, detail="Not a member of this team")
@@ -350,6 +356,93 @@ def library_agent_apply(
 def library_undo(undo_id: int, user: str = Depends(current_user)) -> LibraryUndone:
     """Put the library back as it was before that batch of changes."""
     return LibraryUndone(**_guard(librarian.undo, user, undo_id))
+
+
+# --- Assistants -----------------------------------------------------------
+
+
+@router.get("/assistants", response_model=list[Assistant])
+def list_assistants(
+    team: int | None = None, lang: str | None = None,
+    user: str = Depends(current_user),
+) -> list[Assistant]:
+    """The three built in, then any this person made or was shared."""
+    built = [Assistant(**a) for a in librarian.builtin_list(lang or "zh")]
+    mine = [
+        Assistant(
+            id=a["id"], name=a["name"], description=a["description"],
+            toolsets=a["toolsets"], builtin=False,
+            instructions=a["instructions"], shared=a["shared"],
+        )
+        for a in _guard(db.list_assistants, user, team)
+    ]
+    return built + mine
+
+
+@router.post("/assistants", response_model=Assistant)
+def create_assistant(req: AssistantCreate, user: str = Depends(current_user)) -> Assistant:
+    made = _guard(
+        db.create_assistant, user, req.name, req.description, req.instructions,
+        req.toolsets, req.team_id, req.shared,
+    )
+    if made is None:
+        raise HTTPException(
+            status_code=400, detail="助手需要名称和说明，且最多创建 20 个。"
+        )
+    return Assistant(**made)
+
+
+@router.patch("/assistants/{assistant_id}")
+def update_assistant(
+    assistant_id: int, req: AssistantUpdate, user: str = Depends(current_user)
+) -> dict:
+    if not _guard(db.update_assistant, user, assistant_id,
+                  **req.model_dump(exclude_none=True)):
+        raise HTTPException(status_code=404, detail="Assistant not found")
+    return {"ok": True}
+
+
+@router.delete("/assistants/{assistant_id}")
+def delete_assistant(assistant_id: int, user: str = Depends(current_user)) -> dict:
+    if not _guard(db.delete_assistant, user, assistant_id):
+        raise HTTPException(status_code=404, detail="Assistant not found")
+    return {"ok": True}
+
+
+# --- Experiment records ---------------------------------------------------
+
+
+@router.get("/records", response_model=list[Record])
+def list_records(
+    team: int | None = None, q: str | None = None,
+    user: str = Depends(current_user),
+) -> list[Record]:
+    return [Record(**r) for r in _guard(db.list_records, user, team, q)]
+
+
+@router.post("/records", response_model=Record)
+def create_record(req: RecordCreate, user: str = Depends(current_user)) -> Record:
+    made = _guard(db.create_record, user, req.team_id,
+                  **req.model_dump(exclude={"team_id"}))
+    if made is None:
+        raise HTTPException(status_code=400, detail="A record needs a title")
+    return Record(**made)
+
+
+@router.patch("/records/{record_id}")
+def update_record(
+    record_id: int, req: RecordUpdate, user: str = Depends(current_user)
+) -> dict:
+    if not _guard(db.update_record, user, record_id, **req.model_dump(exclude_none=True)):
+        raise HTTPException(status_code=404, detail="Record not found")
+    return {"ok": True}
+
+
+@router.delete("/records/{record_id}")
+def delete_record(record_id: int, user: str = Depends(current_user)) -> dict:
+    if not _guard(db.delete_record, user, record_id):
+        raise HTTPException(status_code=404, detail="Record not found")
+    return {"ok": True}
 
 
 # --- Skills: the lab's own conventions, written down ------------------------

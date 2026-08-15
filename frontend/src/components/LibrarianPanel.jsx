@@ -4,6 +4,7 @@ import * as api from '../lib/api'
 import AnswerText from './AnswerText'
 import Icon from './Icon'
 import SkillsPanel from './SkillsPanel'
+import AssistantDesigner from './AssistantDesigner'
 
 // An agent that can tidy the library, rather than only describe it.
 //
@@ -23,6 +24,8 @@ const ICONS = {
   add_tags: 'star',
   write_note: 'note',
   set_reading_state: 'bookOpen',
+  write_record: 'flask',
+  amend_record: 'pencil',
 }
 
 function ActionList({ actions, applied, busy, onApply, onDismiss }) {
@@ -47,6 +50,8 @@ function ActionList({ actions, applied, busy, onApply, onDismiss }) {
         state: a.state ? t(`state_${a.state}`) : t('stateUnset'),
       })
     }
+    if (a.kind === 'write_record') return t('actWriteRecord', { title: a.title })
+    if (a.kind === 'amend_record') return t('actAmendRecord')
     if (a.kind === 'write_note') return t('actWriteNote')
     return a.kind
   }
@@ -68,6 +73,19 @@ function ActionList({ actions, applied, busy, onApply, onDismiss }) {
                 <p className="mt-0.5 whitespace-pre-wrap text-xs leading-5 text-slate-500">
                   {a.note}
                 </p>
+              )}
+              {/* A record is mostly its contents; the label alone says almost
+                  nothing about whether it is right. */}
+              {(a.kind === 'write_record' || a.kind === 'amend_record') && (
+                <div className="mt-0.5 space-y-0.5 text-xs leading-5 text-slate-500">
+                  {a.happened_on && <p>{a.happened_on}</p>}
+                  {a.aim && <p>{t('recordAim')}：{a.aim}</p>}
+                  {a.method && <p className="whitespace-pre-wrap">{t('recordMethod')}：{a.method}</p>}
+                  <p>
+                    {t('recordResult')}：
+                    {a.result || <span className="text-slate-400">{t('recordNoResult')}</span>}
+                  </p>
+                </div>
               )}
             </div>
           </li>
@@ -108,6 +126,12 @@ export default function LibrarianPanel({ teamId, onClose, onChanged }) {
   const [skills, setSkills] = useState([])
   const [skillId, setSkillId] = useState(null)
   const [managing, setManaging] = useState(false)
+  // Which assistant is working. They share one runtime and one safety model;
+  // what differs is which tools they may reach for and how they are told to
+  // work — so switching is a picker, not a different screen.
+  const [assistants, setAssistants] = useState([])
+  const [assistant, setAssistant] = useState('library')
+  const [designing, setDesigning] = useState(false)
   const [seedSkill, setSeedSkill] = useState(null)
   const box = useRef(null)
   const area = useRef(null)
@@ -131,8 +155,17 @@ export default function LibrarianPanel({ teamId, onClose, onChanged }) {
     }
   }
 
+  const loadAssistants = async () => {
+    try {
+      setAssistants(await api.listAssistants(teamId, i18n.language))
+    } catch {
+      /* the library assistant is the default and needs no list */
+    }
+  }
+
   useEffect(() => {
     loadSkills()
+    loadAssistants()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [teamId])
 
@@ -147,7 +180,7 @@ export default function LibrarianPanel({ teamId, onClose, onChanged }) {
       .map((x) => ({ role: x.role, content: x.content }))
     setTurns((prev) => [...prev, { role: 'user', content: message }])
     try {
-      const r = await api.libraryAgent(message, teamId, i18n.language, history, skillId)
+      const r = await api.libraryAgent(message, teamId, i18n.language, history, skillId, assistant)
       setTurns((prev) => [
         ...prev,
         {
@@ -163,6 +196,15 @@ export default function LibrarianPanel({ teamId, onClose, onChanged }) {
     } finally {
       setBusy(false)
     }
+  }
+
+  const pickAssistant = (id) => {
+    if (id === assistant) return
+    setAssistant(id)
+    // A new assistant starts a new thread. Carrying over a plan made under
+    // different tools would have it answering for work it could not have done.
+    setTurns([])
+    setError('')
   }
 
   const apply = async (index) => {
@@ -229,7 +271,9 @@ export default function LibrarianPanel({ teamId, onClose, onChanged }) {
               <Icon name="sparkles" className="text-blue-500" />
               {t('agentTitle')}
             </h2>
-            <p className="mt-0.5 text-xs leading-5 text-slate-500">{t('agentSubtitle')}</p>
+            <p className="mt-0.5 text-xs leading-5 text-slate-500">
+              {assistants.find((a) => a.id === assistant)?.description || t('agentSubtitle')}
+            </p>
           </div>
           <button
             onClick={onClose}
@@ -240,18 +284,46 @@ export default function LibrarianPanel({ teamId, onClose, onChanged }) {
           </button>
         </div>
 
+        {/* Which assistant. The three built in cover literature, the notebook
+            and proposal writing; anything after them someone made. */}
+        <div className="flex flex-wrap items-center gap-1.5 border-b border-slate-100 px-5 py-2">
+          {assistants.map((a) => (
+            <button
+              key={a.id}
+              onClick={() => pickAssistant(a.id)}
+              title={a.description}
+              className={`max-w-[13rem] truncate rounded-full border px-2.5 py-1 text-xs transition-colors ${
+                assistant === a.id
+                  ? 'border-blue-600 bg-blue-50 font-medium text-blue-700'
+                  : 'border-slate-200 text-slate-600 hover:border-blue-300'
+              }`}
+            >
+              {a.name}
+            </button>
+          ))}
+          <button
+            onClick={() => setDesigning(true)}
+            className="rounded-full border border-dashed border-slate-300 px-2.5 py-1 text-xs text-slate-500 transition-colors hover:border-blue-300 hover:text-blue-700"
+          >
+            <Icon name="plus" className="mr-0.5" />
+            {t('assistantNew')}
+          </button>
+        </div>
+
         <div ref={box} className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
           {turns.length === 0 && (
             <div>
-              <p className="text-sm leading-6 text-slate-500">{t('agentEmpty')}</p>
+              <p className="text-sm leading-6 text-slate-500">
+                {assistants.find((a) => a.id === assistant)?.description || t('agentEmpty')}
+              </p>
               <div className="mt-3 flex flex-wrap gap-2">
-                {SUGGESTIONS.map((key) => (
+                {(assistants.find((a) => a.id === assistant)?.examples || []).map((ex) => (
                   <button
-                    key={key}
-                    onClick={() => ask(t(key))}
+                    key={ex}
+                    onClick={() => ask(ex)}
                     className="rounded-full border border-slate-200 px-3 py-1.5 text-xs text-slate-600 transition-colors hover:border-blue-300 hover:text-blue-700"
                   >
-                    {t(key)}
+                    {ex}
                   </button>
                 ))}
               </div>
@@ -392,6 +464,16 @@ export default function LibrarianPanel({ teamId, onClose, onChanged }) {
           <p className="mt-1 px-1 text-xs text-slate-400">{t('agentSafety')}</p>
         </div>
       </div>
+      {designing && (
+        <AssistantDesigner
+          teamId={teamId}
+          onClose={() => setDesigning(false)}
+          onSaved={(made) => {
+            setDesigning(false)
+            loadAssistants().then(() => made && pickAssistant(made.id))
+          }}
+        />
+      )}
       {managing && (
         <SkillsPanel
           teamId={teamId}

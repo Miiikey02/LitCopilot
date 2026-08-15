@@ -233,6 +233,45 @@ CREATE TABLE IF NOT EXISTS skills (
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- An experiment, as it was actually run. The lab notebook that literature
+-- management keeps pointing at but never had anywhere to put: what was tried,
+-- what happened, and which papers it came from. Linked to saved papers by id
+-- so "this protocol is from Tanaka 2019" survives.
+CREATE TABLE IF NOT EXISTS records (
+    id          BIGSERIAL PRIMARY KEY,
+    user_id     UUID NOT NULL,
+    team_id     BIGINT REFERENCES teams(id) ON DELETE CASCADE,
+    title       TEXT NOT NULL,
+    kind        TEXT NOT NULL DEFAULT 'experiment',  -- experiment | protocol | observation
+    happened_on DATE,
+    aim         TEXT NOT NULL DEFAULT '',
+    method      TEXT NOT NULL DEFAULT '',
+    result      TEXT NOT NULL DEFAULT '',
+    paper_ids   JSONB NOT NULL DEFAULT '[]'::jsonb,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS records_user_idx ON records (user_id, happened_on DESC NULLS LAST);
+
+-- An assistant someone built for themselves: which capabilities it may use,
+-- and how it should work. The built-in three are code; these are the same
+-- thing with the instructions written by a user instead.
+CREATE TABLE IF NOT EXISTS assistants (
+    id           BIGSERIAL PRIMARY KEY,
+    user_id      UUID NOT NULL,
+    team_id      BIGINT REFERENCES teams(id) ON DELETE CASCADE,
+    name         TEXT NOT NULL,
+    description  TEXT NOT NULL DEFAULT '',
+    instructions TEXT NOT NULL,
+    -- Which toolsets it is allowed: any of library | records | writing.
+    toolsets     JSONB NOT NULL DEFAULT '["library"]'::jsonb,
+    shared       BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS assistants_user_idx ON assistants (user_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS skills_user_idx ON skills (user_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS skills_team_idx ON skills (team_id) WHERE team_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS library_undo_user_idx ON library_undo (user_id, created_at DESC);
@@ -1760,5 +1799,203 @@ def delete_skill(user_id: str, skill_id: int) -> bool:
     with _get_pool().connection() as conn:
         cur = conn.execute(
             "DELETE FROM skills WHERE id = %s AND user_id = %s", (skill_id, user_id)
+        )
+        return cur.rowcount > 0
+
+# --- Experiment records ---------------------------------------------------
+
+
+def _record_row(row: dict) -> dict:
+    return {
+        "id": row["id"],
+        "title": row["title"],
+        "kind": row["kind"] or "experiment",
+        "happened_on": row["happened_on"].isoformat() if row["happened_on"] else "",
+        "aim": row["aim"] or "",
+        "method": row["method"] or "",
+        "result": row["result"] or "",
+        "paper_ids": list(row["paper_ids"] or []),
+        "updated_at": row["updated_at"].isoformat(),
+    }
+
+
+_RECORD_COLS = ("id, title, kind, happened_on, aim, method, result, paper_ids, updated_at")
+
+
+def create_record(user_id: str, team_id: int | None = None, **f) -> dict | None:
+    title = (f.get("title") or "").strip()[:200]
+    if not title:
+        return None
+    with _get_pool().connection() as conn:
+        _assert_member(conn, user_id, team_id)
+        row = conn.execute(
+            f"""INSERT INTO records
+                  (user_id, team_id, title, kind, happened_on, aim, method, result, paper_ids)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING {_RECORD_COLS}""",
+            (user_id, team_id, title, (f.get("kind") or "experiment")[:30],
+             f.get("happened_on") or None, (f.get("aim") or "")[:4000],
+             (f.get("method") or "")[:8000], (f.get("result") or "")[:8000],
+             json.dumps([int(i) for i in (f.get("paper_ids") or [])])),
+        ).fetchone()
+    return _record_row(row)
+
+
+def list_records(
+    user_id: str, team_id: int | None = None, q: str | None = None, limit: int = 100
+) -> list[dict]:
+    clauses = ["(r.user_id = %s AND r.team_id IS NULL)" if team_id is None else "r.team_id = %s"]
+    params: list = [user_id if team_id is None else team_id]
+    if team_id is not None:
+        with _get_pool().connection() as conn:
+            _assert_member(conn, user_id, team_id)
+    if q and q.strip():
+        clauses.append(
+            "(r.title ILIKE %s OR r.aim ILIKE %s OR r.method ILIKE %s OR r.result ILIKE %s)"
+        )
+        params += [_like_pattern(q.strip())] * 4
+    params.append(limit)
+    with _get_pool().connection() as conn:
+        rows = conn.execute(
+            f"""SELECT {_RECORD_COLS} FROM records r
+                 WHERE {' AND '.join(clauses)}
+                 ORDER BY r.happened_on DESC NULLS LAST, r.id DESC LIMIT %s""",
+            params,
+        ).fetchall()
+    return [_record_row(r) for r in rows]
+
+
+def update_record(user_id: str, record_id: int, **f) -> bool:
+    allowed = {"title", "kind", "happened_on", "aim", "method", "result"}
+    sets = {k: v for k, v in f.items() if k in allowed and v is not None}
+    if "paper_ids" in f and f["paper_ids"] is not None:
+        sets["paper_ids"] = json.dumps([int(i) for i in f["paper_ids"]])
+    if not sets:
+        return False
+    assignments = ", ".join(f"{k} = %s" for k in sets)
+    with _get_pool().connection() as conn:
+        cur = conn.execute(
+            f"UPDATE records SET {assignments}, updated_at = now()"
+            " WHERE id = %s AND user_id = %s",
+            [*sets.values(), record_id, user_id],
+        )
+        return cur.rowcount > 0
+
+
+def delete_record(user_id: str, record_id: int) -> bool:
+    with _get_pool().connection() as conn:
+        cur = conn.execute(
+            "DELETE FROM records WHERE id = %s AND user_id = %s", (record_id, user_id)
+        )
+        return cur.rowcount > 0
+
+
+# --- Custom assistants ----------------------------------------------------
+
+VALID_TOOLSETS = ("library", "records", "writing")
+MAX_ASSISTANTS = 20
+
+
+def _assistant_row(row: dict) -> dict:
+    return {
+        "id": f"custom:{row['id']}",
+        "name": row["name"],
+        "description": row["description"] or "",
+        "instructions": row["instructions"],
+        "toolsets": list(row["toolsets"] or []),
+        "shared": bool(row["shared"]),
+        "team_id": row["team_id"],
+        "builtin": False,
+    }
+
+
+def create_assistant(
+    user_id: str, name: str, description: str, instructions: str,
+    toolsets: list[str], team_id: int | None = None, shared: bool = False,
+) -> dict | None:
+    name = (name or "").strip()[:80]
+    instructions = (instructions or "").strip()[:4000]
+    picked = [t for t in (toolsets or []) if t in VALID_TOOLSETS] or ["library"]
+    if not name or not instructions:
+        return None
+    with _get_pool().connection() as conn:
+        _assert_member(conn, user_id, team_id)
+        n = conn.execute(
+            "SELECT count(*) AS n FROM assistants WHERE user_id = %s", (user_id,)
+        ).fetchone()["n"]
+        if n >= MAX_ASSISTANTS:
+            return None
+        row = conn.execute(
+            """INSERT INTO assistants
+                 (user_id, team_id, name, description, instructions, toolsets, shared)
+               VALUES (%s,%s,%s,%s,%s,%s,%s)
+               RETURNING id, name, description, instructions, toolsets, shared, team_id""",
+            (user_id, team_id, name, (description or "").strip()[:300], instructions,
+             json.dumps(picked), bool(shared and team_id)),
+        ).fetchone()
+    return _assistant_row(row)
+
+
+def list_assistants(user_id: str, team_id: int | None = None) -> list[dict]:
+    with _get_pool().connection() as conn:
+        if team_id is None:
+            rows = conn.execute(
+                """SELECT id, name, description, instructions, toolsets, shared, team_id
+                     FROM assistants WHERE user_id = %s AND team_id IS NULL
+                    ORDER BY updated_at DESC""",
+                (user_id,),
+            ).fetchall()
+        else:
+            _assert_member(conn, user_id, team_id)
+            rows = conn.execute(
+                """SELECT id, name, description, instructions, toolsets, shared, team_id
+                     FROM assistants
+                    WHERE (user_id = %s AND team_id IS NULL)
+                       OR (team_id = %s AND (shared OR user_id = %s))
+                    ORDER BY shared DESC, updated_at DESC""",
+                (user_id, team_id, user_id),
+            ).fetchall()
+    return [_assistant_row(r) for r in rows]
+
+
+def get_assistant(user_id: str, assistant_id: int) -> dict | None:
+    with _get_pool().connection() as conn:
+        row = conn.execute(
+            """SELECT a.id, a.name, a.description, a.instructions, a.toolsets,
+                      a.shared, a.team_id
+                 FROM assistants a
+                WHERE a.id = %s
+                  AND (a.user_id = %s
+                       OR (a.shared AND a.team_id IS NOT NULL AND EXISTS (
+                             SELECT 1 FROM team_members m
+                              WHERE m.team_id = a.team_id AND m.user_id = %s)))""",
+            (assistant_id, user_id, user_id),
+        ).fetchone()
+    return _assistant_row(row) if row else None
+
+
+def update_assistant(user_id: str, assistant_id: int, **fields) -> bool:
+    allowed = {"name", "description", "instructions", "shared"}
+    sets = {k: v for k, v in fields.items() if k in allowed and v is not None}
+    if fields.get("toolsets"):
+        picked = [t for t in fields["toolsets"] if t in VALID_TOOLSETS]
+        if picked:
+            sets["toolsets"] = json.dumps(picked)
+    if not sets:
+        return False
+    assignments = ", ".join(f"{k} = %s" for k in sets)
+    with _get_pool().connection() as conn:
+        cur = conn.execute(
+            f"UPDATE assistants SET {assignments}, updated_at = now()"
+            " WHERE id = %s AND user_id = %s",
+            [*sets.values(), assistant_id, user_id],
+        )
+        return cur.rowcount > 0
+
+
+def delete_assistant(user_id: str, assistant_id: int) -> bool:
+    with _get_pool().connection() as conn:
+        cur = conn.execute(
+            "DELETE FROM assistants WHERE id = %s AND user_id = %s",
+            (assistant_id, user_id),
         )
         return cur.rowcount > 0

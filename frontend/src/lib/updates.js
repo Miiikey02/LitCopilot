@@ -90,6 +90,11 @@ export const UPDATES = [
       },
       {
         kind: 'feature',
+        zh: '助手不再只有一个。「整理助手」里可以切换：\n\n· 文献管理助手 —— 分文件夹、归档、打标签、写笔记、标阅读状态。\n· 实验记录助手 —— 用一句话记下今天做了什么、目的是什么、结果如何（结果没出来就留空，它不会替你编），并关联到文库里的文献。文库旁边多了「实验记录」一栏可以查看和补充。\n· 课题申报材料助手 —— 读你自己的文库和实验记录，起草立项依据、研究基础，逐句用你文库里的引用格式标注；文库支撑不了的地方会写一行「缺口：」，而不是替你把话说满。\n\n还可以「创造您自己的助手」：勾选它能接触什么（文献库 / 实验记录 / 只读撰写），再用大白话写一句你希望它怎么做，就成了。',
+        en: 'There is more than one assistant now, switchable inside the librarian:\n\n· Library assistant — folders, filing, tags, notes, reading state.\n· Lab notebook assistant — dictate what you did, why, and what happened; an unknown result stays empty rather than being invented, and records link to the papers they came from. A Lab records view sits beside the library.\n· Proposal assistant — drafts the background and preliminary-work sections from your own papers and records, cited with your library\u2019s own keys, and writes a "缺口:" line where your library does not support the claim instead of writing it anyway.\n\nAnd you can build your own: tick what it may touch, say in plain language how it should work.',
+      },
+      {
+        kind: 'feature',
         zh: '新增「技能」：把你自己的整理习惯写下来，助手照着做——文件夹按课题号命名、笔记必须写清研究对象是人还是动物、综述单独归档……都可以。不用自己琢磨怎么写：用大白话说一遍你的要求，助手会替你整理成一条技能，你再改。助手做得好的那一次，也可以直接点「把这次的做法存成技能」。在实验室工作区里，技能可以共享给全体成员，等于把本实验室的规范写下来一次、所有人照做。技能只影响「怎么做」：所有改动仍然要你确认，仍然不会编造文献，撤稿仍然会被指出来。',
         en: 'Skills: write down how you like things done and the librarian follows it — folders named by grant number, every note stating whether a study was in humans or animals, reviews kept separately. You do not have to phrase it well: describe it in plain language and it is drafted into a skill for you to edit, or press "save this as a skill" after a run that went the way you wanted. In a lab workspace a skill can be shared with everyone, which is how a group writes its conventions down once. A skill changes how work is done, never the rules: changes still need approval, papers are still never invented, retractions are still flagged.',
       },

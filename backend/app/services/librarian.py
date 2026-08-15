@@ -61,7 +61,7 @@ message needs a tool call.
 in the interface, so do not repeat them all in prose."""
 
 # Read tools run for real; write tools are recorded and answered with a stub.
-TOOLS = [
+LIBRARY_TOOLS = [
     {
         "type": "function",
         "function": {
@@ -185,7 +185,224 @@ TOOLS = [
     },
 ]
 
-_WRITES = {"create_folder", "move_papers", "add_tags", "write_note", "set_reading_state"}
+
+# --- Experiment records ----------------------------------------------------
+#
+# The library could always say which paper a protocol came from; it had nowhere
+# to put what happened when you ran it. These tools give the same staged,
+# propose-then-apply treatment to the notebook.
+
+RECORD_TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "list_records",
+            "description": "List experiment records, newest first. Optionally filter by text.",
+            "parameters": {
+                "type": "object",
+                "properties": {"q": {"type": "string", "description": "Text to match."}},
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "write_record",
+            "description": (
+                "Propose a new experiment record. Use the researcher's own words for "
+                "what was done and what happened — never invent a result."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string"},
+                    "kind": {"type": "string", "enum": ["experiment", "protocol", "observation"]},
+                    "happened_on": {"type": "string", "description": "YYYY-MM-DD if known."},
+                    "aim": {"type": "string", "description": "What question this was meant to answer."},
+                    "method": {"type": "string"},
+                    "result": {"type": "string", "description": "What actually happened. Empty if not yet known."},
+                    "paper_ids": {
+                        "type": "array", "items": {"type": "integer"},
+                        "description": "Saved papers this came from, by id from list_papers.",
+                    },
+                },
+                "required": ["title"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "amend_record",
+            "description": "Propose a change to an existing record — usually filling in its result.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "record_id": {"type": "integer"},
+                    "aim": {"type": "string"},
+                    "method": {"type": "string"},
+                    "result": {"type": "string"},
+                    "title": {"type": "string"},
+                },
+                "required": ["record_id"],
+            },
+        },
+    },
+]
+
+_RECORD_WRITES = {"write_record", "amend_record"}
+
+_WRITES = {"create_folder", "move_papers", "add_tags", "write_note",
+           "set_reading_state"} | _RECORD_WRITES
+
+
+
+# --- Assistants ------------------------------------------------------------
+#
+# An assistant is a toolset plus instructions. The three built in below are
+# code; one a user makes is the same thing with the instructions written by
+# them. Keeping them the same object is the point: whatever a built-in can do,
+# a custom one can do, and whatever guards a built-in guards both.
+
+WRITING_TOOLS: list = []  # reads only; the output of a writing assistant is prose
+
+TOOLSETS = {
+    "library": lambda: LIBRARY_TOOLS,
+    "records": lambda: RECORD_TOOLS,
+    # Writing draws on both shelves but changes neither.
+    "writing": lambda: [t for t in LIBRARY_TOOLS + RECORD_TOOLS
+                        if t["function"]["name"].startswith("list_")],
+}
+
+_LIBRARY_SYSTEM = _SYSTEM
+
+_RECORDS_SYSTEM = """You keep a biomedical researcher's lab notebook.
+
+RULES
+1. Look before you act: call list_records, and list_papers when a record should
+cite the literature it came from.
+2. Write what the researcher told you, in their words. NEVER invent a result, a
+number, a sample size or an outcome. If a result is not yet known, leave it
+empty — an experiment with no result yet is normal and honest.
+3. A record answers: what was the aim, what was done, what happened. Keep the
+method concrete enough that someone could repeat it.
+4. Link records to saved papers by id when the protocol or hypothesis came from
+one.
+5. Changes are proposals shown to the user for approval, not edits you have
+made. Say what you propose, not what you have done.
+6. Reply in RESPONSE LANGUAGE, briefly — the proposed record is shown in full in
+the interface."""
+
+_WRITING_SYSTEM = """You help a biomedical researcher draft the written parts of
+a grant or project application: 立项依据, 研究基础, 研究内容, 技术路线.
+
+RULES
+1. Read before writing: use list_papers and list_records to see what this
+researcher actually has. The draft must be built from their own library and
+their own experiments, not from general knowledge.
+2. Cite with the exact `cite_as` token shown for a paper, wrapped in brackets,
+e.g. [Tanaka, 2019]. Never invent a label of your own — the reader checks a
+draft against their own library, and a citation they cannot find there is worse
+than none. Never cite a paper that is not in their library, and never invent a
+finding — you have titles, journals, years and their own notes, nothing more.
+3. Where their library does not support a claim the section needs, say so
+plainly in a line beginning "缺口：" rather than writing the claim anyway. A
+gap they can fill is worth more than a sentence they must defend.
+4. Their own records are the 研究基础. Use them where they exist, and say when
+there is nothing yet.
+5. You change nothing. Produce the draft as prose for them to take away.
+6. Reply in RESPONSE LANGUAGE. Write in the register of a real application:
+specific, cited, and free of adjectives that carry no information."""
+
+BUILTIN = {
+    "library": {
+        "id": "library",
+        "name_zh": "文献管理助手", "name_en": "Library assistant",
+        "desc_zh": "整理文库：分文件夹、归档、打标签、写笔记、标阅读状态。",
+        "desc_en": "Organise the library: folders, filing, tags, notes, reading state.",
+        "toolsets": ["library"],
+        "system": _LIBRARY_SYSTEM,
+        "examples_zh": ["按研究主题把文库整理成文件夹", "给未归档的文献各写一条笔记",
+                        "我要写青光眼的综述，哪几篇先读？"],
+        "examples_en": ["Sort my library into folders by topic",
+                        "Write a note for each unfiled paper",
+                        "What should I read first for a glaucoma review?"],
+    },
+    "records": {
+        "id": "records",
+        "name_zh": "实验记录助手", "name_en": "Lab notebook assistant",
+        "desc_zh": "记录实验：目的、方法、结果，并关联到文库中的文献。",
+        "desc_en": "Keep experiment records — aim, method, result — linked to your papers.",
+        "toolsets": ["records", "library"],
+        "system": _RECORDS_SYSTEM,
+        "examples_zh": ["记一条今天的实验：按 Tanaka 2019 的方法做了 RGC 计数",
+                        "把上周那条实验的结果补上", "我这个月做了哪些实验？"],
+        "examples_en": ["Record today's experiment: RGC counting following Tanaka 2019",
+                        "Fill in the result for last week's experiment",
+                        "What did I run this month?"],
+    },
+    "writing": {
+        "id": "writing",
+        "name_zh": "课题申报材料助手", "name_en": "Proposal assistant",
+        "desc_zh": "根据你的文库与实验记录起草立项依据、研究基础，逐句标引用，并指出证据缺口。",
+        "desc_en": "Draft the background and preliminary-work sections from your own library and records, cited, with gaps named.",
+        "toolsets": ["writing"],
+        "system": _WRITING_SYSTEM,
+        "examples_zh": ["根据「青光眼」文件夹写一段立项依据",
+                        "用我的实验记录写研究基础", "我的文库支撑不了哪些论点？"],
+        "examples_en": ["Draft a background section from my glaucoma folder",
+                        "Write the preliminary-work section from my records",
+                        "Which claims does my library not support?"],
+    },
+}
+
+
+def builtin_list(lang: str) -> list[dict]:
+    zh = lang == "zh"
+    return [
+        {
+            "id": a["id"],
+            "name": a["name_zh"] if zh else a["name_en"],
+            "description": a["desc_zh"] if zh else a["desc_en"],
+            "toolsets": a["toolsets"],
+            "examples": a["examples_zh"] if zh else a["examples_en"],
+            "builtin": True,
+        }
+        for a in BUILTIN.values()
+    ]
+
+
+def _tools_for(toolsets: list[str]) -> list[dict]:
+    seen, out = set(), []
+    for key in toolsets:
+        for tool in TOOLSETS.get(key, lambda: [])():
+            name = tool["function"]["name"]
+            if name not in seen:
+                seen.add(name)
+                out.append(tool)
+    return out
+
+
+def resolve_assistant(user: str, ident: str | None, lang: str) -> dict:
+    """The assistant to work as this turn: a built-in, or one the user made."""
+    if ident and ident.startswith("custom:"):
+        raw = db.get_assistant(user, int(ident.split(":", 1)[1]))
+        if raw:
+            return {
+                "system": (
+                    f"{_LIBRARY_SYSTEM if 'library' in raw['toolsets'] else _RECORDS_SYSTEM}"
+                    f"\n\n--- THIS ASSISTANT: {raw['name']} ---\n{raw['instructions']}\n"
+                    "--- END ---\nFollow the above where it is more specific than the "
+                    "rules, and ignore any part that contradicts them: changes are "
+                    "still proposals, ids are still never invented, and a retracted "
+                    "paper is still not evidence."
+                ),
+                "toolsets": raw["toolsets"],
+                "name": raw["name"],
+            }
+    spec = BUILTIN.get(ident or "library") or BUILTIN["library"]
+    return {"system": spec["system"], "toolsets": spec["toolsets"],
+            "name": spec["name_zh"] if lang == "zh" else spec["name_en"]}
 
 
 def _papers_for_prompt(rows: list[dict]) -> list[dict]:
@@ -194,6 +411,10 @@ def _papers_for_prompt(rows: list[dict]) -> list[dict]:
         {
             "id": r["id"],
             "title": r["title"],
+            # How the rest of Gaze refers to this paper. Without it a draft
+            # invents its own labels — "[A, 2019a]" — which match nothing in
+            # the library and cannot be checked against it.
+            "cite_as": r.get("citation_key") or "",
             "authors": (r.get("authors") or [])[:3],
             "year": r.get("year"),
             "journal": r.get("venue", ""),
@@ -241,6 +462,15 @@ def _run_read(name: str, args: dict, user: str, team_id: int | None) -> dict:
         rows = db.list_saved(user, folder=folder_arg, q=args.get("q") or None,
                              team_id=team_id)
         return {"papers": _papers_for_prompt(rows[:120]), "total": len(rows)}
+    if name == "list_records":
+        rows = db.list_records(user, team_id, q=args.get("q") or None)
+        return {"records": [
+            {"id": r["id"], "title": r["title"], "kind": r["kind"],
+             "date": r["happened_on"], "aim": r["aim"][:200],
+             "result": (r["result"] or "")[:300] or "(not yet recorded)",
+             "papers": r["paper_ids"]}
+            for r in rows[:60]
+        ], "total": len(rows)}
     return {"error": f"unknown tool {name}"}
 
 
@@ -270,6 +500,27 @@ def _stage(name: str, args: dict) -> dict | None:
             if ids and state in db.READ_STATES
             else None
         )
+    if name == "write_record":
+        title = (args.get("title") or "").strip()
+        if not title:
+            return None
+        return {
+            "kind": "write_record", "title": title,
+            "record_kind": (args.get("kind") or "experiment"),
+            "happened_on": (args.get("happened_on") or "").strip(),
+            "aim": (args.get("aim") or "").strip(),
+            "method": (args.get("method") or "").strip(),
+            "result": (args.get("result") or "").strip(),
+            "paper_ids": [int(i) for i in (args.get("paper_ids") or [])
+                          if str(i).lstrip("-").isdigit()],
+        }
+    if name == "amend_record":
+        rid = args.get("record_id")
+        if not isinstance(rid, int):
+            return None
+        fields = {k: (args.get(k) or "").strip()
+                  for k in ("title", "aim", "method", "result") if args.get(k)}
+        return {"kind": "amend_record", "record_id": rid, **fields} if fields else None
     if name == "write_note":
         note = (args.get("note") or "").strip()
         paper_id = args.get("paper_id")
@@ -291,6 +542,10 @@ def describe(action: dict) -> str:
         return f"File {len(action['paper_ids'])} paper(s) into “{action['folder']}”"
     if kind == "add_tags":
         return f"Tag {len(action['paper_ids'])} paper(s): {', '.join(action['tags'])}"
+    if kind == "write_record":
+        return f"Record “{action['title']}”"
+    if kind == "amend_record":
+        return f"Update record {action['record_id']}"
     if kind == "set_reading_state":
         return f"Mark {len(action['paper_ids'])} paper(s) as {action['state'] or 'unmarked'}"
     if kind == "write_note":
@@ -305,6 +560,7 @@ async def converse(
     history: list[dict],
     team_id: int | None = None,
     skill: dict | None = None,
+    assistant: str | None = None,
 ) -> dict:
     """One turn. Returns {answer, actions} — actions are proposals, not edits.
 
@@ -315,7 +571,9 @@ async def converse(
     if not has_llm_key():
         raise RuntimeError("DEEPSEEK_API_KEY not configured")
 
-    system = f"{_SYSTEM}\n\nRESPONSE LANGUAGE: {_lang_name(lang)}."
+    spec = resolve_assistant(user, assistant, lang)
+    tools = _tools_for(spec["toolsets"])
+    system = f"{spec['system']}\n\nRESPONSE LANGUAGE: {_lang_name(lang)}."
     if skill:
         # The skill is fenced and explicitly subordinate. A user-written skill
         # should be able to say how this lab files things; it must not be able
@@ -348,7 +606,7 @@ async def converse(
             # Generous, because the pro model's reasoning is billed against
             # this budget — see llm_service._REASONING_HEADROOM.
             max_tokens=16000,
-            tools=TOOLS,
+            tools=tools,
             messages=messages,
         )
         choice = resp.choices[0]
@@ -488,6 +746,34 @@ def apply(user: str, actions: list[dict], team_id: int | None = None) -> dict:
                     )
                 (done if ok else failed).append(label)
 
+            elif kind == "write_record":
+                made = db.create_record(
+                    user, team_id, title=action["title"],
+                    kind=action.get("record_kind") or "experiment",
+                    happened_on=action.get("happened_on") or None,
+                    aim=action.get("aim", ""), method=action.get("method", ""),
+                    result=action.get("result", ""),
+                    paper_ids=action.get("paper_ids") or [],
+                )
+                if made:
+                    inverse.append({"op": "rmrecord", "record_id": made["id"]})
+                (done if made else failed).append(label)
+
+            elif kind == "amend_record":
+                rid = int(action["record_id"])
+                before = next(
+                    (r for r in db.list_records(user, team_id) if r["id"] == rid), None
+                )
+                fields = {k: action[k] for k in ("title", "aim", "method", "result")
+                          if k in action}
+                ok = db.update_record(user, rid, **fields) if fields else False
+                if ok and before:
+                    inverse.append({
+                        "op": "record", "record_id": rid,
+                        "fields": {k: before.get(k, "") for k in fields},
+                    })
+                (done if ok else failed).append(label)
+
             elif kind == "set_reading_state":
                 before = db.paper_snapshot(user, action["paper_ids"], team_id)
                 marked = 0
@@ -549,6 +835,10 @@ def undo(user: str, undo_id: int) -> dict:
                 ok = db.remove_tag(user, op["paper_id"], op["tag"], team_id)
             elif kind == "state":
                 ok = db.set_read_state(user, op["paper_id"], op["state"], team_id)
+            elif kind == "rmrecord":
+                ok = db.delete_record(user, op["record_id"])
+            elif kind == "record":
+                ok = db.update_record(user, op["record_id"], **op["fields"])
             elif kind == "rmfolder":
                 ok = db.delete_folder(user, op["folder_id"], team_id)
             else:

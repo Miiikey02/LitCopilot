@@ -229,6 +229,71 @@ class SkillDraft(BaseModel):
     instructions: str = ""
 
 
+class Assistant(BaseModel):
+    """A toolset plus instructions — built in, or made by a user."""
+
+    id: str  # "library" | "records" | "writing" | "custom:<n>"
+    name: str
+    description: str = ""
+    toolsets: list[str] = []
+    examples: list[str] = []
+    builtin: bool = True
+    instructions: str = ""
+    shared: bool = False
+
+
+class AssistantCreate(BaseModel):
+    name: str
+    description: str = ""
+    instructions: str
+    toolsets: list[str] = ["library"]
+    team_id: Optional[int] = None
+    shared: bool = False
+
+
+class AssistantUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    instructions: Optional[str] = None
+    toolsets: Optional[list[str]] = None
+    shared: Optional[bool] = None
+
+
+class Record(BaseModel):
+    """One experiment, as it was actually run."""
+
+    id: int
+    title: str
+    kind: str = "experiment"
+    happened_on: str = ""
+    aim: str = ""
+    method: str = ""
+    result: str = ""
+    paper_ids: list[int] = []
+    updated_at: str = ""
+
+
+class RecordCreate(BaseModel):
+    title: str
+    kind: str = "experiment"
+    happened_on: Optional[str] = None
+    aim: str = ""
+    method: str = ""
+    result: str = ""
+    paper_ids: list[int] = []
+    team_id: Optional[int] = None
+
+
+class RecordUpdate(BaseModel):
+    title: Optional[str] = None
+    kind: Optional[str] = None
+    happened_on: Optional[str] = None
+    aim: Optional[str] = None
+    method: Optional[str] = None
+    result: Optional[str] = None
+    paper_ids: Optional[list[int]] = None
+
+
 class LibrarianRequest(BaseModel):
     """Ask the agent to organise, annotate or explain the library."""
 
@@ -238,6 +303,8 @@ class LibrarianRequest(BaseModel):
     history: list[dict] = []  # prior [{role, content}] turns, newest last
     # A saved convention to follow this turn. None uses the base behaviour.
     skill_id: Optional[int] = None
+    # Which assistant is working: a built-in id, or "custom:<n>".
+    assistant: Optional[str] = None
 
 
 class LibrarianAction(BaseModel):
@@ -252,6 +319,14 @@ class LibrarianAction(BaseModel):
     tags: list[str] = []
     note: str = ""
     state: str = ""
+    # Experiment-record actions
+    title: str = ""
+    record_kind: str = ""
+    happened_on: str = ""
+    aim: str = ""
+    method: str = ""
+    result: str = ""
+    record_id: Optional[int] = None
 
 
 class LibrarianResponse(BaseModel):
