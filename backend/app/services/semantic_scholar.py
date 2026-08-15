@@ -1,14 +1,21 @@
-"""Semantic Scholar retrieval via the public Graph API (no key required).
+"""Semantic Scholar retrieval via the Graph API.
 
-Used to broaden coverage beyond PubMed and to pull venue/year metadata. The
-public endpoint is rate-limited by S2; we keep request volume low (one search
-per user query) and fail soft so a S2 outage never breaks the pipeline.
+Used to broaden coverage beyond PubMed and to pull venue/year metadata.
+
+A key matters here more than it looks. Without one, every unauthenticated
+caller in the world shares a single pool, and that pool is saturated
+essentially all the time: measured from two different networks, three
+consecutive searches returned 429 on every attempt. The source was not slow or
+partial — it was contributing nothing, and failing soft meant nothing said so.
+Keys are free from S2 for research use.
 """
 from __future__ import annotations
 
+import asyncio
+
 import httpx
 
-from ..config import MAX_RESULTS
+from ..config import MAX_RESULTS, S2_API_KEY
 from .models import Paper
 
 S2_SEARCH = "https://api.semanticscholar.org/graph/v1/paper/search"
@@ -26,13 +33,27 @@ async def search_semantic_scholar(
     """
     fetch = min(limit * 3, 100) if sort == "date" else limit
     params = {"query": query, "limit": str(fetch), "fields": FIELDS}
+    headers = {"x-api-key": S2_API_KEY} if S2_API_KEY else {}
+    # Two attempts with a pause, because an unkeyed 429 often clears within a
+    # second or two. Kept short: the caller is waiting, and the other sources
+    # have already answered.
+    delay = 1.2
     try:
         async with httpx.AsyncClient() as client:
-            r = await client.get(S2_SEARCH, params=params, timeout=20)
-            r.raise_for_status()
-            data = r.json().get("data", [])
+            for attempt in range(2):
+                r = await client.get(S2_SEARCH, params=params, headers=headers, timeout=20)
+                if r.status_code == 429 and attempt == 0:
+                    await asyncio.sleep(delay)
+                    continue
+                r.raise_for_status()
+                data = r.json().get("data", [])
+                break
+            else:
+                return []
     except (httpx.HTTPError, ValueError):
-        # Fail soft — PubMed alone still yields a usable answer.
+        # Fail soft — PubMed alone still yields a usable answer. The search
+        # response now names a source that returned nothing, so this is quiet
+        # rather than invisible.
         return []
 
     papers = []

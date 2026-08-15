@@ -48,6 +48,13 @@ NCBI_EMAIL = os.getenv("NCBI_EMAIL", "")
 # one address configured once covers both.
 OPENALEX_MAILTO = os.getenv("OPENALEX_MAILTO", "") or NCBI_EMAIL
 
+# --- Semantic Scholar ---
+# Free, and worth having: without a key every caller in the world shares one
+# unauthenticated pool, which is saturated essentially all the time — the API
+# answers 429 and the source then contributes nothing to a search.
+# Request one at https://www.semanticscholar.org/product/api#api-key-form
+S2_API_KEY = os.getenv("S2_API_KEY", "")
+
 # --- Retrieval tuning ---
 MAX_RESULTS = int(os.getenv("MAX_RESULTS", "18"))  # target 15-20 abstracts
 
@@ -110,6 +117,7 @@ def redact(text: str) -> str:
         SUPABASE_JWT_SECRET,
         SUPABASE_SERVICE_KEY,
         NCBI_API_KEY,
+        S2_API_KEY,
     ):
         if secret and len(secret) > 6:
             text = text.replace(secret, "***")
