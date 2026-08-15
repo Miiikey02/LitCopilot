@@ -11,6 +11,7 @@ import BulkExport from './BulkExport'
 import ImportPanel from './ImportPanel'
 import LibrarianPanel from './LibrarianPanel'
 import LocalFolderPanel from './LocalFolderPanel'
+import AssistantDesigner from './AssistantDesigner'
 import RecordsList from './RecordsList'
 import WorkspaceBar from './WorkspaceBar'
 
@@ -437,8 +438,15 @@ function FolderSidebar({ folders, active, onPick, onChanged, total, teamId }) {
   )
 }
 
+// A face for each built-in; anything custom falls back to the spark.
+const ASSISTANT_ICON = {
+  library: 'sparkles',
+  records: 'flask',
+  writing: 'note',
+}
+
 export default function LibraryTab() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const [papers, setPapers] = useState([])
   const [tags, setTags] = useState([])
   const [folders, setFolders] = useState([])
@@ -451,7 +459,10 @@ export default function LibraryTab() {
   // null = personal library; otherwise the active team's id (as a string).
   const [activeTeam, setActiveTeam] = useState(null)
   const [importing, setImporting] = useState(false)
-  const [librarian, setLibrarian] = useState(false)
+  // Which assistant a button opened, or null when none is open.
+  const [librarian, setLibrarian] = useState(null)
+  const [assistants, setAssistants] = useState([])
+  const [designing, setDesigning] = useState(false)
   const [localFolder, setLocalFolder] = useState(false)
   // 'papers' | 'records' — the shelf, or the notebook.
   const [view, setView] = useState('papers')
@@ -477,6 +488,13 @@ export default function LibraryTab() {
       setLoadError(t('libraryLoadError'))
     }
   }
+
+  useEffect(() => {
+    api
+      .listAssistants(activeTeam, i18n.language)
+      .then(setAssistants)
+      .catch(() => {})
+  }, [activeTeam, i18n.language])
 
   useEffect(() => {
     // Debounce so typing in the search box doesn't fire a request per keystroke.
@@ -592,14 +610,26 @@ export default function LibraryTab() {
             <Icon name="download" />
             {t('importOpen')}
           </button>
-          {/* The agent sits with the other ways of getting the shelf in order,
-              because that is what it is for — not a chat bolted onto a list. */}
+          {/* Every assistant gets its own way in. Buried behind a picker inside
+              one of them, the other two would go unfound — and which assistant
+              you want is usually the first thing you know, not the last. */}
+          {assistants.map((a) => (
+            <button
+              key={a.id}
+              onClick={() => setLibrarian(a.id)}
+              title={a.description}
+              className="inline-flex max-w-[16rem] items-center gap-1.5 truncate rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-700 transition-colors hover:border-blue-300 hover:bg-white hover:text-blue-700"
+            >
+              <Icon name={ASSISTANT_ICON[a.id] || 'sparkles'} className="text-blue-500" />
+              {a.name}
+            </button>
+          ))}
           <button
-            onClick={() => setLibrarian(true)}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-700 transition-colors hover:border-blue-300 hover:bg-white hover:text-blue-700"
+            onClick={() => setDesigning(true)}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-slate-300 px-3 py-1.5 text-sm text-slate-600 transition-colors hover:border-blue-300 hover:bg-white hover:text-blue-700"
           >
-            <Icon name="sparkles" className="text-blue-500" />
-            {t('agentOpen')}
+            <Icon name="plus" />
+            {t('assistantNew')}
           </button>
           <button
             onClick={() => setLocalFolder(true)}
@@ -621,8 +651,24 @@ export default function LibraryTab() {
         {librarian && (
           <LibrarianPanel
             teamId={activeTeam}
-            onClose={() => setLibrarian(false)}
+            initialAssistant={librarian}
+            onClose={() => setLibrarian(null)}
             onChanged={load}
+          />
+        )}
+
+        {designing && (
+          <AssistantDesigner
+            teamId={activeTeam}
+            onClose={() => setDesigning(false)}
+            onSaved={(made) => {
+              setDesigning(false)
+              api
+                .listAssistants(activeTeam, i18n.language)
+                .then(setAssistants)
+                .catch(() => {})
+              if (made) setLibrarian(made.id)
+            }}
           />
         )}
 

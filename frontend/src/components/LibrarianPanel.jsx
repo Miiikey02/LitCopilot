@@ -115,7 +115,7 @@ function ActionList({ actions, applied, busy, onApply, onDismiss }) {
 
 const SUGGESTIONS = ['agentEg1', 'agentEg2', 'agentEg3']
 
-export default function LibrarianPanel({ teamId, onClose, onChanged }) {
+export default function LibrarianPanel({ teamId, initialAssistant, onClose, onChanged }) {
   const { t, i18n } = useTranslation()
   const [turns, setTurns] = useState([])
   const [input, setInput] = useState('')
@@ -130,7 +130,7 @@ export default function LibrarianPanel({ teamId, onClose, onChanged }) {
   // what differs is which tools they may reach for and how they are told to
   // work — so switching is a picker, not a different screen.
   const [assistants, setAssistants] = useState([])
-  const [assistant, setAssistant] = useState('library')
+  const [assistant, setAssistant] = useState(initialAssistant || 'library')
   const [designing, setDesigning] = useState(false)
   const [seedSkill, setSeedSkill] = useState(null)
   const box = useRef(null)
