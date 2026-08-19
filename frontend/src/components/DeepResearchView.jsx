@@ -100,13 +100,14 @@ export default function DeepResearchView({ result, citationKeys, onCite }) {
         </summary>
         <ol className="stagger mt-3 space-y-3">
           {result.sub_questions.map((s, i) => {
-            // Which of the papers shown below this step actually contributed.
-            // Fewer than it retrieved: merging collapses duplicates and the
-            // reader's chosen count trims the rest, and saying both numbers is
-            // the difference between a record and a claim.
-            const used = (s.sources || [])
-              .map((n) => result.sources[n])
-              .filter(Boolean)
+            // `sources` was added after some threads were saved. Absent means
+            // "this record does not say", which is not the same as "none" —
+            // claiming none for an old thread told the reader something false
+            // about every step of it.
+            const recorded = Array.isArray(s.sources)
+            const used = recorded
+              ? s.sources.map((n) => result.sources[n]).filter(Boolean)
+              : []
             return (
               <li key={i} className="border-l-2 border-slate-200 pl-3">
                 <div className="text-sm font-medium text-slate-800">{s.question}</div>
@@ -114,14 +115,7 @@ export default function DeepResearchView({ result, citationKeys, onCite }) {
                   <code className="rounded bg-slate-50 px-1 py-0.5">{s.search}</code>
                   {' · '}
                   {t('foundPapers', { n: s.found })}
-                  {/* Retrieved and shown are different numbers, and leaving the
-                      gap unexplained reads as a fault. A step can retrieve
-                      sixteen and contribute five because the other eleven were
-                      duplicates of papers another step already found, were
-                      judged off-topic, or fell outside the paper count set for
-                      the run. Saying so costs a clause; not saying it costs
-                      trust in the whole record. */}
-                  {s.found > 0 && (
+                  {recorded && s.found > 0 && (
                     <>
                       {' · '}
                       <span className={used.length ? '' : 'text-amber-600'}>
@@ -131,24 +125,31 @@ export default function DeepResearchView({ result, citationKeys, onCite }) {
                       </span>
                     </>
                   )}
+                  {!recorded && s.found > 0 && (
+                    <>{' · '}<span className="text-slate-400">{t('stepUnrecorded')}</span></>
+                  )}
                 </div>
+
+                {/* Listed, not hidden behind a disclosure. Checking the
+                    evidence is the reason to open a research record at all,
+                    and a step whose papers take a click to see is a step most
+                    readers never verify. */}
                 {used.length > 0 && (
-                  <details className="mt-1">
-                    <summary className="cursor-pointer text-xs text-blue-700 hover:underline">
-                      {t('stepSources', { n: used.length })}
-                    </summary>
-                    <ul className="mt-1 space-y-1">
-                      {used.map((paper) => (
-                        <li key={paper.citation_key + paper.source_id} className="text-xs leading-5">
-                          {/* Clicking scrolls to that paper's card below and
-                              flashes it — the same gesture as clicking a
-                              citation in the brief, because it answers the
-                              same question: which paper is this. */}
+                  <ul className="mt-1.5 space-y-1">
+                    {used.map((paper) => (
+                      <li
+                        key={paper.citation_key + paper.source_id}
+                        className="flex items-baseline gap-1.5 text-xs leading-5"
+                      >
+                        <span className="shrink-0 text-slate-300">·</span>
+                        <span className="min-w-0">
                           <button
                             onClick={() => onCite?.(paper.citation_key)}
                             className="text-left text-slate-600 hover:text-blue-700 hover:underline"
                           >
-                            <span className="font-medium">{paper.citation_key}</span>
+                            <span className="font-medium text-slate-700">
+                              {paper.citation_key}
+                            </span>
                             {' — '}
                             {paper.title}
                           </button>
@@ -168,10 +169,10 @@ export default function DeepResearchView({ result, citationKeys, onCite }) {
                               {t('retracted')}
                             </span>
                           )}
-                        </li>
-                      ))}
-                    </ul>
-                  </details>
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
                 )}
               </li>
             )

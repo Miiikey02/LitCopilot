@@ -20,8 +20,13 @@ export const UPDATES = [
       },
       {
         kind: 'change',
-        zh: '研究记录里每一步都会写明「检索到 N 篇 · M 篇进入最终来源」；一篇都没进的会直接说明原因（与其他步骤重复、被判定与问题无关，或超出本次篇数上限），而不是什么都不显示。',
-        en: 'Each step in the research record now states both numbers — “N found · M kept in the final sources” — and a step that contributed none says why (duplicates of another step, judged off-topic, or beyond the run’s paper limit) instead of showing nothing at all.',
+        zh: '研究记录里每一步用到的文献直接列出来了，不用再点开——核对证据本来就是打开研究记录的目的。每一步会写明「检索到 N 篇 · M 篇进入最终来源」；一篇都没进的会说明原因（与其他步骤重复、被判定与问题无关，或超出本次篇数上限）。',
+        en: 'The papers behind each step are now listed directly rather than hidden behind a click — checking the evidence is the reason to open a research record. Each step states both numbers, “N found · M kept”, and a step that contributed none says why (duplicates of another step, judged off-topic, or beyond the run’s paper limit).',
+      },
+      {
+        kind: 'fix',
+        zh: '打开今天之前保存的「深度研究」记录时，每一步都错误地显示「没有进入最终来源」。那些记录保存时还没有逐步对应文献这个功能，属于「没记录」而不是「没有」；现在会如实说明，不再给出错误的结论。',
+        en: 'Reopening a deep research thread saved before today showed “none kept” on every step, which was false — those records predate the step-by-step link and simply do not carry it. An older record now says that, rather than asserting something untrue about every step of itself.',
       },
       {
         kind: 'feature',
