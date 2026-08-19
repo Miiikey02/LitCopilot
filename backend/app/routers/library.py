@@ -32,6 +32,8 @@ from ..schemas import (
     AssistantUpdate,
     Record,
     RecordCreate,
+    RecordDraft,
+    RecordDraftRequest,
     RecordUpdate,
     Skill,
     SkillCreate,
@@ -427,6 +429,23 @@ def create_record(req: RecordCreate, user: str = Depends(current_user)) -> Recor
     if made is None:
         raise HTTPException(status_code=400, detail="A record needs a title")
     return Record(**made)
+
+
+@router.post("/records/draft", response_model=RecordDraft)
+async def draft_record(
+    req: RecordDraftRequest, user: str = Depends(current_user)
+) -> RecordDraft:
+    """Turn a rough note into a complete record, without inventing anything."""
+    text = req.text.strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Nothing to write from")
+    lang = req.lang or llm_service.detect_language(text)
+    try:
+        return RecordDraft(**await librarian.draft_record(user, text, lang, req.team_id))
+    except db.NotAMember:
+        raise HTTPException(status_code=403, detail="Not a member of this team")
+    except Exception:  # noqa: BLE001
+        raise HTTPException(status_code=503, detail="Could not draft a record")
 
 
 @router.patch("/records/{record_id}")

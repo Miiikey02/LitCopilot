@@ -14,6 +14,11 @@ export const UPDATES = [
     title: { zh: '研究记录可以逐步核查', en: 'A research record you can check step by step' },
     items: [
       {
+        kind: 'feature',
+        zh: '「实验记录」上方多了一个输入框：随手写几句，助手替你补成完整记录。想到什么写什么、顺序不用管——「8/14 按 Tanaka 2019 做了 RGC 计数，n=24/组，处理组 62% 对照 38%，p=0.004」这样就行，它会整理成目的 / 方法 / 结果，认出「今天」「8/14」是哪天，并把提到的文献关联到你文库里的那一篇。你没写的它不会替你编：结果没出来就留空，缺的东西会单独列成「还缺」清单（比如「未记录动物品系」「未说明是否设对照组」），而不是写一句听起来合理的话。',
+        en: 'A box above 实验记录: write a few lines and it completes the record. Any order, whatever comes to mind — “8/14 RGC counting following Tanaka 2019, n=24 per arm, treated 62% vs 38%, p=0.004” — and it structures that into aim / method / result, resolves “today” or a bare “8/14” to a real date, and links the paper you mentioned to the one in your library. What you did not write it does not invent: an unfinished experiment keeps an empty result, and what is absent comes back as a “still missing” list rather than a plausible sentence.',
+      },
+      {
         kind: 'fix',
         zh: '从左侧检索记录点开一条「深度研究」时，文献排版会变形——简报被挤进窄栏、文献列表挤在旁边。原因是新做一次深度研究会自动切到宽屏视图，而重新打开旧记录时没有跟着切。现在两者一致了。',
         en: 'Reopening a deep research thread from the left rail laid the papers out wrongly — the brief squeezed into a narrow column with the sources crammed beside it. A fresh deep run switches to the wide view automatically; reopening one did not. They now agree.',

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import * as api from '../lib/api'
 import Icon from './Icon'
+import RecordComposer from './RecordComposer'
 
 // The lab notebook the library kept pointing at.
 //
@@ -152,6 +153,10 @@ export default function RecordsList({ teamId, papers = [] }) {
         />
         <span className="text-sm text-slate-500">{records.length}</span>
       </div>
+
+      {/* Writing comes before reading here: the reason to open this view is
+          usually that something just happened at the bench. */}
+      <RecordComposer teamId={teamId} papers={papers} onSaved={load} />
 
       {error && <p className="text-sm text-red-600">{error}</p>}
       {!records.length && !error && (

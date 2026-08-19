@@ -284,6 +284,26 @@ class RecordCreate(BaseModel):
     team_id: Optional[int] = None
 
 
+class RecordDraftRequest(BaseModel):
+    """A rough note; a complete record comes back."""
+
+    text: str
+    team_id: Optional[int] = None
+    lang: Optional[str] = None
+
+
+class RecordDraft(BaseModel):
+    title: str = ""
+    kind: str = "experiment"
+    happened_on: str = ""
+    aim: str = ""
+    method: str = ""
+    result: str = ""
+    paper_ids: list[int] = []
+    # What a complete record still needs. Said rather than guessed.
+    missing: list[str] = []
+
+
 class RecordUpdate(BaseModel):
     title: Optional[str] = None
     kind: Optional[str] = None

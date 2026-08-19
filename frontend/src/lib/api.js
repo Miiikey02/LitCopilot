@@ -154,6 +154,10 @@ export const deleteAssistant = (id) => req(`/api/assistants/${id}`, { method: 'D
 // --- Experiment records: the lab notebook ---
 export const listRecords = (teamId, q) => req(`/api/records${ws({ q }, teamId)}`)
 export const createRecord = (r) => jsonPost('/api/records', r)
+// Write the minimum; get a structured record back. It completes what you wrote
+// and says what is still missing — it never fills a gap with an invention.
+export const draftRecord = (text, teamId, lang) =>
+  jsonPost('/api/records/draft', { text, team_id: teamId ?? null, lang: lang || null })
 export const updateRecord = (id, fields) =>
   req(`/api/records/${id}`, {
     method: 'PATCH',

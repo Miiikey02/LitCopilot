@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import date
 
 from .. import db
 from .llm_service import _get_client, _lang_name, has_llm_key
@@ -894,4 +895,95 @@ async def draft_skill(description: str, lang: str) -> dict:
         "name": str(data.get("name") or "").strip()[:80],
         "description": str(data.get("description") or "").strip()[:300],
         "instructions": str(data.get("instructions") or "").strip()[:4000],
+    }
+
+_RECORD_DRAFT_SYSTEM = """You turn a researcher's rough note about an experiment
+into a complete lab record.
+
+They will write the minimum — often a fragment, in whatever order it came to
+mind. Your job is to structure and complete it, NOT to add to it.
+
+Return ONLY JSON:
+{
+  "title": "<short, specific, in the user's language>",
+  "kind": "experiment" | "protocol" | "observation",
+  "happened_on": "<YYYY-MM-DD, only if they said or clearly implied a date>",
+  "aim": "<the question this was meant to answer>",
+  "method": "<what was done, written so someone could repeat it>",
+  "result": "<what happened — EMPTY STRING if they did not say>",
+  "paper_ids": [<ids of library papers this came from>],
+  "missing": ["<what a complete record still needs, in the user's language>"]
+}
+
+RULES
+1. NEVER invent a number, a sample size, a concentration, a duration, a
+statistical result or an outcome. If they did not write it, it does not go in.
+Expanding "n=24" into a sentence is completing; writing "n=24" when they never
+said it is fabricating, and a fabricated lab record is worse than no record.
+2. `result` is empty unless they stated one. An experiment whose result is not
+yet known is the normal case, not a gap to fill.
+2b. TODAY'S DATE is given below. Resolve "今天", "昨天" and a bare "8/14"
+against it — that is reading what they wrote, not guessing. A date you still
+cannot pin down stays empty and goes in `missing`.
+3. `missing` is where you say what is absent — "未记录样本量", "未说明对照组" —
+rather than guessing it. This is the useful half of the job: they wrote the
+minimum, so tell them what a complete record would still want.
+4. Only use paper ids from the library list given to you. If they name a paper
+you cannot find, say so in `missing` rather than guessing an id.
+5. Write in the user's language, in the register of a lab notebook: plain,
+specific, no adjectives that carry no information."""
+
+
+async def draft_record(
+    user: str, text: str, lang: str, team_id: int | None = None
+) -> dict:
+    """A complete record from a rough note, without inventing what is not there.
+
+    The library is offered alongside so "按 Tanaka 2019 的方法" can become a real
+    link rather than a string, which is the difference between a notebook and a
+    pile of paragraphs.
+    """
+    if not has_llm_key():
+        raise RuntimeError("DEEPSEEK_API_KEY not configured")
+    papers = db.list_saved(user, team_id=team_id)
+    shelf = [
+        {"id": p["id"], "cite_as": p.get("citation_key") or "", "title": p["title"]}
+        for p in papers[:120]
+    ]
+    resp = await _get_client().chat.completions.create(
+        model=DEEPSEEK_MODEL_PRO,
+        max_tokens=14000,
+        messages=[
+            {"role": "system",
+             "content": (
+                 f"{_RECORD_DRAFT_SYSTEM}\n\n"
+                 f"USER LANGUAGE: {_lang_name(lang)}.\n"
+                 f"TODAY'S DATE: {date.today().isoformat()}."
+             )},
+            {"role": "user",
+             "content": (
+                 f"LIBRARY (only these ids exist):\n"
+                 f"{json.dumps(shelf, ensure_ascii=False)}\n\n"
+                 f"ROUGH NOTE:\n{text[:4000]}"
+             )},
+        ],
+    )
+    raw = (resp.choices[0].message.content or "").strip()
+    match = re.search(r"\{.*\}", raw, re.S)
+    data = json.loads(match.group(0)) if match else {}
+
+    valid = {p["id"] for p in papers}
+    return {
+        "title": str(data.get("title") or "").strip()[:200],
+        "kind": (data.get("kind") if data.get("kind") in
+                 ("experiment", "protocol", "observation") else "experiment"),
+        "happened_on": str(data.get("happened_on") or "").strip()[:10],
+        "aim": str(data.get("aim") or "").strip()[:4000],
+        "method": str(data.get("method") or "").strip()[:8000],
+        "result": str(data.get("result") or "").strip()[:8000],
+        # Ids are filtered against the real library rather than trusted: a
+        # linked paper that does not exist is a footnote to nothing.
+        "paper_ids": [int(i) for i in (data.get("paper_ids") or [])
+                      if isinstance(i, int) and i in valid],
+        "missing": [str(m).strip()[:120] for m in (data.get("missing") or []) if str(m).strip()][:6],
     }
