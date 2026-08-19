@@ -213,7 +213,6 @@ export default function App() {
           setDeep(d)
           if (d.conversation_id) setConversationId(d.conversation_id)
           setThreadQuery(text)
-          setThreadQuery(text)
           // The brief is long and the source list is the reference shelf beside
           // it; a narrow column would make both worse.
           setWideSources(true)
@@ -232,7 +231,6 @@ export default function App() {
         const data = await api.search(text, lang, limit, includePreprints, sort, dbs, keepThread)
         setResult(data)
         if (data.conversation_id) setConversationId(data.conversation_id)
-        setThreadQuery(text)
         setThreadQuery(text)
         loadHistory()
       } catch (err) {
@@ -380,6 +378,13 @@ export default function App() {
       // A deep brief is its notebook as much as its prose; restoring only the
       // answer would quietly downgrade it to a quick search.
       if (st.mode === 'deep') {
+        // A fresh deep run forces the wide layout, for the reason given where
+        // it does so: the brief is long and the sources are a shelf beside it.
+        // Reopening one skipped this, so the same result came back in the
+        // narrow split column — the answer squeezed into three fifths of the
+        // width and the sources into two, which is the layout a short quick
+        // answer wants and a research brief does not.
+        setWideSources(true)
         setDeep({
           original_query: r.seed_query,
           detected_lang: st.lang || 'zh',

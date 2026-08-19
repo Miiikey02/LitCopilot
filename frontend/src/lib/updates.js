@@ -15,6 +15,11 @@ export const UPDATES = [
     items: [
       {
         kind: 'fix',
+        zh: '从左侧检索记录点开一条「深度研究」时，文献排版会变形——简报被挤进窄栏、文献列表挤在旁边。原因是新做一次深度研究会自动切到宽屏视图，而重新打开旧记录时没有跟着切。现在两者一致了。',
+        en: 'Reopening a deep research thread from the left rail laid the papers out wrongly — the brief squeezed into a narrow column with the sources crammed beside it. A fresh deep run switches to the wide view automatically; reopening one did not. They now agree.',
+      },
+      {
+        kind: 'fix',
         zh: '「深度研究」的耗时提示改成了实测值：约 4–5 分钟（此前写的是 40–60 秒，那是换用推理模型之前的数字）。设置的篇数越多越久。等待期间请不要刷新——刷新会丢掉这次结果，而它已经算完一半了。',
         en: 'The time estimate for deep research now matches measurement: about 4–5 minutes. It had said 40–60 seconds, which was true before the switch to a reasoning model. Raising the paper count makes it longer. Do not refresh while waiting — a refresh loses the run, which by then is half paid for.',
       },
