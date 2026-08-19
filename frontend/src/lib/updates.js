@@ -14,6 +14,11 @@ export const UPDATES = [
     title: { zh: '研究记录可以逐步核查', en: 'A research record you can check step by step' },
     items: [
       {
+        kind: 'fix',
+        zh: '「深度研究」的耗时提示改成了实测值：约 4–5 分钟（此前写的是 40–60 秒，那是换用推理模型之前的数字）。设置的篇数越多越久。等待期间请不要刷新——刷新会丢掉这次结果，而它已经算完一半了。',
+        en: 'The time estimate for deep research now matches measurement: about 4–5 minutes. It had said 40–60 seconds, which was true before the switch to a reasoning model. Raising the paper count makes it longer. Do not refresh while waiting — a refresh loses the run, which by then is half paid for.',
+      },
+      {
         kind: 'feature',
         zh: '「深度研究」的研究记录里，每一步都可以展开看它到底用到了哪几篇文献——点开是这一步贡献的文献清单，点标题会跳到下方对应的文献卡片，旁边有原文链接，撤稿的会标出来。此前每一步只给一个数字，那个数字只能选择相信。注意展开后的篇数通常少于「检索到 N 篇」：合并重复和你设置的篇数上限都会筛掉一部分。',
         en: 'Each step in a deep research record can now be opened to see which papers it actually contributed. Clicking a title jumps to that paper\u2019s card below, with a link to the original beside it and retractions marked. Before, a step gave you a number and nothing to check it against. The count shown is usually smaller than "N found" — merging duplicates and your chosen paper limit both trim what survives.',
