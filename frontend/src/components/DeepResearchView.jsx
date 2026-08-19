@@ -114,6 +114,23 @@ export default function DeepResearchView({ result, citationKeys, onCite }) {
                   <code className="rounded bg-slate-50 px-1 py-0.5">{s.search}</code>
                   {' · '}
                   {t('foundPapers', { n: s.found })}
+                  {/* Retrieved and shown are different numbers, and leaving the
+                      gap unexplained reads as a fault. A step can retrieve
+                      sixteen and contribute five because the other eleven were
+                      duplicates of papers another step already found, were
+                      judged off-topic, or fell outside the paper count set for
+                      the run. Saying so costs a clause; not saying it costs
+                      trust in the whole record. */}
+                  {s.found > 0 && (
+                    <>
+                      {' · '}
+                      <span className={used.length ? '' : 'text-amber-600'}>
+                        {used.length
+                          ? t('stepKept', { n: used.length })
+                          : t('stepKeptNone')}
+                      </span>
+                    </>
+                  )}
                 </div>
                 {used.length > 0 && (
                   <details className="mt-1">

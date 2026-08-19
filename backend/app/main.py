@@ -396,17 +396,42 @@ async def deep_research(
 
     # 2. Search every sub-question concurrently, then merge into one corpus.
     per_q = max(3, min(req.per_question, 15))
-    results = await asyncio.gather(
-        *[
-            retrieve(
-                s["search"],
+
+    async def _search_sub(sub: dict) -> list:
+        """One sub-question, retried shorter when its query finds nothing.
+
+        A planned query is a guess about what the index will match, and a long
+        one is a narrow guess: PubMed ANDs its terms, so eight of them can miss
+        a literature that three would have found. Measured on a real run, three
+        of five sub-questions returned nothing at all, and the brief was written
+        from a single paper. Rather than trust the planner to be brief, drop to
+        the first few words and ask again — a broader second attempt costs one
+        request and is the difference between a step contributing and a step
+        contributing nothing.
+        """
+        found = await retrieve(
+            sub["search"],
+            limit=per_q,
+            include_preprints=req.include_preprints,
+            sources=req.sources,
+        )
+        words = sub["search"].split()
+        if not found and len(words) > 4:
+            broader = " ".join(words[:4])
+            found = await retrieve(
+                broader,
                 limit=per_q,
                 include_preprints=req.include_preprints,
                 sources=req.sources,
             )
-            for s in subs
-        ],
-        return_exceptions=True,
+            if found:
+                # Record what actually retrieved them; the notebook claims to
+                # show what was searched, and it should be true.
+                sub["search"] = broader
+        return found
+
+    results = await asyncio.gather(
+        *[_search_sub(s) for s in subs], return_exceptions=True
     )
     notebook: list[SubQuestion] = []
     collected: list = []

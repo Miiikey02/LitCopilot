@@ -14,6 +14,16 @@ export const UPDATES = [
     title: { zh: '研究记录可以逐步核查', en: 'A research record you can check step by step' },
     items: [
       {
+        kind: 'fix',
+        zh: '「深度研究」的子问题检索词太长，经常一篇也搜不到。实测一次运行里五个子问题有三个返回 0 篇，最后整份简报只用了 1 篇文献——PubMed 是把关键词全部相加来匹配的，八个词连起来往往什么都匹配不到。现在生成的检索词更短（只留最关键的几个词），并且某一步搜不到时会自动用更宽的词再搜一次，研究记录里显示的也是真正起作用的那条检索词。',
+        en: 'Deep research was writing sub-question queries too long to match anything. Measured on one run, three of five sub-questions returned zero papers and the whole brief was written from a single source — PubMed ANDs its terms, so eight keywords together often match nothing. Queries are now kept short, a step that finds nothing is automatically retried with a broader one, and the research record shows the query that actually worked.',
+      },
+      {
+        kind: 'change',
+        zh: '研究记录里每一步都会写明「检索到 N 篇 · M 篇进入最终来源」；一篇都没进的会直接说明原因（与其他步骤重复、被判定与问题无关，或超出本次篇数上限），而不是什么都不显示。',
+        en: 'Each step in the research record now states both numbers — “N found · M kept in the final sources” — and a step that contributed none says why (duplicates of another step, judged off-topic, or beyond the run’s paper limit) instead of showing nothing at all.',
+      },
+      {
         kind: 'feature',
         zh: '「实验记录」上方多了一个输入框：随手写几句，助手替你补成完整记录。想到什么写什么、顺序不用管——「8/14 按 Tanaka 2019 做了 RGC 计数，n=24/组，处理组 62% 对照 38%，p=0.004」这样就行，它会整理成目的 / 方法 / 结果，认出「今天」「8/14」是哪天，并把提到的文献关联到你文库里的那一篇。你没写的它不会替你编：结果没出来就留空，缺的东西会单独列成「还缺」清单（比如「未记录动物品系」「未说明是否设对照组」），而不是写一句听起来合理的话。',
         en: 'A box above 实验记录: write a few lines and it completes the record. Any order, whatever comes to mind — “8/14 RGC counting following Tanaka 2019, n=24 per arm, treated 62% vs 38%, p=0.004” — and it structures that into aim / method / result, resolves “today” or a bare “8/14” to a real date, and links the paper you mentioned to the one in your library. What you did not write it does not invent: an unfinished experiment keeps an empty result, and what is absent comes back as a “still missing” list rather than a plausible sentence.',

@@ -499,9 +499,16 @@ together cover it, the way a careful reviewer would: mechanism, evidence in
 humans, comparative effectiveness, safety, gaps — whichever actually apply.
 A complex question searched as one keyword string misses most of the literature.
 
-For each sub-question also give a concise ENGLISH search string (medical
-terminology, MeSH-style where natural, under 20 words) — PubMed and OpenAlex are
-English-only.
+For each sub-question also give an ENGLISH search string — PubMed and OpenAlex
+are English-only.
+
+Keep it to 3-6 words: the most distinctive terms only. Every extra word narrows
+the result set, and PubMed matches strictly enough that eight ANDed keywords
+routinely return nothing at all. "Parkinson disease tactile threshold" finds the
+literature; "Parkinson disease tactile threshold discrimination somatosensory
+evoked potentials motor symptom severity correlation" finds none of it. Name the
+condition and the one concept the sub-question turns on; leave the rest to the
+reader.
 
 Return ONLY a JSON object of this exact shape:
 {"sub_questions": [{"question": "<in the response language>",
