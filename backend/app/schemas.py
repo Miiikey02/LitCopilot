@@ -475,6 +475,10 @@ class SubQuestion(BaseModel):
     question: str
     search: str
     found: int = 0  # papers retrieved for this sub-question
+    # Indices into the response's `sources` — which of the papers finally shown
+    # came from this step. Fewer than `found`, because merging and the reader's
+    # chosen count both trim what survives.
+    sources: list[int] = []
 
 
 class DeepResearchResponse(BaseModel):

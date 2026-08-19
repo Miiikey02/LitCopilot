@@ -89,6 +89,11 @@ export const UPDATES = [
         en: 'Tidy a local folder: grant Gaze the folder where your PDFs live and it reads each one for its DOI, matches it against your library, and proposes turning `1-s2.0-S00928674…-main.pdf` into “Author, Year - Title.pdf”, filed into sub-folders matching your library. It also tells you which saved papers have no file. Nothing is uploaded — only a DOI and title reach the server — nothing is ever deleted, every change is listed first, and a log is written inside the folder so it can be undone. Chromium browsers (Chrome, Edge) only.',
       },
       {
+        kind: 'feature',
+        zh: '「深度研究」的研究记录里，每一步都可以展开看它到底用到了哪几篇文献——点开是这一步贡献的文献清单，点标题会跳到下方对应的文献卡片，旁边有原文链接，撤稿的会标出来。此前每一步只给一个数字，那个数字只能选择相信。注意展开后的篇数通常少于「检索到 N 篇」：合并重复和你设置的篇数上限都会筛掉一部分。',
+        en: 'Each step in a deep research record can now be opened to see which papers it actually contributed. Clicking a title jumps to that paper\u2019s card below, with a link to the original beside it and retractions marked. Before, a step gave you a number and nothing to check it against. The count shown is usually smaller than "N found" — merging duplicates and your chosen paper limit both trim what survives.',
+      },
+      {
         kind: 'change',
         zh: 'Gaze 名字旁边加了「beta 测试版」标记。现在确实是测试阶段——功能还在变，也还会有做得不对的地方，看到了请直接用左侧的「反馈」告诉我们。',
         en: 'A “beta” tag now sits beside the Gaze name. It is genuinely a test build: things are still changing and some of them are still wrong. When you hit one, the Feedback button in the left rail is the fastest way to say so.',

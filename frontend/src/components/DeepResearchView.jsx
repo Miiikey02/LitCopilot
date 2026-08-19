@@ -99,16 +99,66 @@ export default function DeepResearchView({ result, citationKeys, onCite }) {
           {t('notebook')}
         </summary>
         <ol className="stagger mt-3 space-y-3">
-          {result.sub_questions.map((s, i) => (
-            <li key={i} className="border-l-2 border-slate-200 pl-3">
-              <div className="text-sm font-medium text-slate-800">{s.question}</div>
-              <div className="mt-0.5 text-xs text-slate-400">
-                <code className="rounded bg-slate-50 px-1 py-0.5">{s.search}</code>
-                {' · '}
-                {t('foundPapers', { n: s.found })}
-              </div>
-            </li>
-          ))}
+          {result.sub_questions.map((s, i) => {
+            // Which of the papers shown below this step actually contributed.
+            // Fewer than it retrieved: merging collapses duplicates and the
+            // reader's chosen count trims the rest, and saying both numbers is
+            // the difference between a record and a claim.
+            const used = (s.sources || [])
+              .map((n) => result.sources[n])
+              .filter(Boolean)
+            return (
+              <li key={i} className="border-l-2 border-slate-200 pl-3">
+                <div className="text-sm font-medium text-slate-800">{s.question}</div>
+                <div className="mt-0.5 text-xs text-slate-400">
+                  <code className="rounded bg-slate-50 px-1 py-0.5">{s.search}</code>
+                  {' · '}
+                  {t('foundPapers', { n: s.found })}
+                </div>
+                {used.length > 0 && (
+                  <details className="mt-1">
+                    <summary className="cursor-pointer text-xs text-blue-700 hover:underline">
+                      {t('stepSources', { n: used.length })}
+                    </summary>
+                    <ul className="mt-1 space-y-1">
+                      {used.map((paper) => (
+                        <li key={paper.citation_key + paper.source_id} className="text-xs leading-5">
+                          {/* Clicking scrolls to that paper's card below and
+                              flashes it — the same gesture as clicking a
+                              citation in the brief, because it answers the
+                              same question: which paper is this. */}
+                          <button
+                            onClick={() => onCite?.(paper.citation_key)}
+                            className="text-left text-slate-600 hover:text-blue-700 hover:underline"
+                          >
+                            <span className="font-medium">{paper.citation_key}</span>
+                            {' — '}
+                            {paper.title}
+                          </button>
+                          {paper.url && (
+                            <a
+                              href={paper.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              title={t('viewSource')}
+                              className="ml-1 inline-block text-slate-400 hover:text-blue-700"
+                            >
+                              <Icon name="externalLink" />
+                            </a>
+                          )}
+                          {paper.retraction_status === 'retracted' && (
+                            <span className="ml-1 rounded bg-red-50 px-1 text-[10px] text-red-700">
+                              {t('retracted')}
+                            </span>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                )}
+              </li>
+            )
+          })}
         </ol>
       </details>
     </div>

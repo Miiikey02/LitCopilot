@@ -155,6 +155,27 @@ _SOURCE_NAMES = {
 }
 
 
+def _paper_keys(paper) -> set[str]:
+    """Every identity this record answers to: its DOI, its normalised title.
+
+    A set rather than one key, because `dedupe` merges on either — the same
+    work under a journal DOI and a mirror DOI is one paper, and picking a
+    single key would miss half those matches.
+
+    Papers with neither a DOI nor a title long enough to be safe (title_key
+    returns "" below twenty characters) yield an empty set and match nothing.
+    That is deliberate: a step that cannot prove a paper is its own should
+    under-report rather than claim one that belongs to another step.
+    """
+    keys = set()
+    if paper.doi:
+        keys.add(paper.doi.lower())
+    tkey = paper.title_key()
+    if tkey:
+        keys.add(tkey)
+    return keys
+
+
 def _quiet_sources(report: dict, papers: list) -> list[str]:
     """Sources that were asked and returned nothing.
 
@@ -389,9 +410,15 @@ async def deep_research(
     )
     notebook: list[SubQuestion] = []
     collected: list = []
+    # Which papers each sub-question turned up, by the same key dedupe merges
+    # on. Kept so the notebook can say not merely how many a step found but
+    # which — a step reporting "16 found" is a number to take on trust, and the
+    # point of a notebook is that nothing has to be.
+    per_sub_keys: list[set] = []
     for sub, res in zip(subs, results):
         found = res if isinstance(res, list) else []
         collected.extend(found)
+        per_sub_keys.append({k for p in found for k in _paper_keys(p)})
         notebook.append(
             SubQuestion(question=sub["question"], search=sub["search"], found=len(found))
         )
@@ -444,6 +471,11 @@ async def deep_research(
     ]
     ranked = sorted(kept, key=lambda p: 0 if p.citation_key() in cited else 1)
     papers = ranked[:wanted]
+
+    # Steps point at the sources by index, so the notebook links to the very
+    # cards shown below rather than to a second, possibly divergent, list.
+    for step, keys in zip(notebook, per_sub_keys):
+        step.sources = [i for i, p in enumerate(papers) if _paper_keys(p) & keys]
 
     cards = [SourceCard(**p.to_card()) for p in papers]
     if user:
