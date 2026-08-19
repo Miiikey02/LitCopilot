@@ -10,8 +10,96 @@
 
 export const UPDATES = [
   {
+    date: '2026-08-19',
+    title: { zh: '研究记录可以逐步核查', en: 'A research record you can check step by step' },
+    items: [
+      {
+        kind: 'feature',
+        zh: '「深度研究」的研究记录里，每一步都可以展开看它到底用到了哪几篇文献——点开是这一步贡献的文献清单，点标题会跳到下方对应的文献卡片，旁边有原文链接，撤稿的会标出来。此前每一步只给一个数字，那个数字只能选择相信。注意展开后的篇数通常少于「检索到 N 篇」：合并重复和你设置的篇数上限都会筛掉一部分。',
+        en: 'Each step in a deep research record can now be opened to see which papers it actually contributed. Clicking a title jumps to that paper\u2019s card below, with a link to the original beside it and retractions marked. Before, a step gave you a number and nothing to check it against. The count shown is usually smaller than "N found" — merging duplicates and your chosen paper limit both trim what survives.',
+      },
+    ],
+  },
+  {
+    date: '2026-08-15',
+    title: { zh: '三个助手，以及创建你自己的', en: 'Three assistants, and building your own' },
+    items: [
+      {
+        kind: 'change',
+        zh: 'Gaze 名字旁边加了「beta 测试版」标记。现在确实是测试阶段——功能还在变，也还会有做得不对的地方，看到了请直接用左侧的「反馈」告诉我们。',
+        en: 'A “beta” tag now sits beside the Gaze name. It is genuinely a test build: things are still changing and some of them are still wrong. When you hit one, the Feedback button in the left rail is the fastest way to say so.',
+      },
+      {
+        kind: 'change',
+        zh: '几个助手改成直接放在「我的文库」的按钮上：文献管理助手、实验记录助手、课题申报材料助手，以及「创建你自己的助手」。此前它们藏在一个助手内部的切换器里，等于另外两个根本找不到。自己创建的助手也会出现在这一排。',
+        en: 'The assistants now each have their own button in 我的文库 — library, lab notebook, proposal, and “build your own”. They had been hidden behind a switcher inside one of them, which made the other two effectively unfindable. Assistants you build appear in the same row.',
+      },
+      {
+        kind: 'fix',
+        zh: 'Semantic Scholar 时好时坏：不带密钥的调用要和全世界共用一个额度池，池子满了就返回「请求过多」，那一次检索就少了一个库。现在支持配置 API 密钥（向官方免费申请），并在被限流时自动重试一次；没有密钥时它仍然能用，只是不稳定。',
+        en: 'Semantic Scholar is intermittent: without a key, calls share one global quota with everyone, and when it is full the API answers “too many requests” and that search loses a database. Gaze now supports an API key (free to request) and retries once when throttled. Without one it still works, just unreliably.',
+      },
+      {
+        kind: 'feature',
+        zh: '助手不再只有一个。「整理助手」里可以切换：\n\n· 文献管理助手 —— 分文件夹、归档、打标签、写笔记、标阅读状态。\n· 实验记录助手 —— 用一句话记下今天做了什么、目的是什么、结果如何（结果没出来就留空，它不会替你编），并关联到文库里的文献。文库旁边多了「实验记录」一栏可以查看和补充。\n· 课题申报材料助手 —— 读你自己的文库和实验记录，起草立项依据、研究基础，逐句用你文库里的引用格式标注；文库支撑不了的地方会写一行「缺口：」，而不是替你把话说满。\n\n还可以「创造您自己的助手」：勾选它能接触什么（文献库 / 实验记录 / 只读撰写），再用大白话写一句你希望它怎么做，就成了。',
+        en: 'There is more than one assistant now, switchable inside the librarian:\n\n· Library assistant — folders, filing, tags, notes, reading state.\n· Lab notebook assistant — dictate what you did, why, and what happened; an unknown result stays empty rather than being invented, and records link to the papers they came from. A Lab records view sits beside the library.\n· Proposal assistant — drafts the background and preliminary-work sections from your own papers and records, cited with your library\u2019s own keys, and writes a "缺口:" line where your library does not support the claim instead of writing it anyway.\n\nAnd you can build your own: tick what it may touch, say in plain language how it should work.',
+      },
+    ],
+  },
+  {
+    date: '2026-08-14',
+    title: { zh: '会动手的助手：整理、撤销、本地文件夹', en: 'An agent that acts: organising, undo, and local files' },
+    items: [
+      {
+        kind: 'feature',
+        zh: '文献可以标记阅读状态了：待读 / 在读 / 已读 / 已引用。文库顶部可按状态筛选，「未标记」单独一类——批量导入之后，那一堆还没分拣的就在这里。整理助手也看得到状态，可以问它「接下来该读哪几篇」。',
+        en: 'Papers now carry a reading state — to read, reading, read, cited. Filter the library by it from the top, including an Unmarked bucket, which is where a bulk import lands before anyone has triaged it. The librarian can see the state too, so "what should I read next" is now a question it can answer.',
+      },
+      {
+        kind: 'feature',
+        zh: '整理助手的每次改动都可以撤销：应用之后会出现「撤销这些改动」，点一下文库就回到改动前——文件夹、归档、标签、笔记、阅读状态都会还原（改动前已有的标签不会被误删）。',
+        en: 'Every batch of librarian changes can be undone. After applying, an Undo appears; one click puts the library back exactly as it was — folders, filing, tags, notes and reading state all restored, and tags that were already there are not removed by mistake.',
+      },
+      {
+        kind: 'feature',
+        zh: '新增「整理本地文件夹」：授权电脑上存放 PDF 的那个文件夹，Gaze 会读取每个 PDF 的 DOI，与文库比对，然后建议把 `1-s2.0-S00928674…-main.pdf` 这类文件名改成「作者, 年份 - 标题.pdf」，并按文库里的文件夹分目录存放；同时告诉你哪些文献存了却没有本地文件。文件不会上传，只有 DOI 和标题会发到服务器；不会删除任何文件，所有改动先列出来，并写入文件夹内的日志以便还原。需要 Chrome / Edge 等 Chromium 内核浏览器。',
+        en: 'Tidy a local folder: grant Gaze the folder where your PDFs live and it reads each one for its DOI, matches it against your library, and proposes turning `1-s2.0-S00928674…-main.pdf` into “Author, Year - Title.pdf”, filed into sub-folders matching your library. It also tells you which saved papers have no file. Nothing is uploaded — only a DOI and title reach the server — nothing is ever deleted, every change is listed first, and a log is written inside the folder so it can be undone. Chromium browsers (Chrome, Edge) only.',
+      },
+      {
+        kind: 'feature',
+        zh: '新增「技能」：把你自己的整理习惯写下来，助手照着做——文件夹按课题号命名、笔记必须写清研究对象是人还是动物、综述单独归档……都可以。不用自己琢磨怎么写：用大白话说一遍你的要求，助手会替你整理成一条技能，你再改。助手做得好的那一次，也可以直接点「把这次的做法存成技能」。在实验室工作区里，技能可以共享给全体成员，等于把本实验室的规范写下来一次、所有人照做。技能只影响「怎么做」：所有改动仍然要你确认，仍然不会编造文献，撤稿仍然会被指出来。',
+        en: 'Skills: write down how you like things done and the librarian follows it — folders named by grant number, every note stating whether a study was in humans or animals, reviews kept separately. You do not have to phrase it well: describe it in plain language and it is drafted into a skill for you to edit, or press "save this as a skill" after a run that went the way you wanted. In a lab workspace a skill can be shared with everyone, which is how a group writes its conventions down once. A skill changes how work is done, never the rules: changes still need approval, papers are still never invented, retractions are still flagged.',
+      },
+      {
+        kind: 'fix',
+        zh: '某个数据库没有响应时，结果上方会写明「本次检索未包含：OpenAlex」这类提示。此前任何一个库出问题都是静默跳过的——号称检索四个库，实际可能只搜了两个，而且看不出来。',
+        en: 'When a database does not answer, the result now says so — "Not included this time: OpenAlex". Previously any source could drop out silently, so a search advertising four databases could quietly be searching two with nothing to show for it.',
+      },
+      {
+        kind: 'change',
+        zh: '关联图谱建好后会缓存几小时：再打开同一篇是秒开，也少一次被数据源限流的机会。取数失败的图不会被缓存，免得一次限流变成这篇文献的长期答案。',
+        en: 'A built paper map is cached for a few hours: opening the same paper again is instant, and it is one less chance to be rate-limited. A map that failed to fetch is never cached, so one throttled minute cannot become the paper\u2019s standing answer.',
+      },
+      {
+        kind: 'fix',
+        zh: '关联图谱取不到数据时会说明原因。此前数据源限流的结果和「这篇文献没有关联研究」长得一模一样——都是一张空图；现在会告诉你是限流、过一会儿再试。',
+        en: 'When the paper map cannot fetch neighbours it now says so. A rate-limited fetch used to look identical to a paper with no related work — both an empty graph. It now explains that the data source is throttling us and to retry shortly.',
+      },
+      {
+        kind: 'fix',
+        zh: '整理助手现在看得到撤稿与「编辑关注」标记。此前它看不到：被问「有没有问题文献」时会说文库很干净，还会把撤稿论文列进待读、给它写「值得保留作为证据」的笔记。现在它会指名道姓地把这些文献点出来，并说明不能作为证据引用。',
+        en: 'The librarian can now see retraction and expression-of-concern flags. It could not before: asked whether anything in the library was problematic it would report the shelf clean, queue a retracted paper for reading, and write a note calling it worth keeping as evidence. It now names such papers and says plainly that they cannot be cited as evidence.',
+      },
+      {
+        kind: 'feature',
+        zh: '文库多了一个「整理助手」：可以让它按主题分文件夹、把文献归档、打标签，或者替你写每篇文献的笔记（这篇做了什么、发现了什么、为什么值得留着）。它会先读一遍你保存的文献再给方案，所有改动都先列出来——点「应用」之前，文库不会动。',
+        en: 'A librarian in 我的文库: ask it to sort papers into folders by topic, file them, tag them, or write the note for each one — what the study did, what it found, why it is worth keeping. It reads your saved papers first, then lists every change it wants to make. Nothing happens to your library until you press Apply.',
+      },
+    ],
+  },
+  {
     date: '2026-08-13',
-    title: { zh: '文库整理与两种检索模式的分工', en: 'Library organisation, and the two search modes' },
+    title: { zh: '文库整理、导入，与两种检索模式的分工', en: 'Library organisation, import, and the two search modes' },
     items: [
       {
         kind: 'feature',
@@ -72,76 +160,6 @@ export const UPDATES = [
         kind: 'fix',
         zh: '「深度研究」下也能选择检索哪些数据库——之前这个选项只在快速检索时出现。',
         en: 'The database picker now appears in deep research too — it had only been showing in quick search.',
-      },
-      {
-        kind: 'feature',
-        zh: '文献可以标记阅读状态了：待读 / 在读 / 已读 / 已引用。文库顶部可按状态筛选，「未标记」单独一类——批量导入之后，那一堆还没分拣的就在这里。整理助手也看得到状态，可以问它「接下来该读哪几篇」。',
-        en: 'Papers now carry a reading state — to read, reading, read, cited. Filter the library by it from the top, including an Unmarked bucket, which is where a bulk import lands before anyone has triaged it. The librarian can see the state too, so "what should I read next" is now a question it can answer.',
-      },
-      {
-        kind: 'feature',
-        zh: '整理助手的每次改动都可以撤销：应用之后会出现「撤销这些改动」，点一下文库就回到改动前——文件夹、归档、标签、笔记、阅读状态都会还原（改动前已有的标签不会被误删）。',
-        en: 'Every batch of librarian changes can be undone. After applying, an Undo appears; one click puts the library back exactly as it was — folders, filing, tags, notes and reading state all restored, and tags that were already there are not removed by mistake.',
-      },
-      {
-        kind: 'feature',
-        zh: '新增「整理本地文件夹」：授权电脑上存放 PDF 的那个文件夹，Gaze 会读取每个 PDF 的 DOI，与文库比对，然后建议把 `1-s2.0-S00928674…-main.pdf` 这类文件名改成「作者, 年份 - 标题.pdf」，并按文库里的文件夹分目录存放；同时告诉你哪些文献存了却没有本地文件。文件不会上传，只有 DOI 和标题会发到服务器；不会删除任何文件，所有改动先列出来，并写入文件夹内的日志以便还原。需要 Chrome / Edge 等 Chromium 内核浏览器。',
-        en: 'Tidy a local folder: grant Gaze the folder where your PDFs live and it reads each one for its DOI, matches it against your library, and proposes turning `1-s2.0-S00928674…-main.pdf` into “Author, Year - Title.pdf”, filed into sub-folders matching your library. It also tells you which saved papers have no file. Nothing is uploaded — only a DOI and title reach the server — nothing is ever deleted, every change is listed first, and a log is written inside the folder so it can be undone. Chromium browsers (Chrome, Edge) only.',
-      },
-      {
-        kind: 'feature',
-        zh: '「深度研究」的研究记录里，每一步都可以展开看它到底用到了哪几篇文献——点开是这一步贡献的文献清单，点标题会跳到下方对应的文献卡片，旁边有原文链接，撤稿的会标出来。此前每一步只给一个数字，那个数字只能选择相信。注意展开后的篇数通常少于「检索到 N 篇」：合并重复和你设置的篇数上限都会筛掉一部分。',
-        en: 'Each step in a deep research record can now be opened to see which papers it actually contributed. Clicking a title jumps to that paper\u2019s card below, with a link to the original beside it and retractions marked. Before, a step gave you a number and nothing to check it against. The count shown is usually smaller than "N found" — merging duplicates and your chosen paper limit both trim what survives.',
-      },
-      {
-        kind: 'change',
-        zh: 'Gaze 名字旁边加了「beta 测试版」标记。现在确实是测试阶段——功能还在变，也还会有做得不对的地方，看到了请直接用左侧的「反馈」告诉我们。',
-        en: 'A “beta” tag now sits beside the Gaze name. It is genuinely a test build: things are still changing and some of them are still wrong. When you hit one, the Feedback button in the left rail is the fastest way to say so.',
-      },
-      {
-        kind: 'change',
-        zh: '几个助手改成直接放在「我的文库」的按钮上：文献管理助手、实验记录助手、课题申报材料助手，以及「创建你自己的助手」。此前它们藏在一个助手内部的切换器里，等于另外两个根本找不到。自己创建的助手也会出现在这一排。',
-        en: 'The assistants now each have their own button in 我的文库 — library, lab notebook, proposal, and “build your own”. They had been hidden behind a switcher inside one of them, which made the other two effectively unfindable. Assistants you build appear in the same row.',
-      },
-      {
-        kind: 'fix',
-        zh: 'Semantic Scholar 之前一直返回「请求过多」，等于四个数据库里有一个长期没在工作——它对未注册的调用有严格限流。现在支持配置 API 密钥（免费申请），并在被限流时自动重试一次。',
-        en: 'Semantic Scholar had been returning “too many requests” continuously — one of the four databases was effectively not working, because its unauthenticated pool is throttled almost permanently. Gaze now supports an API key (free to request) and retries once when throttled.',
-      },
-      {
-        kind: 'feature',
-        zh: '助手不再只有一个。「整理助手」里可以切换：\n\n· 文献管理助手 —— 分文件夹、归档、打标签、写笔记、标阅读状态。\n· 实验记录助手 —— 用一句话记下今天做了什么、目的是什么、结果如何（结果没出来就留空，它不会替你编），并关联到文库里的文献。文库旁边多了「实验记录」一栏可以查看和补充。\n· 课题申报材料助手 —— 读你自己的文库和实验记录，起草立项依据、研究基础，逐句用你文库里的引用格式标注；文库支撑不了的地方会写一行「缺口：」，而不是替你把话说满。\n\n还可以「创造您自己的助手」：勾选它能接触什么（文献库 / 实验记录 / 只读撰写），再用大白话写一句你希望它怎么做，就成了。',
-        en: 'There is more than one assistant now, switchable inside the librarian:\n\n· Library assistant — folders, filing, tags, notes, reading state.\n· Lab notebook assistant — dictate what you did, why, and what happened; an unknown result stays empty rather than being invented, and records link to the papers they came from. A Lab records view sits beside the library.\n· Proposal assistant — drafts the background and preliminary-work sections from your own papers and records, cited with your library\u2019s own keys, and writes a "缺口:" line where your library does not support the claim instead of writing it anyway.\n\nAnd you can build your own: tick what it may touch, say in plain language how it should work.',
-      },
-      {
-        kind: 'feature',
-        zh: '新增「技能」：把你自己的整理习惯写下来，助手照着做——文件夹按课题号命名、笔记必须写清研究对象是人还是动物、综述单独归档……都可以。不用自己琢磨怎么写：用大白话说一遍你的要求，助手会替你整理成一条技能，你再改。助手做得好的那一次，也可以直接点「把这次的做法存成技能」。在实验室工作区里，技能可以共享给全体成员，等于把本实验室的规范写下来一次、所有人照做。技能只影响「怎么做」：所有改动仍然要你确认，仍然不会编造文献，撤稿仍然会被指出来。',
-        en: 'Skills: write down how you like things done and the librarian follows it — folders named by grant number, every note stating whether a study was in humans or animals, reviews kept separately. You do not have to phrase it well: describe it in plain language and it is drafted into a skill for you to edit, or press "save this as a skill" after a run that went the way you wanted. In a lab workspace a skill can be shared with everyone, which is how a group writes its conventions down once. A skill changes how work is done, never the rules: changes still need approval, papers are still never invented, retractions are still flagged.',
-      },
-      {
-        kind: 'fix',
-        zh: '某个数据库没有响应时，结果上方会写明「本次检索未包含：OpenAlex」这类提示。此前任何一个库出问题都是静默跳过的——号称检索四个库，实际可能只搜了两个，而且看不出来。',
-        en: 'When a database does not answer, the result now says so — "Not included this time: OpenAlex". Previously any source could drop out silently, so a search advertising four databases could quietly be searching two with nothing to show for it.',
-      },
-      {
-        kind: 'change',
-        zh: '关联图谱建好后会缓存几小时：再打开同一篇是秒开，也少一次被数据源限流的机会。取数失败的图不会被缓存，免得一次限流变成这篇文献的长期答案。',
-        en: 'A built paper map is cached for a few hours: opening the same paper again is instant, and it is one less chance to be rate-limited. A map that failed to fetch is never cached, so one throttled minute cannot become the paper\u2019s standing answer.',
-      },
-      {
-        kind: 'fix',
-        zh: '关联图谱取不到数据时会说明原因。此前数据源限流的结果和「这篇文献没有关联研究」长得一模一样——都是一张空图；现在会告诉你是限流、过一会儿再试。',
-        en: 'When the paper map cannot fetch neighbours it now says so. A rate-limited fetch used to look identical to a paper with no related work — both an empty graph. It now explains that the data source is throttling us and to retry shortly.',
-      },
-      {
-        kind: 'fix',
-        zh: '整理助手现在看得到撤稿与「编辑关注」标记。此前它看不到：被问「有没有问题文献」时会说文库很干净，还会把撤稿论文列进待读、给它写「值得保留作为证据」的笔记。现在它会指名道姓地把这些文献点出来，并说明不能作为证据引用。',
-        en: 'The librarian can now see retraction and expression-of-concern flags. It could not before: asked whether anything in the library was problematic it would report the shelf clean, queue a retracted paper for reading, and write a note calling it worth keeping as evidence. It now names such papers and says plainly that they cannot be cited as evidence.',
-      },
-      {
-        kind: 'feature',
-        zh: '文库多了一个「整理助手」：可以让它按主题分文件夹、把文献归档、打标签，或者替你写每篇文献的笔记（这篇做了什么、发现了什么、为什么值得留着）。它会先读一遍你保存的文献再给方案，所有改动都先列出来——点「应用」之前，文库不会动。',
-        en: 'A librarian in 我的文库: ask it to sort papers into folders by topic, file them, tag them, or write the note for each one — what the study did, what it found, why it is worth keeping. It reads your saved papers first, then lists every change it wants to make. Nothing happens to your library until you press Apply.',
       },
       {
         kind: 'feature',
