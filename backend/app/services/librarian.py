@@ -823,6 +823,13 @@ def undo(user: str, undo_id: int) -> dict:
         return {"reverted": 0, "failed": 0, "already": True}
 
     team_id = record.get("team_id")
+    # A 负责人 may undo someone else's batch. Most of the reversal runs as the
+    # person pressing undo, so note history names who actually did it. Records
+    # are the exception: only their author may edit or delete one, and the
+    # batch being reversed is the author's own work, so those steps run with
+    # the author's authority. Nothing is reached that the author could not
+    # have reached when they applied it.
+    author = record.get("user_id") or user
     reverted = 0
     failed = 0
     for op in reversed(record["inverse"]):
@@ -837,9 +844,9 @@ def undo(user: str, undo_id: int) -> dict:
             elif kind == "state":
                 ok = db.set_read_state(user, op["paper_id"], op["state"], team_id)
             elif kind == "rmrecord":
-                ok = db.delete_record(user, op["record_id"])
+                ok = db.delete_record(author, op["record_id"])
             elif kind == "record":
-                ok = db.update_record(user, op["record_id"], **op["fields"])
+                ok = db.update_record(author, op["record_id"], **op["fields"])
             elif kind == "rmfolder":
                 ok = db.delete_folder(user, op["folder_id"], team_id)
             else:

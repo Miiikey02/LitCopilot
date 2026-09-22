@@ -368,6 +368,27 @@ class LibrarianApplied(BaseModel):
     undo_id: Optional[int] = None
 
 
+class NoteVersion(BaseModel):
+    """One change to a paper's note: what it said before, and who changed it."""
+
+    id: int
+    old_notes: str = ""
+    new_notes: str = ""
+    by: str = ""  # email of whoever made the change
+    at: str = ""
+
+
+class UndoBatch(BaseModel):
+    """A batch of agent changes that can still be reversed."""
+
+    id: int
+    label: str = ""
+    changes: int = 0
+    by: str = ""
+    at: str = ""
+    undone: bool = False
+
+
 class LibraryUndone(BaseModel):
     reverted: int = 0
     failed: int = 0

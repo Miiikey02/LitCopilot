@@ -23,6 +23,8 @@ from ..schemas import (
     LibrarianRequest,
     LibrarianResponse,
     LibraryUndone,
+    NoteVersion,
+    UndoBatch,
     ReadState,
     LocalMatch,
     LocalMatchRequest,
@@ -131,6 +133,17 @@ def set_notes(
     if not _guard(db.set_notes, user, paper_id, body.notes, team):
         raise HTTPException(status_code=404, detail="Paper not found")
     return {"ok": True}
+
+
+@router.get("/library/{paper_id}/notes/history", response_model=list[NoteVersion])
+def note_history(
+    paper_id: int, team: int | None = None, user: str = Depends(current_user)
+) -> list[NoteVersion]:
+    """Every change to this paper's note, newest first, and who made it."""
+    rows = _guard(db.note_history, user, paper_id, team)
+    if rows is None:
+        raise HTTPException(status_code=404, detail="Paper not found")
+    return [NoteVersion(**r) for r in rows]
 
 
 @router.delete("/library/{paper_id}")
@@ -352,6 +365,12 @@ def library_agent_apply(
     if not actions:
         return LibrarianApplied()
     return LibrarianApplied(**_guard(librarian.apply, user, actions, req.team_id))
+
+
+@router.get("/library/undo", response_model=list[UndoBatch])
+def list_undo(team: int | None = None, user: str = Depends(current_user)) -> list[UndoBatch]:
+    """Recent agent changes the caller may reverse — everyone's, for a 负责人."""
+    return [UndoBatch(**b) for b in _guard(db.list_undo, user, team)]
 
 
 @router.post("/library/undo/{undo_id}", response_model=LibraryUndone)

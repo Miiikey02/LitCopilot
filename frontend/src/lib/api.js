@@ -287,6 +287,11 @@ export const setNotes = (id, notes, teamId) =>
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ notes }),
   })
+// Every past version of a paper's note, and who changed it.
+export const noteHistory = (id, teamId) =>
+  req(`/api/library/${id}/notes/history${ws({}, teamId)}`)
+// Recent agent changes the caller may undo — everyone's, for a lab 负责人.
+export const listUndo = (teamId) => req(`/api/library/undo${ws({}, teamId)}`)
 
 // Ask questions grounded in your own saved papers.
 export const libraryChat = (message, folder, lang, history, teamId, conversationId) =>

@@ -10,10 +10,14 @@ import Icon from './Icon'
 // about a paper deserves its own space, and — since a note is the one thing
 // here nobody else can reproduce — deleting one asks first.
 export default function NotePanel({ paper, teamId, onClose, onSaved }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const [text, setText] = useState(paper.notes || '')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  // Past versions, loaded on demand. In a lab library the note is one shared
+  // text anyone can rewrite; this is how an overwritten one comes back.
+  const [history, setHistory] = useState(null)
+  const [historyOpen, setHistoryOpen] = useState(false)
   const area = useRef(null)
 
   const dirty = text !== (paper.notes || '')
@@ -58,6 +62,37 @@ export default function NotePanel({ paper, teamId, onClose, onSaved }) {
     }
   }
 
+  const toggleHistory = async () => {
+    const next = !historyOpen
+    setHistoryOpen(next)
+    if (next && history === null) {
+      try {
+        setHistory(await api.noteHistory(paper.id, teamId))
+      } catch {
+        setHistory([])
+      }
+    }
+  }
+
+  // Restoring puts the old text back in the editor rather than saving it
+  // straight away: the reader sees what they are about to reinstate, and the
+  // save that follows is itself recorded, so a restore can be undone too.
+  const restore = (version) => {
+    setText(version.old_notes)
+    setHistoryOpen(false)
+    area.current?.focus()
+  }
+
+  const when = (iso) => {
+    try {
+      return new Date(iso).toLocaleString(i18n.language.startsWith('zh') ? 'zh-CN' : 'en', {
+        month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit',
+      })
+    } catch {
+      return iso
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-40 flex justify-end">
       <div
@@ -76,12 +111,56 @@ export default function NotePanel({ paper, teamId, onClose, onSaved }) {
             </p>
           </div>
           <button
+            onClick={toggleHistory}
+            className={`shrink-0 rounded-md px-2 py-1 text-xs transition-colors ${
+              historyOpen ? 'bg-blue-50 text-blue-700' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'
+            }`}
+          >
+            <Icon name="clock" className="mr-1" />
+            {t('noteHistoryOpen')}
+          </button>
+          <button
             onClick={onClose}
             className="rounded-md p-1 text-slate-400 transition-colors hover:bg-slate-50 hover:text-slate-700"
           >
             <Icon name="x" />
           </button>
         </header>
+
+        {historyOpen && (
+          <div className="max-h-[45%] overflow-y-auto border-b border-slate-100 bg-slate-50 px-5 py-3">
+            <p className="mb-2 text-xs font-medium text-slate-600">{t('noteHistoryTitle')}</p>
+            {history === null && <p className="text-xs text-slate-400">{t('saving')}</p>}
+            {history?.length === 0 && (
+              <p className="text-xs leading-5 text-slate-400">{t('noteHistoryEmpty')}</p>
+            )}
+            <ul className="space-y-2">
+              {(history || []).map((v) => (
+                <li key={v.id} className="rounded-lg border border-slate-200 bg-white p-2.5">
+                  <p className="text-xs text-slate-500">
+                    <span className="font-medium text-slate-700">{v.by || t('noteHistorySomeone')}</span>
+                    {' · '}
+                    {when(v.at)}
+                    {' · '}
+                    {v.new_notes ? t('noteHistoryEdited') : t('noteHistoryCleared')}
+                  </p>
+                  <p className="mt-1 line-clamp-3 whitespace-pre-wrap text-xs leading-5 text-slate-400">
+                    <span className="text-slate-500">{t('noteHistoryBefore')}</span>
+                    {v.old_notes || t('noteHistoryWasEmpty')}
+                  </p>
+                  {v.old_notes && v.old_notes !== text && (
+                    <button
+                      onClick={() => restore(v)}
+                      className="mt-1 text-xs text-blue-700 hover:underline"
+                    >
+                      {t('noteHistoryRestore')}
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         <textarea
           ref={area}

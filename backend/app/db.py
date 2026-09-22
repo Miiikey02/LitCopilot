@@ -284,6 +284,22 @@ UPDATE teams t SET owner_id = m.user_id
                       AND x.role = 'owner');
 CREATE INDEX IF NOT EXISTS skills_team_idx ON skills (team_id) WHERE team_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS library_undo_user_idx ON library_undo (user_id, created_at DESC);
+
+-- Every change to a paper's note, and who made it. In a shared library the
+-- note is one text anyone in the lab can rewrite, which was fine until
+-- someone overwrote a colleague's reading of a paper and nothing said so or
+-- could bring it back.
+CREATE TABLE IF NOT EXISTS note_history (
+    id         BIGSERIAL PRIMARY KEY,
+    paper_id   BIGINT NOT NULL REFERENCES saved_papers(id) ON DELETE CASCADE,
+    user_id    UUID NOT NULL,
+    old_notes  TEXT NOT NULL DEFAULT '',
+    new_notes  TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS note_history_paper_idx ON note_history (paper_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS library_undo_team_idx ON library_undo (team_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS import_jobs_user_idx ON import_jobs (user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS feedback_created_idx ON feedback (created_at DESC);
 CREATE INDEX IF NOT EXISTS uploads_created_idx ON uploads (created_at);
@@ -753,24 +769,81 @@ def record_undo(
         return int(row["id"])
 
 
+def _may_undo(conn, user_id: str, row) -> bool:
+    """The person who made a batch may undo it; so may a 负责人 of its lab.
+
+    A lab admin who finds the shared shelf re-filed by someone's agent should
+    not have to track that person down to put it back.
+    """
+    if str(row["user_id"]) == str(user_id):
+        return True
+    return row["team_id"] is not None and _is_owner(conn, user_id, row["team_id"])
+
+
 def get_undo(user_id: str, undo_id: int) -> dict | None:
     with _get_pool().connection() as conn:
         row = conn.execute(
-            """SELECT id, label, inverse, team_id, created_at, undone_at
-                 FROM library_undo WHERE id = %s AND user_id = %s""",
-            (undo_id, user_id),
+            """SELECT id, user_id, label, inverse, team_id, created_at, undone_at
+                 FROM library_undo WHERE id = %s""",
+            (undo_id,),
         ).fetchone()
-    return dict(row) if row else None
+        if not row or not _may_undo(conn, user_id, row):
+            return None
+    out = dict(row)
+    out["user_id"] = str(out["user_id"])
+    return out
 
 
 def mark_undone(user_id: str, undo_id: int) -> bool:
     with _get_pool().connection() as conn:
+        row = conn.execute(
+            "SELECT user_id, team_id FROM library_undo WHERE id = %s", (undo_id,)
+        ).fetchone()
+        if not row or not _may_undo(conn, user_id, row):
+            return False
         cur = conn.execute(
             """UPDATE library_undo SET undone_at = now()
-                WHERE id = %s AND user_id = %s AND undone_at IS NULL""",
-            (undo_id, user_id),
+                WHERE id = %s AND undone_at IS NULL""",
+            (undo_id,),
         )
         return cur.rowcount > 0
+
+
+def list_undo(user_id: str, team_id: int | None = None, limit: int = 30) -> list[dict]:
+    """Recent batches of agent changes this person may undo.
+
+    In a lab a 负责人 sees everyone's; a member sees their own. The personal
+    library only ever holds the person's own.
+    """
+    with _get_pool().connection() as conn:
+        if team_id is None:
+            where, params = "l.team_id IS NULL AND l.user_id = %s", [user_id]
+        else:
+            _assert_member(conn, user_id, team_id)
+            if _is_owner(conn, user_id, team_id):
+                where, params = "l.team_id = %s", [team_id]
+            else:
+                where, params = "l.team_id = %s AND l.user_id = %s", [team_id, user_id]
+        rows = conn.execute(
+            f"""SELECT l.id, l.label, l.created_at, l.undone_at,
+                       jsonb_array_length(l.inverse) AS n, u.email
+                  FROM library_undo l
+             LEFT JOIN auth.users u ON u.id = l.user_id
+                 WHERE {where}
+              ORDER BY l.created_at DESC LIMIT %s""",
+            [*params, limit],
+        ).fetchall()
+    return [
+        {
+            "id": r["id"],
+            "label": r["label"] or "",
+            "changes": r["n"] or 0,
+            "by": r["email"] or "",
+            "at": r["created_at"].isoformat(),
+            "undone": r["undone_at"] is not None,
+        }
+        for r in rows
+    ]
 
 
 def paper_snapshot(user_id: str, paper_ids: list[int], team_id: int | None = None) -> dict:
@@ -1032,15 +1105,59 @@ def remove_tag(user_id: str, paper_id: int, tag: str, team_id: int | None = None
 def set_notes(
     user_id: str, paper_id: int, notes: str, team_id: int | None = None
 ) -> bool:
-    """Replace a paper's note. In a team library, notes are shared."""
+    """Replace a paper's note. In a team library, notes are shared.
+
+    The text being replaced is kept, with who replaced it — see note_history.
+    Every path that writes a note comes through here, the librarian and undo
+    included, so the history cannot be bypassed by the agent.
+    """
+    notes = notes or ""
     with _get_pool().connection() as conn:
         _assert_member(conn, user_id, team_id)
         if not _accessible_paper(conn, user_id, paper_id, team_id):
             return False
+        row = conn.execute(
+            "SELECT notes FROM saved_papers WHERE id = %s", (paper_id,)
+        ).fetchone()
+        before = (row["notes"] if row else "") or ""
         cur = conn.execute(
-            "UPDATE saved_papers SET notes = %s WHERE id = %s", (notes or "", paper_id)
+            "UPDATE saved_papers SET notes = %s WHERE id = %s", (notes, paper_id)
         )
+        if cur.rowcount and before != notes:
+            conn.execute(
+                """INSERT INTO note_history (paper_id, user_id, old_notes, new_notes)
+                   VALUES (%s,%s,%s,%s)""",
+                (paper_id, user_id, before, notes),
+            )
         return cur.rowcount > 0
+
+
+def note_history(
+    user_id: str, paper_id: int, team_id: int | None = None, limit: int = 50
+) -> list[dict] | None:
+    """Past versions of a note, newest first. None if the paper is not theirs."""
+    with _get_pool().connection() as conn:
+        _assert_member(conn, user_id, team_id)
+        if not _accessible_paper(conn, user_id, paper_id, team_id):
+            return None
+        rows = conn.execute(
+            """SELECT h.id, h.old_notes, h.new_notes, h.created_at, u.email
+                 FROM note_history h
+            LEFT JOIN auth.users u ON u.id = h.user_id
+                WHERE h.paper_id = %s
+             ORDER BY h.created_at DESC, h.id DESC LIMIT %s""",
+            (paper_id, limit),
+        ).fetchall()
+    return [
+        {
+            "id": r["id"],
+            "old_notes": r["old_notes"] or "",
+            "new_notes": r["new_notes"] or "",
+            "by": r["email"] or "",
+            "at": r["created_at"].isoformat(),
+        }
+        for r in rows
+    ]
 
 
 def list_tags(user_id: str, team_id: int | None = None) -> list[dict]:

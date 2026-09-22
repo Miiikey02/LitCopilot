@@ -14,6 +14,16 @@ export const UPDATES = [
     title: { zh: '实验室负责人转交后真正生效', en: 'Handing over a lab now actually hands it over' },
     items: [
       {
+        kind: 'feature',
+        zh: '笔记有了「修改记录」：每次修改都会记下是谁改的、什么时候改的、改之前写的是什么，可以一键恢复成改前的内容。共享文库里笔记是全组共用的一份，此前被别人整段覆盖了既没有记录，也找不回来；现在删除的笔记也能从这里恢复。恢复本身也会记一笔，所以恢复错了还能再改回去。',
+        en: 'Notes now keep a history: every change records who made it, when, and what the note said before, and any earlier version can be restored in one click. In a lab library a note is one shared text; previously when someone overwrote a colleague’s note nothing recorded it and nothing could bring it back. Deleted notes can be restored the same way, and a restore is itself recorded, so a wrong restore can be reversed too.',
+      },
+      {
+        kind: 'feature',
+        zh: '负责人可以撤销任何成员通过助手做的改动。实验室「管理」里多了「最近的助手改动」，负责人能看到全体成员的，逐批点「撤销」就能把文库恢复原样——文件夹、归档、标签、笔记、阅读状态、助手写的实验记录都会还原。普通成员只能看到和撤销自己的。',
+        en: 'A lab admin can now undo any member’s assistant changes. The lab’s 管理 panel lists recent assistant changes — everyone’s, for an admin — and each batch can be undone to put the library back: folders, filing, tags, notes, reading state and any experiment records the assistant wrote. Members see and undo only their own.',
+      },
+      {
         kind: 'fix',
         zh: '实验室转交负责人后，新负责人看得到「负责人」标记，却没有任何管理按钮；就算有，改名、移出成员、解散也会被拒绝——而已经卸任的原负责人反而仍然能解散整个实验室。原因是「谁是负责人」在系统里记了两份，转交时只改了其中一份。现在统一为一份：转交之后，新负责人拥有全部管理权限，卸任的人不再有。已按这个规则修复了现有的实验室。',
         en: 'After a lab was handed over, the new admin saw the admin badge but none of the controls — and even with them, renaming, removing members and disbanding were refused, while the person who had stepped down could still disband the whole lab. Ownership was recorded in two places and a handover changed only one. It is now one: after a handover the new admin has every control and the old one has none. Existing labs have been repaired to match.',

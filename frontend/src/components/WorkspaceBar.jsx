@@ -14,6 +14,10 @@ export default function WorkspaceBar({ teams, activeTeam, onSwitch, onTeamsChang
   const [members, setMembers] = useState([])
   const [error, setError] = useState('')
   const [copied, setCopied] = useState(false)
+  // Recent agent changes in this lab. A 负责人 sees everyone's, so a shelf
+  // re-filed by one member's assistant can be put back without finding them.
+  const [batches, setBatches] = useState([])
+  const [undoing, setUndoing] = useState(null)
 
   const team = teams.find((x) => String(x.id) === String(activeTeam))
 
@@ -61,6 +65,22 @@ export default function WorkspaceBar({ teams, activeTeam, onSwitch, onTeamsChang
       } catch {
         setMembers([])
       }
+      api.listUndo(team.id).then(setBatches).catch(() => setBatches([]))
+    }
+  }
+
+  const undoBatch = async (b) => {
+    if (!window.confirm(t('undoBatchConfirm', { who: b.by || t('noteHistorySomeone') }))) return
+    setUndoing(b.id)
+    try {
+      const r = await api.undoLibrary(b.id)
+      if (r?.failed) window.alert(t('undoBatchPartial', { n: r.failed }))
+      setBatches(await api.listUndo(team.id))
+      onTeamsChanged()
+    } catch {
+      window.alert(t('agentUndoFailed'))
+    } finally {
+      setUndoing(null)
     }
   }
 
@@ -243,6 +263,41 @@ export default function WorkspaceBar({ teams, activeTeam, onSwitch, onTeamsChang
               ))}
             </ul>
           </div>
+
+          {batches.length > 0 && (
+            <div className="mt-3 border-t border-slate-100 pt-3">
+              <p className="text-sm font-medium text-slate-700">
+                {t(team.role === 'owner' ? 'undoBatchesAll' : 'undoBatchesMine')}
+              </p>
+              <ul className="mt-1 space-y-1">
+                {batches.slice(0, 10).map((b) => (
+                  <li key={b.id} className="flex items-center gap-2 text-xs text-slate-600">
+                    <span className="min-w-0 flex-1 truncate">
+                      <span className="font-medium text-slate-700">
+                        {b.by || t('noteHistorySomeone')}
+                      </span>
+                      {' · '}
+                      {new Date(b.at).toLocaleString()}
+                      {' · '}
+                      {t('undoBatchChanges', { n: b.changes })}
+                      {b.label ? ` — ${b.label}` : ''}
+                    </span>
+                    {b.undone ? (
+                      <span className="shrink-0 text-slate-400">{t('undoBatchDone')}</span>
+                    ) : (
+                      <button
+                        onClick={() => undoBatch(b)}
+                        disabled={undoing === b.id}
+                        className="shrink-0 text-blue-700 hover:underline disabled:opacity-50"
+                      >
+                        {undoing === b.id ? t('agentUndoing') : t('undoBatchAction')}
+                      </button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           <div className="mt-3 border-t border-slate-100 pt-3">
             <div className="flex flex-wrap items-center gap-4">
