@@ -332,15 +332,22 @@ export const renameFolder = (id, name, teamId) =>
 export const deleteFolder = (id, teamId) =>
   req(`/api/folders/${id}${ws({}, teamId)}`, { method: 'DELETE' })
 // Folder watches: new papers in the field a folder covers.
-export const watchFolder = (folderId, teamId, lang, query = '') =>
-  jsonPost(`/api/folders/${folderId}/watch${ws({}, teamId)}`, { query, lang })
+export const watchFolder = (folderId, teamId, lang, everyDays = 1, query = '') =>
+  jsonPost(`/api/folders/${folderId}/watch${ws({}, teamId)}`, {
+    query,
+    lang,
+    every_days: everyDays,
+  })
 export const listWatches = (teamId) => req(`/api/watches${ws({}, teamId)}`)
-export const updateWatch = (id, query, teamId) =>
+// `changes` is { query } and/or { every_days: 1 | 7 }.
+export const updateWatch = (id, changes, teamId) =>
   req(`/api/watches/${id}${ws({}, teamId)}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query }),
+    body: JSON.stringify(changes),
   })
+export const watchHistory = (id, teamId, offset = 0) =>
+  req(`/api/watches/${id}/history${ws({ offset }, teamId)}`)
 export const unwatch = (id, teamId) =>
   req(`/api/watches/${id}${ws({}, teamId)}`, { method: 'DELETE' })
 export const checkWatch = (id, teamId) =>

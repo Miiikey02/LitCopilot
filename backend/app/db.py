@@ -365,6 +365,11 @@ def init_db() -> None:
         # What a batch of agent changes did, as data, so the page can say it
         # in the reader's language. `label` stays for batches made before.
         conn.execute("ALTER TABLE library_undo ADD COLUMN IF NOT EXISTS summary JSONB")
+        # How often a folder watch looks: 1 = daily, 7 = weekly.
+        conn.execute(
+            "ALTER TABLE folder_watches ADD COLUMN IF NOT EXISTS every_days "
+            "INTEGER NOT NULL DEFAULT 1"
+        )
         # A row belongs to a team workspace when team_id is set, otherwise to
         # the personal library of user_id. user_id always records who added it.
         for table in ("saved_papers", "folders"):
@@ -2240,6 +2245,7 @@ def _watch_row(row: dict) -> dict:
         "last_checked": row["last_checked"].isoformat() if row.get("last_checked") else None,
         "last_error": row.get("last_error") or "",
         "fresh": int(row.get("fresh") or 0),
+        "every_days": int(row.get("every_days") or 1),
     }
 
 
@@ -2273,7 +2279,12 @@ def folder_context(
 
 
 def create_watch(
-    user_id: str, folder_id: int, team_id: int | None, query: str, lang: str
+    user_id: str,
+    folder_id: int,
+    team_id: int | None,
+    query: str,
+    lang: str,
+    every_days: int = 1,
 ) -> dict | None:
     """Start following a folder's field, or re-point an existing watch."""
     with _get_pool().connection() as conn:
@@ -2281,11 +2292,12 @@ def create_watch(
         if not _accessible_folder(conn, user_id, folder_id, team_id):
             return None
         row = conn.execute(
-            """INSERT INTO folder_watches (folder_id, user_id, team_id, query, lang)
-               VALUES (%s,%s,%s,%s,%s)
-               ON CONFLICT (folder_id) DO UPDATE SET query = EXCLUDED.query
+            """INSERT INTO folder_watches (folder_id, user_id, team_id, query, lang, every_days)
+               VALUES (%s,%s,%s,%s,%s,%s)
+               ON CONFLICT (folder_id) DO UPDATE
+                 SET query = EXCLUDED.query, every_days = EXCLUDED.every_days
                RETURNING id""",
-            (folder_id, user_id, team_id, query, lang),
+            (folder_id, user_id, team_id, query, lang, every_days),
         ).fetchone()
         return _watch_row(_accessible_watch(conn, user_id, row["id"], team_id))
 
@@ -2305,17 +2317,31 @@ def list_watches(user_id: str, team_id: int | None = None) -> list[dict]:
     return [_watch_row(r) for r in rows]
 
 
-def update_watch(user_id: str, watch_id: int, team_id: int | None, query: str) -> bool:
+def update_watch(
+    user_id: str,
+    watch_id: int,
+    team_id: int | None,
+    query: str | None = None,
+    every_days: int | None = None,
+) -> bool:
     with _get_pool().connection() as conn:
         _assert_member(conn, user_id, team_id)
         if not _accessible_watch(conn, user_id, watch_id, team_id):
             return False
-        # A new search starts over: the next check looks back the full first
-        # window, not just since the old search last ran.
-        conn.execute(
-            "UPDATE folder_watches SET query = %s, last_checked = NULL WHERE id = %s",
-            (query, watch_id),
-        )
+        if query:
+            # A new search starts over: the next check looks back the full
+            # first window, not just since the old search last ran.
+            conn.execute(
+                "UPDATE folder_watches SET query = %s, last_checked = NULL WHERE id = %s",
+                (query, watch_id),
+            )
+        if every_days:
+            # Only the timing changes; nothing already found is lost, and the
+            # next check still starts from the last one, so no gap opens.
+            conn.execute(
+                "UPDATE folder_watches SET every_days = %s WHERE id = %s",
+                (every_days, watch_id),
+            )
         return True
 
 
@@ -2328,7 +2354,7 @@ def delete_watch(user_id: str, watch_id: int, team_id: int | None = None) -> boo
         return True
 
 
-def claim_due_watches(hours: int = 20, limit: int = 10) -> list[dict]:
+def claim_due_watches(slack_hours: int = 4, limit: int = 10) -> list[dict]:
     """Mark watches as being checked now and hand them over.
 
     Claimed and stamped in one statement, so two workers — or the timer and
@@ -2341,13 +2367,17 @@ def claim_due_watches(hours: int = 20, limit: int = 10) -> list[dict]:
             """WITH due AS (
                    SELECT id, last_checked AS prev FROM folder_watches
                    WHERE last_checked IS NULL
-                      OR last_checked < now() - make_interval(hours => %s)
+                      -- A little early rather than a little late: a daily
+                      -- check that drifts an hour later each day ends up
+                      -- skipping one.
+                      OR last_checked < now() - make_interval(
+                           hours => every_days * 24 - %s)
                    ORDER BY last_checked NULLS FIRST
                    LIMIT %s FOR UPDATE SKIP LOCKED)
                UPDATE folder_watches w SET last_checked = now()
                FROM due WHERE w.id = due.id
                RETURNING w.*, due.prev""",
-            (hours, limit),
+            (slack_hours, limit),
         ).fetchall()
 
 
@@ -2434,11 +2464,46 @@ def list_watch_hits(user_id: str, watch_id: int, team_id: int | None = None) -> 
         rows = conn.execute(
             """SELECT id, card, why, found_at FROM watch_hits
                WHERE watch_id = %s AND status = ''
-               ORDER BY found_at DESC, id LIMIT 100""",
+               ORDER BY found_at DESC, id LIMIT 300""",
             (watch_id,),
         ).fetchall()
     return [
         {"id": r["id"], "card": r["card"], "why": r["why"], "found_at": r["found_at"].isoformat()}
+        for r in rows
+    ]
+
+
+def watch_history(
+    user_id: str,
+    watch_id: int,
+    team_id: int | None = None,
+    offset: int = 0,
+    limit: int = 50,
+) -> list[dict] | None:
+    """Everything this watch has ever offered, newest first, with what became of it.
+
+    Handled findings leave the waiting list but not this one: "that paper from
+    March I dismissed too quickly" should still be findable in September.
+    Papers the screen turned down were never offered, so they are not here.
+    """
+    with _get_pool().connection() as conn:
+        _assert_member(conn, user_id, team_id)
+        if not _accessible_watch(conn, user_id, watch_id, team_id):
+            return None
+        rows = conn.execute(
+            """SELECT id, card, why, status, found_at FROM watch_hits
+               WHERE watch_id = %s AND status <> 'screened_out'
+               ORDER BY found_at DESC, id LIMIT %s OFFSET %s""",
+            (watch_id, limit, offset),
+        ).fetchall()
+    return [
+        {
+            "id": r["id"],
+            "card": r["card"],
+            "why": r["why"],
+            "status": r["status"],
+            "found_at": r["found_at"].isoformat(),
+        }
         for r in rows
     ]
 

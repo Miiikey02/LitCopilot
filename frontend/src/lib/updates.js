@@ -34,6 +34,11 @@ export const UPDATES = [
         en: 'Notes now keep a history: every change records who made it, when, and what the note said before, and any earlier version can be restored in one click. In a lab library a note is one shared text; previously when someone overwrote a colleague’s note nothing recorded it and nothing could bring it back. Deleted notes can be restored the same way, and a restore is itself recorded, so a wrong restore can be reversed too.',
       },
       {
+        kind: 'feature',
+        zh: '追踪新文献可以选择「每天」或「每周」检索一次，开始追踪时选，之后也能随时切换。新增「推送记录」：每次推送按日期列出，已加入、不相关、待处理的都在，很久以后也能找回；之前点了「不相关」的文献也可以从这里重新加入文件夹。很久没打开也不会漏：每次检索都覆盖上次之后的全部新文献（测试中 60 天未检查，一次补查了这段时间里的全部 54 篇），而不只是最新的几十篇。',
+        en: 'Following a folder can now run daily or weekly — chosen when you start, changeable any time. A new History lists everything ever sent, by day, whether added, dismissed or still waiting, so it can be found long afterwards; a paper dismissed too quickly can be added from there. Nothing is missed while you are away: each check covers everything since the last one (in testing, a 60-day gap caught all 54 papers in it), not just the newest few dozen.',
+      },
+      {
         kind: 'fix',
         zh: '「最近的助手改动」里每批改动的说明改成了中文，例如「新建了文件夹『青光眼』；把 2 篇文献放入了『青光眼』；给 1 篇文献加了标签：综述、重要」。此前显示的是英文，还会出现「paper 170」这样的内部编号。切换到英文界面时会显示英文说明。这次更新之前产生的改动只显示改动数量。',
         en: 'Each batch in "Recent assistant changes" is now described in the interface language — e.g. "Created folder ‘青光眼’; Filed 2 paper(s) into ‘青光眼’" — instead of always in English with internal ids like "paper 170". Batches from before this update show only their count.',

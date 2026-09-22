@@ -172,6 +172,13 @@ def _parse_article(art: ET.Element) -> Paper | None:
 async def _efetch(client: httpx.AsyncClient, pmids: list[str]) -> list[Paper]:
     if not pmids:
         return []
+    if len(pmids) > 100:
+        # A long catch-up asks for a few hundred; one response that size is
+        # slow and fragile, so fetch in pieces and keep the order.
+        out: list[Paper] = []
+        for i in range(0, len(pmids), 100):
+            out += await _efetch(client, pmids[i : i + 100])
+        return out
     await _limiter.acquire()
     params = _common_params() | {"id": ",".join(pmids), "retmode": "xml"}
     r = await client.get(f"{EUTILS}/efetch.fcgi", params=params, timeout=30)

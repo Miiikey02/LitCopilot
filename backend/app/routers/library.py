@@ -703,7 +703,7 @@ async def watch_folder(
         except Exception:  # noqa: BLE001 - the name is still a search
             query = ctx["name"]
     made = await asyncio.to_thread(
-        _guard, db.create_watch, user, folder_id, team, query, body.lang
+        _guard, db.create_watch, user, folder_id, team, query, body.lang, body.every_days
     )
     claimed = await asyncio.to_thread(db.claim_watch, user, made["id"], team)
     try:
@@ -734,7 +734,10 @@ def update_watch(
     team: int | None = None,
     user: str = Depends(current_user),
 ) -> dict:
-    if not _guard(db.update_watch, user, watch_id, team, body.query.strip()):
+    query = body.query.strip() if body.query else None
+    if not query and not body.every_days:
+        raise HTTPException(status_code=422, detail="Nothing to change")
+    if not _guard(db.update_watch, user, watch_id, team, query, body.every_days):
         raise HTTPException(status_code=404, detail="Watch not found")
     return {"ok": True}
 
@@ -766,6 +769,19 @@ def list_watch_hits(
     watch_id: int, team: int | None = None, user: str = Depends(current_user)
 ) -> list[WatchHit]:
     hits = _guard(db.list_watch_hits, user, watch_id, team)
+    if hits is None:
+        raise HTTPException(status_code=404, detail="Watch not found")
+    return [WatchHit(**h) for h in hits]
+
+
+@router.get("/watches/{watch_id}/history", response_model=list[WatchHit])
+def watch_history(
+    watch_id: int,
+    offset: int = 0,
+    team: int | None = None,
+    user: str = Depends(current_user),
+) -> list[WatchHit]:
+    hits = _guard(db.watch_history, user, watch_id, team, max(0, offset))
     if hits is None:
         raise HTTPException(status_code=404, detail="Watch not found")
     return [WatchHit(**h) for h in hits]

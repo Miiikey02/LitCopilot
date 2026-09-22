@@ -77,6 +77,149 @@ function Hit({ hit, teamId, onDone }) {
   )
 }
 
+// Daily for a fast field someone reads every morning; weekly for one they
+// review on Mondays. Either way a check covers everything since the last one.
+function Frequency({ value, onChange, disabled }) {
+  const { t } = useTranslation()
+  return (
+    <span className="inline-flex shrink-0 overflow-hidden rounded-md border border-slate-200 text-xs">
+      {[1, 7].map((d) => (
+        <button
+          key={d}
+          onClick={() => d !== value && onChange(d)}
+          disabled={disabled}
+          className={`px-2 py-1 transition-colors disabled:opacity-50 ${
+            value === d ? 'bg-slate-900 text-white' : 'bg-white text-slate-600 hover:text-blue-700'
+          }`}
+        >
+          {t(d === 1 ? 'watchDaily' : 'watchWeekly')}
+        </button>
+      ))}
+    </span>
+  )
+}
+
+// Everything this folder has been sent, by the day it arrived, including what
+// was already filed or dismissed. Someone back after two months finds those
+// two months here; someone who dismissed a paper too quickly can take it back.
+function History({ watchId, teamId, onChanged }) {
+  const { t, i18n } = useTranslation()
+  const [items, setItems] = useState([])
+  const [more, setMore] = useState(false)
+  const [busy, setBusy] = useState(0)
+
+  const load = async (offset = 0) => {
+    try {
+      const page = await api.watchHistory(watchId, teamId, offset)
+      setItems((prev) => (offset ? [...prev, ...page] : page))
+      setMore(page.length === 50)
+    } catch {
+      /* the history is a convenience; the waiting list still works */
+    }
+  }
+
+  useEffect(() => {
+    load(0)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [watchId, teamId])
+
+  const keep = async (hit) => {
+    setBusy(hit.id)
+    try {
+      await api.saveWatchHit(hit.id, teamId)
+      setItems((prev) => prev.map((x) => (x.id === hit.id ? { ...x, status: 'saved' } : x)))
+      onChanged(true)
+    } finally {
+      setBusy(0)
+    }
+  }
+
+  const day = (iso) =>
+    new Date(iso).toLocaleDateString(i18n.language === 'zh' ? 'zh-CN' : 'en', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    })
+  const groups = []
+  for (const it of items) {
+    const d = day(it.found_at)
+    if (!groups.length || groups[groups.length - 1].day !== d) groups.push({ day: d, items: [] })
+    groups[groups.length - 1].items.push(it)
+  }
+
+  if (!items.length) {
+    return <p className="mt-3 text-xs text-slate-500">{t('watchHistoryEmpty')}</p>
+  }
+
+  return (
+    <div className="mt-3 space-y-3">
+      {groups.map((g) => {
+        const saved = g.items.filter((x) => x.status === 'saved').length
+        const dismissed = g.items.filter((x) => x.status === 'dismissed').length
+        return (
+          <div key={g.day}>
+            <p className="mb-1 text-xs font-medium text-slate-600">
+              {t('watchHistoryDay', { day: g.day, n: g.items.length, saved, dismissed })}
+            </p>
+            <ul className="space-y-1">
+              {g.items.map((h) => (
+                <li
+                  key={h.id}
+                  className="flex items-start gap-2 rounded-md bg-white px-2.5 py-1.5 text-sm"
+                >
+                  <a
+                    href={h.card?.url || (h.card?.doi ? `https://doi.org/${h.card.doi}` : undefined)}
+                    target="_blank"
+                    rel="noreferrer"
+                    title={h.why || ''}
+                    className="min-w-0 flex-1 leading-6 text-slate-800 hover:text-blue-700"
+                  >
+                    {h.card?.title}
+                  </a>
+                  <span
+                    className={`mt-1 shrink-0 rounded-full px-1.5 text-[11px] leading-4 ${
+                      h.status === 'saved'
+                        ? 'bg-emerald-50 text-emerald-700'
+                        : h.status === 'dismissed'
+                        ? 'bg-slate-100 text-slate-500'
+                        : 'bg-blue-50 text-blue-700'
+                    }`}
+                  >
+                    {t(
+                      h.status === 'saved'
+                        ? 'watchStatusSaved'
+                        : h.status === 'dismissed'
+                        ? 'watchStatusDismissed'
+                        : 'watchStatusWaiting'
+                    )}
+                  </span>
+                  {h.status !== 'saved' && (
+                    <button
+                      onClick={() => keep(h)}
+                      disabled={busy === h.id}
+                      className="mt-0.5 shrink-0 text-xs text-blue-700 hover:underline disabled:opacity-50"
+                    >
+                      {busy === h.id ? t('saving') : t('watchKeep')}
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )
+      })}
+      {more && (
+        <button
+          onClick={() => load(items.length)}
+          className="text-xs text-blue-700 hover:underline"
+        >
+          {t('watchHistoryMore')}
+        </button>
+      )}
+    </div>
+  )
+}
+
 export default function WatchPanel({ folder, teamId, onChanged }) {
   const { t, i18n } = useTranslation()
   const [watch, setWatch] = useState(null)
@@ -86,6 +229,8 @@ export default function WatchPanel({ folder, teamId, onChanged }) {
   const [editing, setEditing] = useState(false)
   const [query, setQuery] = useState('')
   const [note, setNote] = useState('')
+  const [everyDays, setEveryDays] = useState(1)
+  const [showHistory, setShowHistory] = useState(false)
 
   const load = async () => {
     if (!folder?.watch_id) {
@@ -110,6 +255,7 @@ export default function WatchPanel({ folder, teamId, onChanged }) {
   useEffect(() => {
     setNote('')
     setEditing(false)
+    setShowHistory(false)
     setOpen(true)
     load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -119,7 +265,7 @@ export default function WatchPanel({ folder, teamId, onChanged }) {
     setBusy('start')
     setNote('')
     try {
-      await api.watchFolder(folder.id, teamId, i18n.language)
+      await api.watchFolder(folder.id, teamId, i18n.language, everyDays)
       setOpen(true)
       onChanged()
     } catch {
@@ -149,13 +295,25 @@ export default function WatchPanel({ folder, teamId, onChanged }) {
     if (!query.trim()) return
     setBusy('query')
     try {
-      await api.updateWatch(watch.id, query.trim(), teamId)
+      await api.updateWatch(watch.id, { query: query.trim() }, teamId)
       setEditing(false)
     } finally {
       setBusy('')
     }
     // Run the new search straight away, so its effect is seen, not trusted.
     await checkNow()
+  }
+
+  const setFrequency = async (d) => {
+    setBusy('freq')
+    try {
+      await api.updateWatch(watch.id, { every_days: d }, teamId)
+      setWatch({ ...watch, every_days: d })
+    } catch {
+      setNote(t('watchFailed'))
+    } finally {
+      setBusy('')
+    }
   }
 
   const stop = async () => {
@@ -173,6 +331,7 @@ export default function WatchPanel({ folder, teamId, onChanged }) {
         <p className="min-w-0 flex-1 text-sm leading-6 text-slate-600">
           {t('watchOffer', { name: folder.name })}
         </p>
+        <Frequency value={everyDays} onChange={setEveryDays} disabled={!!busy} />
         <button
           onClick={start}
           disabled={!!busy}
@@ -204,7 +363,22 @@ export default function WatchPanel({ folder, teamId, onChanged }) {
         <span className="text-xs text-slate-500">
           {watch?.last_checked ? t('watchLastChecked', { when: ago(watch.last_checked, t) }) : ''}
         </span>
-        <div className="ml-auto flex items-center gap-1">
+        <div className="ml-auto flex flex-wrap items-center gap-1">
+          {watch && (
+            <Frequency
+              value={watch.every_days || 1}
+              onChange={setFrequency}
+              disabled={!!busy}
+            />
+          )}
+          <button
+            onClick={() => setShowHistory(!showHistory)}
+            className={`rounded-md px-2 py-1 text-xs transition-colors hover:bg-white hover:text-blue-700 ${
+              showHistory ? 'text-blue-700' : 'text-slate-600'
+            }`}
+          >
+            {t('watchHistory')}
+          </button>
           <button
             onClick={checkNow}
             disabled={!!busy}
@@ -253,7 +427,18 @@ export default function WatchPanel({ folder, teamId, onChanged }) {
         </div>
       )}
 
-      {open && hits.length > 0 && (
+      {showHistory && watch && (
+        <History
+          watchId={watch.id}
+          teamId={teamId}
+          onChanged={(filed) => {
+            load()
+            onChanged(filed)
+          }}
+        />
+      )}
+
+      {!showHistory && open && hits.length > 0 && (
         <ul className="mt-3 space-y-2">
           {hits.map((h) => (
             <Hit

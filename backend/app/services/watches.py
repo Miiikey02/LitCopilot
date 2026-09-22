@@ -20,49 +20,62 @@ from .pubmed import search_pubmed
 # How far back the first check looks. Long enough that a new watch shows
 # something, short enough that what it shows is actually new.
 FIRST_LOOK_DAYS = 30
-# Daily is as often as a field changes in a way worth being told about.
-CHECK_EVERY_HOURS = 20
-MAX_CANDIDATES = 25
-MAX_KEPT = 15
+# How much earlier than its interval a watch may run (see claim_due_watches).
+SLACK_HOURS = 4
+# The screen reads candidates in batches this size.
+SCREEN_BATCH = 25
+# A check covers everything since the last one, however long ago that was —
+# someone back from two months away should find those two months, not the
+# newest week of them. So how much is fetched scales with the gap, up to a
+# ceiling that keeps one check bounded.
+PER_WEEK = 40
+MAX_FETCH = 300
 
 
-def _since(prev: datetime | None) -> str:
+def _window(prev: datetime | None) -> tuple[str, int]:
+    """(start date for PubMed, how many days that covers)."""
     now = datetime.now(timezone.utc)
     # A day of overlap: PubMed's entry dates are days, not instants, and a
     # paper entered late on the day of the last check must not fall between.
     start = (prev - timedelta(days=1)) if prev else now - timedelta(days=FIRST_LOOK_DAYS)
-    return start.strftime("%Y/%m/%d")
+    return start.strftime("%Y/%m/%d"), max(1, (now - start).days)
 
 
 async def check(watch: dict) -> int:
     """Run one watch; returns how many new papers it filed as findings."""
     try:
-        term = f'({watch["query"]}) AND ("{_since(watch.get("prev"))}"[EDAT] : "3000"[EDAT])'
-        found = await search_pubmed(term, retmax=40, sort="date")
+        since, days = _window(watch.get("prev"))
+        retmax = min(MAX_FETCH, PER_WEEK * -(-days // 7))
+        term = f'({watch["query"]}) AND ("{since}"[EDAT] : "3000"[EDAT])'
+        found = await search_pubmed(term, retmax=retmax, sort="date")
         known = await asyncio.to_thread(db.watch_known_keys, watch)
         fresh = [p for p in found if db.dedup_key(p.to_card()) not in known]
-        fresh = fresh[:MAX_CANDIDATES]
         if not fresh:
             await asyncio.to_thread(db.add_watch_hits, watch["id"], [])
             return 0
 
         ctx = await asyncio.to_thread(_folder_titles, watch["folder_id"])
-        kept: dict[int, str] = {i: "" for i in range(len(fresh))}
-        screened = False
-        if has_llm_key():
+        lang = watch.get("lang") or "zh"
+        hits: list[tuple[dict, str]] = []
+        rejected: list[dict] = []
+        for i in range(0, len(fresh), SCREEN_BATCH):
+            batch = fresh[i : i + SCREEN_BATCH]
+            if not has_llm_key():
+                hits += [(p.to_card(), "") for p in batch]
+                continue
             try:
                 kept = await llm_service.screen_new_papers(
-                    ctx["name"], ctx["titles"], fresh, watch.get("lang") or "zh"
+                    ctx["name"], ctx["titles"], batch, lang
                 )
-                screened = True
             except Exception as exc:  # noqa: BLE001 - unscreened beats nothing
                 print(redact(f"[watch {watch['id']}] screen failed: {exc}"))
-        hits = [(fresh[i].to_card(), why) for i, why in sorted(kept.items())][:MAX_KEPT]
-        # Only a real verdict is remembered; a failed screen leaves the rest
-        # to be looked at again next time.
-        rejected = (
-            [p.to_card() for i, p in enumerate(fresh) if i not in kept] if screened else []
-        )
+                # Offered unscreened rather than dropped: in a catch-up these
+                # papers will not come round again.
+                hits += [(p.to_card(), "") for p in batch]
+                continue
+            hits += [(batch[j].to_card(), why) for j, why in sorted(kept.items())]
+            # Remembered, so the next check does not re-roll the verdict.
+            rejected += [p.to_card() for j, p in enumerate(batch) if j not in kept]
         return await asyncio.to_thread(db.add_watch_hits, watch["id"], hits, rejected)
     except Exception as exc:  # noqa: BLE001 - one folder must not stop the rest
         msg = f"{type(exc).__name__}: {exc}"
@@ -86,7 +99,7 @@ def _folder_titles(folder_id: int) -> dict:
 
 async def run_due() -> int:
     """Check every watch that is due. Returns how many were checked."""
-    due = await asyncio.to_thread(db.claim_due_watches, CHECK_EVERY_HOURS)
+    due = await asyncio.to_thread(db.claim_due_watches, SLACK_HOURS)
     for watch in due:
         try:
             await check(watch)

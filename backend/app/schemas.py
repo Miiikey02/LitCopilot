@@ -1,7 +1,7 @@
 """Request/response models for the API."""
 from __future__ import annotations
 
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -494,16 +494,19 @@ class FolderWatch(BaseModel):
     last_checked: Optional[str] = None
     last_error: str = ""
     fresh: int = 0
+    every_days: int = 1  # 1 = daily, 7 = weekly
 
 
 class WatchCreate(BaseModel):
     # Empty asks Gaze to write the search from the folder's name and papers.
     query: str = ""
     lang: str = "zh"
+    every_days: Literal[1, 7] = 1
 
 
 class WatchUpdate(BaseModel):
-    query: str = Field(min_length=1, max_length=1000)
+    query: Optional[str] = Field(default=None, min_length=1, max_length=1000)
+    every_days: Optional[Literal[1, 7]] = None
 
 
 class WatchHit(BaseModel):
@@ -511,6 +514,8 @@ class WatchHit(BaseModel):
     card: dict
     why: str = ""
     found_at: str
+    # '' while waiting, 'saved' or 'dismissed' once someone decided.
+    status: str = ""
 
 
 class WatchChecked(BaseModel):
