@@ -11,8 +11,18 @@
 export const UPDATES = [
   {
     date: '2026-09-22',
-    title: { zh: '文件夹可以追踪新文献；实验室转交真正生效', en: 'Folders follow new papers; handing over a lab now works' },
+    title: { zh: '文件夹可以追踪新文献；按 DOI 和标题检索找得到原文', en: 'Folders follow new papers; DOI and title searches find the paper' },
     items: [
+      {
+        kind: 'fix',
+        zh: '粘贴 DOI（包括 https://doi.org/… 链接）检索，现在会直接找到这篇文献并排在第一位，再附上同主题的相关文献。此前 DOI 被当成普通关键词去检索，找回的是一堆无关论文，回答里还会说「无法还原该论文」。DOI 不存在时会直接提示，不再返回无关结果。',
+        en: 'Searching a DOI (including a https://doi.org/… link) now finds that paper, puts it first, and adds related papers on the same subject. Previously the DOI was searched as ordinary keywords, which returned unrelated papers and an answer saying the paper could not be found. A DOI that does not exist is now reported as such instead of returning unrelated results.',
+      },
+      {
+        kind: 'fix',
+        zh: '修复了「标题对、摘要错」的严重问题：检索一篇 PubMed 未收录的论文时，系统向 PubMed 补摘要，PubMed 却会随便返回一篇别的文献（例如把 Nature Machine Intelligence 的 SequenTx 论文配上一篇 HIV 耐药综述的摘要），回答就基于错的摘要写。现在只接受 DOI 或标题真正一致的结果；PubMed 没有时依次向 Semantic Scholar、Crossref 和出版社页面查找摘要。粘贴的标题即使换行丢了空格（如「sequentialdrug」）也能找到原文。',
+        en: 'Fixed a serious "right title, wrong abstract" bug: for a paper PubMed does not index, the abstract lookup took whatever PubMed returned first — the SequenTx paper in Nature Machine Intelligence was shown and summarised with an HIV drug-resistance review’s abstract. Lookups now accept only a paper whose DOI or title actually matches, and fall back to Semantic Scholar, Crossref and the publisher’s own page. A pasted title that lost its spaces at line breaks ("sequentialdrug") is still found.',
+      },
       {
         kind: 'feature',
         zh: '文件夹可以「追踪新文献」了。打开任意文件夹，点「开始追踪」：Gaze 根据文件夹名称和里面已有的文献写好 PubMed 检索式，先查近 30 天，之后每天自动查一次。查到的文献会先和文件夹内容比对，只留下真正相关的，每篇附一句「为什么值得看」；点「加入此文件夹」就归档，点「不相关」就不会再出现。有新文献的文件夹旁会显示数字。检索式可以查看和修改，共享文库里全组共用同一份追踪结果。',

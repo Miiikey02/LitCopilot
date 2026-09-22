@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import re
+from difflib import SequenceMatcher
 from collections import OrderedDict
 from time import monotonic
 import xml.etree.ElementTree as ET
@@ -222,19 +223,39 @@ async def fetch_by_title(title: str) -> Paper | None:
     except (httpx.HTTPError, ET.ParseError, ValueError):
         return None
 
-    want = _norm_title(title)
+    # Only a paper whose title really is the one asked for. This used to fall
+    # back to "whatever came first", and a free-text search always has a first
+    # result — so a title PubMed does not hold came back as some other paper,
+    # confidently, with that paper's abstract.
+    want = _compact(title)
     for paper in papers:
-        if _norm_title(paper.title) == want:
+        if _compact(paper.title) == want:
             return paper
     for paper in papers:
-        got = _norm_title(paper.title)
-        if got and (got.startswith(want) or want.startswith(got)):
+        got = _compact(paper.title)
+        if got and len(min(got, want, key=len)) >= 30 and (
+            got.startswith(want) or want.startswith(got)
+        ):
             return paper
-    return papers[0] if papers else None
+    for paper in papers:
+        if SequenceMatcher(None, _compact(paper.title), want).ratio() >= 0.93:
+            return paper
+    return None
 
 
 def _norm_title(text: str) -> str:
     return " ".join(re.sub(r"[^a-z0-9]+", " ", (text or "").lower()).split())
+
+
+def _compact(text: str) -> str:
+    """A title with spacing and punctuation gone. Pasted titles lose spaces at
+    line breaks ("sequentialdrug"), which must not make them a different title."""
+    return re.sub(r"[^a-z0-9]+", "", (text or "").lower())
+
+
+def _same_doi(a: str, b: str) -> bool:
+    norm = lambda d: (d or "").strip().lower().removeprefix("https://doi.org/")
+    return bool(norm(a)) and norm(a) == norm(b)
 
 
 async def fetch_by_doi(doi: str) -> Paper | None:
@@ -251,15 +272,22 @@ async def fetch_by_doi(doi: str) -> Paper | None:
         async with httpx.AsyncClient() as client:
             # [AID] is the article-id field; fall back to a bare DOI search,
             # which PubMed also resolves, in case the field query misses.
-            ids = await _esearch(client, f"{doi}[AID]", 1)
+            ids = await _esearch(client, f"{doi}[AID]", 3)
             if not ids:
-                ids = await _esearch(client, doi, 1)
+                ids = await _esearch(client, doi, 3)
             if not ids:
                 return None
-            papers = await _efetch(client, ids[:1])
-            return papers[0] if papers else None
+            papers = await _efetch(client, ids[:3])
     except (httpx.HTTPError, ValueError, KeyError):
         return None
+    # The bare search treats a DOI as ordinary words and always finds
+    # *something*. Without this check a Nature Machine Intelligence DOI came
+    # back as an HIV drug-resistance review, and that review's abstract was
+    # then shown and summarised under the right paper's title.
+    for paper in papers:
+        if _same_doi(paper.doi, doi):
+            return paper
+    return None
 
 
 # --- Open-access full text (PMC) ------------------------------------------

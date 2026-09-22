@@ -7,7 +7,10 @@ import re
 from .biorxiv import search_biorxiv
 from .models import Paper
 from .openalex import search_openalex
+from .crossref import fetch_by_doi as crossref_fetch_by_doi
+from .crossref import publisher_abstract
 from .pubmed import fetch_by_doi, search_pubmed
+from .semantic_scholar import fetch_by_doi as s2_fetch_by_doi
 from .semantic_scholar import search_semantic_scholar
 
 
@@ -250,11 +253,24 @@ async def _backfill_abstracts(papers: list[Paper]) -> None:
     targets = [p for p in papers if not p.abstract and p.doi]
     if not targets:
         return
-    fetched = await asyncio.gather(
-        *[fetch_by_doi(p.doi) for p in targets], return_exceptions=True
+    # Each lookup only answers for the DOI it was given (see fetch_by_doi):
+    # a look-alike's abstract under the right title is worse than none.
+    for fetch in (fetch_by_doi, s2_fetch_by_doi, crossref_fetch_by_doi):
+        targets = [p for p in targets if not p.abstract]
+        if not targets:
+            return
+        fetched = await asyncio.gather(
+            *[fetch(p.doi) for p in targets], return_exceptions=True
+        )
+        for paper, found in zip(targets, fetched):
+            if isinstance(found, Paper) and found.abstract:
+                paper.abstract = found.abstract
+                if not paper.venue:
+                    paper.venue = found.venue
+    left = [p for p in targets if not p.abstract]
+    pages = await asyncio.gather(
+        *[publisher_abstract(p.doi) for p in left], return_exceptions=True
     )
-    for paper, found in zip(targets, fetched):
-        if isinstance(found, Paper) and found.abstract:
-            paper.abstract = found.abstract
-            if not paper.venue:
-                paper.venue = found.venue
+    for paper, text in zip(left, pages):
+        if isinstance(text, str) and text:
+            paper.abstract = text

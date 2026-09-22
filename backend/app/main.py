@@ -55,6 +55,9 @@ from .schemas import (
     UploadResponse,
 )
 from .services import imports, llm_service, sessions, uploads
+from .services.crossref import fetch_by_doi as crossref_fetch_by_doi
+from .services.crossref import match_title, publisher_abstract
+from .services.semantic_scholar import fetch_by_doi as s2_fetch_by_doi
 from .services.models import Paper
 from .services.openalex import _norm_title, connected_papers, resolve_work
 from .services.openalex import take_notes as oa_notes
@@ -202,8 +205,38 @@ async def search(
     query = req.query.strip()
     lang = req.lang or llm_service.detect_language(query)
 
+    # A DOI names exactly one paper, and no database's keyword search finds a
+    # paper by its DOI — the words "10.1038" and "s42256" match nothing, or
+    # worse, something. So look it up directly, put it first, and search its
+    # subject for the papers around it.
+    doi = imports._clean_doi(query) if len(query.split()) <= 3 else ""
+    pinned = await _lookup_doi(doi) if doi else None
+    if doi and pinned is None:
+        # Searching the DOI's characters as words finds only noise; say the
+        # DOI was not found and stop there.
+        return SearchResponse(
+            original_query=query,
+            detected_lang=lang,
+            english_query=doi,
+            answer="",
+            sources=[],
+            warning=(
+                f"没有找到 DOI 为 {doi} 的文献。请检查 DOI 是否完整，或改用标题检索。"
+                if lang == "zh"
+                else f"No paper was found for DOI {doi}. Check that it is complete, "
+                     "or search by title."
+            ),
+        )
+    # A pasted title is looked up the same way, once it is matched to a DOI
+    # closely enough to be the same paper.
+    if not doi and looks_like_known_item(query):
+        matched = await match_title(query)
+        pinned = await _lookup_doi(matched) if matched else None
+
     # 1. Expand/translate to an English search string.
-    english_query = await llm_service.expand_query(query, lang)
+    english_query = await llm_service.expand_query(
+        pinned.title if pinned else query, lang
+    )
 
     # 2. Retrieve + dedupe across sources, then cap to the requested set size so
     #    the synthesis prompt stays bounded. Honor the caller's limit within a
@@ -213,6 +246,8 @@ async def search(
     # A pasted title or DOI is a request for one specific paper, so search the
     # user's exact words too — expansion alone finds the topic, not the paper.
     exact = query if looks_like_known_item(query) else None
+    if pinned:
+        exact = pinned.title
     report: dict = {}
     papers = (
         await retrieve(
@@ -225,6 +260,16 @@ async def search(
             report=report,
         )
     )[:limit]
+    if pinned:
+        same = lambda p: (p.doi or "").lower() == pinned.doi.lower() or (
+            _norm_title(p.title) == _norm_title(pinned.title)
+        )
+        # Prefer an indexed copy of the same paper if the search found one
+        # with an abstract; otherwise the looked-up record leads.
+        twin = next((p for p in papers if same(p) and p.abstract), None)
+        if twin and not pinned.abstract:
+            pinned = twin
+        papers = [pinned] + [p for p in papers if not same(p)][: limit - 1]
 
     # 3. Synthesize a cited answer (or a clear message if no key / no hits).
     warning = None
@@ -261,7 +306,9 @@ async def search(
     # degradation is how a product that claims four sources ends up searching
     # two without anyone noticing.
     quiet = _quiet_sources(report, papers)
-    if quiet and not warning:
+    # The quiet-source notice is about topic searches; for a DOI the paper
+    # itself has been found, which is what was asked.
+    if quiet and not warning and not pinned:
         warning = (
             f"本次检索未包含：{'、'.join(quiet)}（数据源暂时无响应）。结果来自其余数据库。"
             if lang == "zh"
@@ -596,6 +643,48 @@ async def _resolve_cached(identifier: str):
     return result
 
 
+async def _lookup_doi(doi: str) -> Paper | None:
+    """One paper by DOI, as metadata plus the best abstract anyone has."""
+    paper = None
+    try:
+        work = await resolve_work(doi)
+        if work is not None:
+            paper = _oa_to_paper(work)
+    except Exception:  # noqa: BLE001 - one index being down is not a failure
+        paper = None
+    if paper is None or not paper.abstract:
+        other = await _doi_elsewhere(doi)
+        if paper is None:
+            paper = other
+        elif other is not None and other.abstract:
+            paper.abstract = other.abstract
+    return paper
+
+
+async def _doi_elsewhere(doi: str) -> Paper | None:
+    """A DOI OpenAlex could not answer, tried against everything else.
+
+    PubMed first, for its curated abstract and PMC link; then Semantic Scholar,
+    which covers what PubMed does not index (computational journals, most of
+    Nature Machine Intelligence); then Crossref, which knows every DOI. The
+    first answer wins, and a later source only lends a missing abstract.
+    """
+    found = None
+    for fetch in (fetch_by_doi, s2_fetch_by_doi, crossref_fetch_by_doi):
+        got = await fetch(doi)
+        if got is None:
+            continue
+        if found is None:
+            found = got
+        elif got.abstract:
+            found.abstract = got.abstract
+        if found.abstract:
+            break
+    if found is not None and not found.abstract:
+        found.abstract = await publisher_abstract(doi)
+    return found
+
+
 async def _resolve_with_text(identifier: str):
     """Resolve an identifier to a Paper, preferring a version with full text.
 
@@ -632,7 +721,7 @@ async def _resolve_with_text(identifier: str):
         # answer a DOI or a title too, so the reader still gets their paper —
         # only the citation map, which needs OpenAlex, is unavailable.
         fallback = (
-            await fetch_by_doi(identifier)
+            await _doi_elsewhere(identifier)
             if identifier.lower().startswith("10.")
             else await fetch_by_title(identifier)
         )
@@ -1044,7 +1133,7 @@ async def _import_resolve(entry: dict) -> dict | None:
     if paper is None:
         try:
             paper = (
-                await fetch_by_doi(ident)
+                await _doi_elsewhere(ident)
                 if ident.lower().startswith("10.")
                 else await fetch_by_title(ident)
             )
