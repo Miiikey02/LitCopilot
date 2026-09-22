@@ -5,6 +5,7 @@ import AnswerText from './AnswerText'
 import Icon from './Icon'
 import SkillsPanel from './SkillsPanel'
 import AssistantDesigner from './AssistantDesigner'
+import { actionLabel } from '../lib/actionLabel'
 
 // An agent that can tidy the library, rather than only describe it.
 //
@@ -30,31 +31,7 @@ const ICONS = {
 
 function ActionList({ actions, applied, busy, onApply, onDismiss }) {
   const { t } = useTranslation()
-  const label = (a) => {
-    if (a.kind === 'create_folder') {
-      return a.parent
-        ? t('actCreateFolderIn', { name: a.name, parent: a.parent })
-        : t('actCreateFolder', { name: a.name })
-    }
-    if (a.kind === 'move_papers') {
-      return a.folder?.toLowerCase() === 'unfiled'
-        ? t('actUnfile', { n: a.paper_ids.length })
-        : t('actMovePapers', { n: a.paper_ids.length, folder: a.folder })
-    }
-    if (a.kind === 'add_tags') {
-      return t('actAddTags', { n: a.paper_ids.length, tags: (a.tags || []).join('、') })
-    }
-    if (a.kind === 'set_reading_state') {
-      return t('actSetState', {
-        n: a.paper_ids.length,
-        state: a.state ? t(`state_${a.state}`) : t('stateUnset'),
-      })
-    }
-    if (a.kind === 'write_record') return t('actWriteRecord', { title: a.title })
-    if (a.kind === 'amend_record') return t('actAmendRecord')
-    if (a.kind === 'write_note') return t('actWriteNote')
-    return a.kind
-  }
+  const label = (a) => actionLabel(t, a)
 
   return (
     <div className="mt-2 rounded-xl border border-slate-200 bg-slate-50 p-3">

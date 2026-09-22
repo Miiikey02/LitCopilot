@@ -362,6 +362,9 @@ def init_db() -> None:
             "ALTER TABLE saved_papers ADD COLUMN IF NOT EXISTS retraction_status "
             "TEXT NOT NULL DEFAULT ''"
         )
+        # What a batch of agent changes did, as data, so the page can say it
+        # in the reader's language. `label` stays for batches made before.
+        conn.execute("ALTER TABLE library_undo ADD COLUMN IF NOT EXISTS summary JSONB")
         # A row belongs to a team workspace when team_id is set, otherwise to
         # the personal library of user_id. user_id always records who added it.
         for table in ("saved_papers", "folders"):
@@ -785,16 +788,26 @@ def read_state_counts(user_id: str, team_id: int | None = None) -> dict:
 
 
 def record_undo(
-    user_id: str, team_id: int | None, label: str, inverse: list[dict]
+    user_id: str,
+    team_id: int | None,
+    label: str,
+    inverse: list[dict],
+    summary: list[dict] | None = None,
 ) -> int | None:
     """Store what it would take to put things back. Returns the undo id."""
     if not inverse:
         return None
     with _get_pool().connection() as conn:
         row = conn.execute(
-            """INSERT INTO library_undo (user_id, team_id, label, inverse)
-               VALUES (%s,%s,%s,%s) RETURNING id""",
-            (user_id, team_id, label[:200], json.dumps(inverse, ensure_ascii=False)),
+            """INSERT INTO library_undo (user_id, team_id, label, inverse, summary)
+               VALUES (%s,%s,%s,%s,%s) RETURNING id""",
+            (
+                user_id,
+                team_id,
+                label[:200],
+                json.dumps(inverse, ensure_ascii=False),
+                json.dumps(summary, ensure_ascii=False) if summary else None,
+            ),
         ).fetchone()
         return int(row["id"])
 
@@ -855,7 +868,7 @@ def list_undo(user_id: str, team_id: int | None = None, limit: int = 30) -> list
             else:
                 where, params = "l.team_id = %s AND l.user_id = %s", [team_id, user_id]
         rows = conn.execute(
-            f"""SELECT l.id, l.label, l.created_at, l.undone_at,
+            f"""SELECT l.id, l.label, l.summary, l.created_at, l.undone_at,
                        jsonb_array_length(l.inverse) AS n, u.email
                   FROM library_undo l
              LEFT JOIN auth.users u ON u.id = l.user_id
@@ -867,6 +880,7 @@ def list_undo(user_id: str, team_id: int | None = None, limit: int = 30) -> list
         {
             "id": r["id"],
             "label": r["label"] or "",
+            "summary": r["summary"] or [],
             "changes": r["n"] or 0,
             "by": r["email"] or "",
             "at": r["created_at"].isoformat(),

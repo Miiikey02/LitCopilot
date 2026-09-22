@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import * as api from '../lib/api'
+import { actionLabel } from '../lib/actionLabel'
 import { copyText } from '../lib/citation'
 import Icon from './Icon'
 
@@ -272,7 +273,7 @@ export default function WorkspaceBar({ teams, activeTeam, onSwitch, onTeamsChang
               <ul className="mt-1 space-y-1">
                 {batches.slice(0, 10).map((b) => (
                   <li key={b.id} className="flex items-center gap-2 text-xs text-slate-600">
-                    <span className="min-w-0 flex-1 truncate">
+                    <span className="min-w-0 flex-1">
                       <span className="font-medium text-slate-700">
                         {b.by || t('noteHistorySomeone')}
                       </span>
@@ -280,7 +281,14 @@ export default function WorkspaceBar({ teams, activeTeam, onSwitch, onTeamsChang
                       {new Date(b.at).toLocaleString()}
                       {' · '}
                       {t('undoBatchChanges', { n: b.changes })}
-                      {b.label ? ` — ${b.label}` : ''}
+                      {/* Described from what the batch did, in the reader's
+                          language. Batches from before this was recorded only
+                          have an English line, so they show the count alone. */}
+                      {b.summary?.length > 0 && (
+                        <span className="block text-slate-500">
+                          {b.summary.map((a) => actionLabel(t, a, true)).join('；')}
+                        </span>
+                      )}
                     </span>
                     {b.undone ? (
                       <span className="shrink-0 text-slate-400">{t('undoBatchDone')}</span>

@@ -675,6 +675,7 @@ def apply(user: str, actions: list[dict], team_id: int | None = None) -> dict:
     done: list[str] = []
     failed: list[str] = []
     inverse: list[dict] = []
+    succeeded: list[dict] = []
 
     def folder_id_for(name: str) -> int | None:
         if not name or name.lower() == "unfiled":
@@ -692,6 +693,7 @@ def apply(user: str, actions: list[dict], team_id: int | None = None) -> dict:
     for action in ordered[:MAX_ACTIONS]:
         kind = action.get("kind")
         label = describe(action)
+        before_done = len(done)
         try:
             if kind == "create_folder":
                 parent = action.get("parent")
@@ -791,12 +793,19 @@ def apply(user: str, actions: list[dict], team_id: int | None = None) -> dict:
                 failed.append(label)
         except Exception:  # noqa: BLE001 - one bad action is not the plan
             failed.append(label)
+        if len(done) > before_done:
+            # Enough to describe it; the note and record text are left out.
+            succeeded.append({
+                k: v for k, v in action.items()
+                if k not in ("note", "aim", "method", "result")
+            })
 
     undo_id = None
     if inverse:
         try:
             undo_id = db.record_undo(
-                user, team_id, "; ".join(done)[:200] or "library changes", inverse
+                user, team_id, "; ".join(done)[:200] or "library changes", inverse,
+                succeeded,
             )
         except Exception:  # noqa: BLE001 - the changes landed; the undo is a bonus
             undo_id = None

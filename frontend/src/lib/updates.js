@@ -34,6 +34,11 @@ export const UPDATES = [
         en: 'Notes now keep a history: every change records who made it, when, and what the note said before, and any earlier version can be restored in one click. In a lab library a note is one shared text; previously when someone overwrote a colleague’s note nothing recorded it and nothing could bring it back. Deleted notes can be restored the same way, and a restore is itself recorded, so a wrong restore can be reversed too.',
       },
       {
+        kind: 'fix',
+        zh: '「最近的助手改动」里每批改动的说明改成了中文，例如「新建了文件夹『青光眼』；把 2 篇文献放入了『青光眼』；给 1 篇文献加了标签：综述、重要」。此前显示的是英文，还会出现「paper 170」这样的内部编号。切换到英文界面时会显示英文说明。这次更新之前产生的改动只显示改动数量。',
+        en: 'Each batch in "Recent assistant changes" is now described in the interface language — e.g. "Created folder ‘青光眼’; Filed 2 paper(s) into ‘青光眼’" — instead of always in English with internal ids like "paper 170". Batches from before this update show only their count.',
+      },
+      {
         kind: 'feature',
         zh: '负责人可以撤销任何成员通过助手做的改动。实验室「管理」里多了「最近的助手改动」，负责人能看到全体成员的，逐批点「撤销」就能把文库恢复原样——文件夹、归档、标签、笔记、阅读状态、助手写的实验记录都会还原。普通成员只能看到和撤销自己的。',
         en: 'A lab admin can now undo any member’s assistant changes. The lab’s 管理 panel lists recent assistant changes — everyone’s, for an admin — and each batch can be undone to put the library back: folders, filing, tags, notes, reading state and any experiment records the assistant wrote. Members see and undo only their own.',

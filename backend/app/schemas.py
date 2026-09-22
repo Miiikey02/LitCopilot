@@ -382,7 +382,10 @@ class UndoBatch(BaseModel):
     """A batch of agent changes that can still be reversed."""
 
     id: int
-    label: str = ""
+    label: str = ""  # English, for batches made before `summary` existed
+    # The actions that went through, without their long text — the page
+    # describes them in the reader's language.
+    summary: list[dict] = []
     changes: int = 0
     by: str = ""
     at: str = ""
