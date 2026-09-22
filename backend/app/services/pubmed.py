@@ -166,6 +166,11 @@ def _parse_article(art: ET.Element) -> Paper | None:
         # A PMC id means the full text is free to read there.
         oa_url=f"https://pmc.ncbi.nlm.nih.gov/articles/{pmcid}/" if pmcid else "",
         retraction_status=retraction_status,
+        pub_types=sorted(
+            t for t in pub_types
+            if t and t not in ("journal article", "english abstract")
+            and not t.startswith("research support")
+        ),
     )
 
 

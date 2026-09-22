@@ -516,6 +516,11 @@ class WatchHit(BaseModel):
     found_at: str
     # '' while waiting, 'saved' or 'dismissed' once someone decided.
     status: str = ""
+    # 1–5 ratings from the screen, and their 0–100 blend (None if unrated).
+    relevance: Optional[int] = None
+    quality: Optional[int] = None
+    quality_note: str = ""
+    score: Optional[float] = None
 
 
 class WatchChecked(BaseModel):

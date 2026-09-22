@@ -352,7 +352,9 @@ export const unwatch = (id, teamId) =>
   req(`/api/watches/${id}${ws({}, teamId)}`, { method: 'DELETE' })
 export const checkWatch = (id, teamId) =>
   req(`/api/watches/${id}/check${ws({}, teamId)}`, { method: 'POST' })
-export const watchHits = (id, teamId) => req(`/api/watches/${id}/hits${ws({}, teamId)}`)
+// `order` is 'score' (fit and quality, best first) or 'date'.
+export const watchHits = (id, teamId, order = 'score') =>
+  req(`/api/watches/${id}/hits${ws({ order }, teamId)}`)
 export const saveWatchHit = (hitId, teamId) =>
   req(`/api/watches/hits/${hitId}/save${ws({}, teamId)}`, { method: 'POST' })
 export const dismissWatchHit = (hitId, teamId) =>

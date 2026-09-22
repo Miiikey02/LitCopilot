@@ -56,12 +56,12 @@ async def check(watch: dict) -> int:
 
         ctx = await asyncio.to_thread(_folder_titles, watch["folder_id"])
         lang = watch.get("lang") or "zh"
-        hits: list[tuple[dict, str]] = []
+        hits: list[tuple[dict, dict]] = []
         rejected: list[dict] = []
         for i in range(0, len(fresh), SCREEN_BATCH):
             batch = fresh[i : i + SCREEN_BATCH]
             if not has_llm_key():
-                hits += [(p.to_card(), "") for p in batch]
+                hits += [(p.to_card(), {}) for p in batch]
                 continue
             try:
                 kept = await llm_service.screen_new_papers(
@@ -71,9 +71,9 @@ async def check(watch: dict) -> int:
                 print(redact(f"[watch {watch['id']}] screen failed: {exc}"))
                 # Offered unscreened rather than dropped: in a catch-up these
                 # papers will not come round again.
-                hits += [(p.to_card(), "") for p in batch]
+                hits += [(p.to_card(), {}) for p in batch]
                 continue
-            hits += [(batch[j].to_card(), why) for j, why in sorted(kept.items())]
+            hits += [(batch[j].to_card(), meta) for j, meta in sorted(kept.items())]
             # Remembered, so the next check does not re-roll the verdict.
             rejected += [p.to_card() for j, p in enumerate(batch) if j not in kept]
         return await asyncio.to_thread(db.add_watch_hits, watch["id"], hits, rejected)

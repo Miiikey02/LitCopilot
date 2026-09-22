@@ -766,9 +766,15 @@ async def check_watch(
 
 @router.get("/watches/{watch_id}/hits", response_model=list[WatchHit])
 def list_watch_hits(
-    watch_id: int, team: int | None = None, user: str = Depends(current_user)
+    watch_id: int,
+    order: str = "score",
+    team: int | None = None,
+    user: str = Depends(current_user),
 ) -> list[WatchHit]:
-    hits = _guard(db.list_watch_hits, user, watch_id, team)
+    """`order` is "score" (fit and quality, best first) or "date"."""
+    hits = _guard(
+        db.list_watch_hits, user, watch_id, team, "date" if order == "date" else "score"
+    )
     if hits is None:
         raise HTTPException(status_code=404, detail="Watch not found")
     return [WatchHit(**h) for h in hits]

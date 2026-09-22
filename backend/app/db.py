@@ -365,6 +365,15 @@ def init_db() -> None:
         # What a batch of agent changes did, as data, so the page can say it
         # in the reader's language. `label` stays for batches made before.
         conn.execute("ALTER TABLE library_undo ADD COLUMN IF NOT EXISTS summary JSONB")
+        # A finding's ratings: how well it fits the folder, how much weight
+        # it can bear, and the blend the list is ordered by.
+        for col, typ in (
+            ("relevance", "SMALLINT"),
+            ("quality", "SMALLINT"),
+            ("quality_note", "TEXT NOT NULL DEFAULT ''"),
+            ("score", "REAL"),
+        ):
+            conn.execute(f"ALTER TABLE watch_hits ADD COLUMN IF NOT EXISTS {col} {typ}")
         # How often a folder watch looks: 1 = daily, 7 = weekly.
         conn.execute(
             "ALTER TABLE folder_watches ADD COLUMN IF NOT EXISTS every_days "
@@ -2418,8 +2427,22 @@ def dedup_key(card: dict) -> str:
     return _dedup_key(card)
 
 
+# Fit counts for more than quality: a strong paper beside the point is still
+# beside the point, while a modest one squarely on the folder's question is
+# the kind of thing the folder exists to catch.
+RELEVANCE_WEIGHT = 0.6
+
+
+def watch_score(relevance: int | None, quality: int | None) -> float | None:
+    """0–100 from two 1–5 ratings; None when the paper was not rated."""
+    if not relevance or not quality:
+        return None
+    blend = RELEVANCE_WEIGHT * relevance + (1 - RELEVANCE_WEIGHT) * quality
+    return round((blend - 1) / 4 * 100, 1)
+
+
 def add_watch_hits(
-    watch_id: int, hits: list[tuple[dict, str]], rejected: list[dict] | None = None
+    watch_id: int, hits: list[tuple[dict, dict]], rejected: list[dict] | None = None
 ) -> int:
     """Store findings, and remember what the screen turned down.
 
@@ -2429,11 +2452,22 @@ def add_watch_hits(
     """
     added = 0
     with _get_pool().connection() as conn:
-        for card, why in hits:
+        for card, meta in hits:
+            rel, qual = meta.get("relevance"), meta.get("quality")
             cur = conn.execute(
-                """INSERT INTO watch_hits (watch_id, dedup_key, card, why)
-                   VALUES (%s,%s,%s,%s) ON CONFLICT DO NOTHING""",
-                (watch_id, _dedup_key(card), json.dumps(card, ensure_ascii=False), why),
+                """INSERT INTO watch_hits (watch_id, dedup_key, card, why,
+                                           relevance, quality, quality_note, score)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING""",
+                (
+                    watch_id,
+                    _dedup_key(card),
+                    json.dumps(card, ensure_ascii=False),
+                    meta.get("why", ""),
+                    rel,
+                    qual,
+                    meta.get("quality_note", ""),
+                    watch_score(rel, qual),
+                ),
             )
             added += cur.rowcount
         for card in rejected or []:
@@ -2456,21 +2490,39 @@ def set_watch_error(watch_id: int, error: str) -> None:
         )
 
 
-def list_watch_hits(user_id: str, watch_id: int, team_id: int | None = None) -> list[dict] | None:
+_HIT_COLS = "id, card, why, status, found_at, relevance, quality, quality_note, score"
+
+
+def _hit_row(r: dict) -> dict:
+    return {
+        "id": r["id"],
+        "card": r["card"],
+        "why": r["why"],
+        "status": r["status"],
+        "found_at": r["found_at"].isoformat(),
+        "relevance": r["relevance"],
+        "quality": r["quality"],
+        "quality_note": r["quality_note"] or "",
+        "score": r["score"],
+    }
+
+
+def list_watch_hits(
+    user_id: str, watch_id: int, team_id: int | None = None, order: str = "score"
+) -> list[dict] | None:
+    """Findings waiting to be looked at — best first by default, or newest."""
     with _get_pool().connection() as conn:
         _assert_member(conn, user_id, team_id)
         if not _accessible_watch(conn, user_id, watch_id, team_id):
             return None
         rows = conn.execute(
-            """SELECT id, card, why, found_at FROM watch_hits
+            f"""SELECT {_HIT_COLS} FROM watch_hits
                WHERE watch_id = %s AND status = ''
-               ORDER BY found_at DESC, id LIMIT 300""",
+               ORDER BY {'score DESC NULLS LAST, ' if order == 'score' else ''}found_at DESC, id
+               LIMIT 300""",
             (watch_id,),
         ).fetchall()
-    return [
-        {"id": r["id"], "card": r["card"], "why": r["why"], "found_at": r["found_at"].isoformat()}
-        for r in rows
-    ]
+    return [_hit_row(r) for r in rows]
 
 
 def watch_history(
@@ -2491,21 +2543,14 @@ def watch_history(
         if not _accessible_watch(conn, user_id, watch_id, team_id):
             return None
         rows = conn.execute(
-            """SELECT id, card, why, status, found_at FROM watch_hits
+            f"""SELECT {_HIT_COLS} FROM watch_hits
                WHERE watch_id = %s AND status <> 'screened_out'
-               ORDER BY found_at DESC, id LIMIT %s OFFSET %s""",
+               -- By day, as delivered; within a day, best first.
+               ORDER BY found_at::date DESC, score DESC NULLS LAST, id
+               LIMIT %s OFFSET %s""",
             (watch_id, limit, offset),
         ).fetchall()
-    return [
-        {
-            "id": r["id"],
-            "card": r["card"],
-            "why": r["why"],
-            "status": r["status"],
-            "found_at": r["found_at"].isoformat(),
-        }
-        for r in rows
-    ]
+    return [_hit_row(r) for r in rows]
 
 
 def settle_watch_hit(

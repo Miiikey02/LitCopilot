@@ -35,6 +35,11 @@ export const UPDATES = [
       },
       {
         kind: 'feature',
+        zh: '追踪到的新文献现在按「吻合度 + 质量」综合排名，最值得看的排在最前。每篇显示两个评分（1–5）：吻合度看它和文件夹关注方向贴得多近；质量看研究设计、样本量、验证是否充分和发表期刊，并附一句依据（如「30 例随机对照，样本量小、随访仅 3 个月」）。研究类型优先采用 PubMed 标注的类型；撤稿或被编辑关注的文献质量直接记为最低。可以切换为按「最新」排序。评分依据摘要判断，仅供参考。',
+        en: 'New papers found for a folder are now ranked by fit and quality, best first. Each shows two 1–5 ratings: fit — how squarely it sits in the folder’s direction — and quality — design, sample size, validation and venue — with a note on what the rating rests on (e.g. "30-patient RCT, small, 3-month follow-up"). Study design uses PubMed’s own publication types where available; a retracted paper or one under an expression of concern is rated lowest. The list can be sorted by newest instead. Ratings are judged from the abstract and are a guide, not a verdict.',
+      },
+      {
+        kind: 'feature',
         zh: '追踪新文献可以选择「每天」或「每周」检索一次，开始追踪时选，之后也能随时切换。新增「推送记录」：每次推送按日期列出，已加入、不相关、待处理的都在，很久以后也能找回；之前点了「不相关」的文献也可以从这里重新加入文件夹。很久没打开也不会漏：每次检索都覆盖上次之后的全部新文献（测试中 60 天未检查，一次补查了这段时间里的全部 54 篇），而不只是最新的几十篇。',
         en: 'Following a folder can now run daily or weekly — chosen when you start, changeable any time. A new History lists everything ever sent, by day, whether added, dismissed or still waiting, so it can be found long afterwards; a paper dismissed too quickly can be added from there. Nothing is missed while you are away: each check covers everything since the last one (in testing, a 60-day gap caught all 54 papers in it), not just the newest few dozen.',
       },

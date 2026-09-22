@@ -940,35 +940,73 @@ async def watch_query(folder_name: str, titles: list[str]) -> str:
     return query
 
 
-_WATCH_SCREEN_SYSTEM = """You screen newly published papers for one folder of a researcher's library.
+_WATCH_SCREEN_SYSTEM = """You screen newly published papers for one folder of a researcher's library, and rate the ones you keep.
 
 You get the folder's name, titles already filed there, and numbered candidates. Keep a candidate only if a researcher who built this folder would plausibly want to file it there — same disease, method, target or question. A paper that merely shares a keyword is not a match. When in doubt, leave it out: a short list they trust beats a long one they learn to ignore.
 
-For each one you keep, write one short sentence in RESPONSE LANGUAGE saying what it adds for this folder (not a summary of the abstract).
+For each one you keep, give:
+- "why": one short sentence in RESPONSE LANGUAGE on what it adds for this folder (not a summary of the abstract).
+- "relevance" 1–5: how squarely it sits in this folder's direction. 5 = the folder's exact question, target or method; 3 = same area, different angle; 1 = only loosely related.
+- "quality" 1–5: how much weight the work can bear, judged ONLY from what is given (design, scale, venue, abstract). Consider: study design and level of evidence for its kind (systematic review/meta-analysis or adequately sized RCT high; for basic science, mechanistic depth with in vivo or human validation beats a single cell line); sample size and controls stated; independent validation; an established peer-reviewed venue vs. a preprint or a little-known journal. A narrative review or a case report is rarely above 3. A retracted paper or one under an expression of concern is 1. Do not reward length or big claims, and do not guess at things the text does not say — when little is given, stay near 3.
+- "quality_note": a few words in RESPONSE LANGUAGE naming what drove the quality score (e.g. the design and sample size).
 
-Return JSON only: {"keep": [{"n": 1, "why": "..."}]}"""
+Return JSON only: {"keep": [{"n": 1, "why": "...", "relevance": 4, "quality": 3, "quality_note": "..."}]}"""
+
+
+def _score_1_5(value) -> int:
+    try:
+        return max(1, min(5, int(round(float(value)))))
+    except (TypeError, ValueError):
+        return 3
 
 
 async def screen_new_papers(
     folder_name: str, titles: list[str], papers: list[Paper], lang: str
-) -> dict[int, str]:
-    """Which candidates belong in the folder, as {index: reason}."""
+) -> dict[int, dict]:
+    """Which candidates belong in the folder, each with a reason and ratings.
+
+    Returns {index: {why, relevance, quality, quality_note}}.
+    """
     listed = "\n".join(f"- {t}" for t in titles[:15]) or "(the folder is empty)"
-    cands = "\n\n".join(
-        f"[{i}] {p.title}\n    {p.venue} {p.pub_date}\n    {(p.abstract or '')[:600]}"
-        for i, p in enumerate(papers, 1)
-    )
+
+    def block(i: int, p: Paper) -> str:
+        flags = []
+        if p.pub_types:
+            flags.append(f"PubMed publication type: {', '.join(p.pub_types)}")
+        elif p.evidence_type:
+            flags.append(f"type: {p.evidence_type}")
+        if p.retraction_status:
+            flags.append(f"INTEGRITY: {p.retraction_status}")
+        if p.source == "biorxiv":
+            flags.append("preprint, not peer reviewed")
+        extra = f"\n    {'; '.join(flags)}" if flags else ""
+        return (
+            f"[{i}] {p.title}\n    {p.venue} {p.pub_date}{extra}\n"
+            f"    {(p.abstract or '(no abstract)')[:1200]}"
+        )
+
+    cands = "\n\n".join(block(i, p) for i, p in enumerate(papers, 1))
     user = (
         f"RESPONSE LANGUAGE: {_lang_name(lang)}.\n\n"
         f"Folder name: {folder_name}\n\nAlready in it:\n{listed}\n\nCandidates:\n{cands}"
     )
-    raw, _ = await _chat(_WATCH_SCREEN_SYSTEM, user, max_tokens=2500, think=False)
-    kept = {}
+    raw, _ = await _chat(_WATCH_SCREEN_SYSTEM, user, max_tokens=4000, think=False)
+    kept: dict[int, dict] = {}
     for item in _extract_json(raw).get("keep", []):
         try:
             n = int(item.get("n"))
         except (TypeError, ValueError):
             continue
         if 1 <= n <= len(papers):
-            kept[n - 1] = (item.get("why") or "").strip()
+            p = papers[n - 1]
+            quality = _score_1_5(item.get("quality"))
+            # Integrity overrides whatever the model made of the abstract.
+            if p.retraction_status in ("retracted", "concern"):
+                quality = 1
+            kept[n - 1] = {
+                "why": (item.get("why") or "").strip(),
+                "relevance": _score_1_5(item.get("relevance")),
+                "quality": quality,
+                "quality_note": (item.get("quality_note") or "").strip()[:80],
+            }
     return kept

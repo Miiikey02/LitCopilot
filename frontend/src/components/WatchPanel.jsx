@@ -23,6 +23,32 @@ function ago(iso, t) {
   return t('watchDaysAgo', { n: Math.floor(hours / 24) })
 }
 
+// Two ratings rather than one number, because they answer different
+// questions: does this belong here, and how much can it bear. The note says
+// what the quality rating rests on, so it can be checked rather than trusted.
+function Ratings({ hit, compact = false }) {
+  const { t } = useTranslation()
+  if (!hit.relevance || !hit.quality) return null
+  const dots = (n) => '●'.repeat(n) + '○'.repeat(5 - n)
+  return (
+    <p className={`text-xs text-slate-500 ${compact ? '' : 'mt-1'}`}>
+      <span title={t('watchRelevanceHint')}>
+        {t('watchRelevance')} <span className="tracking-tight text-blue-600">{dots(hit.relevance)}</span>
+      </span>
+      <span className="mx-1.5 text-slate-300">·</span>
+      <span title={t('watchQualityHint')}>
+        {t('watchQuality')} <span className="tracking-tight text-emerald-600">{dots(hit.quality)}</span>
+      </span>
+      {!compact && hit.quality_note && (
+        <span className="text-slate-500">
+          <span className="mx-1.5 text-slate-300">·</span>
+          {hit.quality_note}
+        </span>
+      )}
+    </p>
+  )
+}
+
 function Hit({ hit, teamId, onDone }) {
   const { t } = useTranslation()
   const [busy, setBusy] = useState('')
@@ -55,6 +81,7 @@ function Hit({ hit, teamId, onDone }) {
         {c.venue ? ` · ${c.venue}` : ''}
         {c.pub_date ? ` · ${c.pub_date}` : ''}
       </p>
+      <Ratings hit={hit} />
       {hit.why && <p className="mt-1.5 text-sm leading-6 text-slate-700">{hit.why}</p>}
       <div className="mt-2 flex items-center gap-2">
         <button
@@ -175,6 +202,7 @@ function History({ watchId, teamId, onChanged }) {
                     className="min-w-0 flex-1 leading-6 text-slate-800 hover:text-blue-700"
                   >
                     {h.card?.title}
+                    <Ratings hit={h} compact />
                   </a>
                   <span
                     className={`mt-1 shrink-0 rounded-full px-1.5 text-[11px] leading-4 ${
@@ -231,6 +259,9 @@ export default function WatchPanel({ folder, teamId, onChanged }) {
   const [note, setNote] = useState('')
   const [everyDays, setEveryDays] = useState(1)
   const [showHistory, setShowHistory] = useState(false)
+  // Best first by default: most people look at the top few and stop, so the
+  // top few should be the ones worth it.
+  const [order, setOrder] = useState('score')
 
   const load = async () => {
     if (!folder?.watch_id) {
@@ -241,7 +272,7 @@ export default function WatchPanel({ folder, teamId, onChanged }) {
     try {
       const [ws, hs] = await Promise.all([
         api.listWatches(teamId),
-        api.watchHits(folder.watch_id, teamId),
+        api.watchHits(folder.watch_id, teamId, order),
       ])
       const w = ws.find((x) => x.id === folder.watch_id) || null
       setWatch(w)
@@ -259,7 +290,7 @@ export default function WatchPanel({ folder, teamId, onChanged }) {
     setOpen(true)
     load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [folder?.id, folder?.watch_id, teamId])
+  }, [folder?.id, folder?.watch_id, teamId, order])
 
   const start = async () => {
     setBusy('start')
@@ -438,8 +469,25 @@ export default function WatchPanel({ folder, teamId, onChanged }) {
         />
       )}
 
+      {!showHistory && open && hits.length > 1 && (
+        <div className="mt-3 flex items-center gap-1 text-xs">
+          <span className="text-slate-500">{t('watchOrder')}</span>
+          {[['score', 'watchOrderScore'], ['date', 'watchOrderDate']].map(([key, label]) => (
+            <button
+              key={key}
+              onClick={() => setOrder(key)}
+              className={`rounded-md px-2 py-0.5 transition-colors ${
+                order === key ? 'bg-white font-medium text-slate-900 shadow-sm' : 'text-slate-500 hover:text-blue-700'
+              }`}
+            >
+              {t(label)}
+            </button>
+          ))}
+        </div>
+      )}
+
       {!showHistory && open && hits.length > 0 && (
-        <ul className="mt-3 space-y-2">
+        <ul className="mt-2 space-y-2">
           {hits.map((h) => (
             <Hit
               key={h.id}

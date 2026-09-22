@@ -44,6 +44,10 @@ class Paper:
     # Study design label assigned during deep research: "rct" | "cohort" |
     # "case" | "preclinical" | "invitro" | "review" | "guideline" | "other".
     evidence_type: str = ""
+    # PubMed's own publication types ("randomized controlled trial",
+    # "meta-analysis", "review"…), where PubMed supplied them. Assigned by
+    # indexers, so a steadier signal of study design than a guess from text.
+    pub_types: list[str] = field(default_factory=list)
     # Set when the synthesis judged this paper not to bear on the question.
     # A flag, not a marker written into a display field: the previous version
     # stuffed a sentinel into relevance_zh and it reached the screen.
