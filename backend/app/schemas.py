@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class SearchRequest(BaseModel):
@@ -477,6 +477,42 @@ class Folder(BaseModel):
     name: str
     parent_id: Optional[int] = None
     count: int
+    # Set when the folder follows its field; `fresh` is how many new papers
+    # are waiting to be looked at.
+    watch_id: Optional[int] = None
+    fresh: int = 0
+
+
+class FolderWatch(BaseModel):
+    id: int
+    folder_id: int
+    folder_name: str = ""
+    query: str
+    last_checked: Optional[str] = None
+    last_error: str = ""
+    fresh: int = 0
+
+
+class WatchCreate(BaseModel):
+    # Empty asks Gaze to write the search from the folder's name and papers.
+    query: str = ""
+    lang: str = "zh"
+
+
+class WatchUpdate(BaseModel):
+    query: str = Field(min_length=1, max_length=1000)
+
+
+class WatchHit(BaseModel):
+    id: int
+    card: dict
+    why: str = ""
+    found_at: str
+
+
+class WatchChecked(BaseModel):
+    added: int
+    error: str = ""
 
 
 class FolderMove(BaseModel):

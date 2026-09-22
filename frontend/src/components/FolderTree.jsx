@@ -171,7 +171,20 @@ function Node({ folder, all, childrenOf, depth, ctx }) {
               {t(ctx.dragging ? 'dropInside' : 'fileHere')}
             </span>
           ) : (
-            <span className="ml-auto shrink-0 pl-1 text-xs text-slate-400">
+            <span className="ml-auto flex shrink-0 items-center gap-1 pl-1 text-xs text-slate-400">
+              {/* A followed field shows its bell; new papers waiting show as
+                  a count, the one number here that asks for attention. */}
+              {folder.watch_id &&
+                (folder.fresh > 0 ? (
+                  <span
+                    title={t('watchWaiting', { n: folder.fresh })}
+                    className="rounded-full bg-blue-600 px-1.5 text-[11px] font-medium leading-4 text-white"
+                  >
+                    {folder.fresh}
+                  </span>
+                ) : (
+                  <Icon name="bell" className="text-slate-300" />
+                ))}
               {folder.count}
             </span>
           )}
@@ -375,9 +388,6 @@ export default function FolderTree({
         <p className="flex items-center gap-1.5 text-xs font-medium text-slate-700">
           <Icon name="bell" className="text-blue-600" />
           {t('watchField')}
-          <span className="ml-auto rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-normal text-amber-700">
-            {t('comingSoon')}
-          </span>
         </p>
         <p className="mt-1.5 text-xs leading-5 text-slate-500">{t('watchFieldWhat')}</p>
       </div>

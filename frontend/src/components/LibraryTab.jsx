@@ -4,6 +4,7 @@ import * as api from '../lib/api'
 import LibraryChat from './LibraryChat'
 import Icon from './Icon'
 import FolderTree, { PAPER_DRAG } from './FolderTree'
+import WatchPanel from './WatchPanel'
 import NotePanel from './NotePanel'
 import CiteButton from './CiteButton'
 import ReadState, { ReadStateFilter } from './ReadState'
@@ -591,6 +592,14 @@ export default function LibraryTab() {
         )}
         {view === 'papers' && (
         <>
+
+        {activeFolder && activeFolder !== 'unfiled' && (
+          <WatchPanel
+            folder={folders.find((f) => String(f.id) === activeFolder)}
+            teamId={activeTeam}
+            onChanged={load}
+          />
+        )}
 
         <UploadPdf
           teamId={activeTeam}

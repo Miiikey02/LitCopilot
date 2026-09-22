@@ -298,6 +298,36 @@ CREATE TABLE IF NOT EXISTS note_history (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- A folder can follow its field. The folder is the natural unit: it already
+-- says what a group of papers is about, and a new paper that belongs there has
+-- an obvious place to go. Findings are shared by the workspace like the
+-- folder is, so one person dismissing a false hit spares everyone else.
+CREATE TABLE IF NOT EXISTS folder_watches (
+    id           BIGSERIAL PRIMARY KEY,
+    folder_id    BIGINT NOT NULL UNIQUE REFERENCES folders(id) ON DELETE CASCADE,
+    user_id      UUID NOT NULL,
+    team_id      BIGINT,
+    query        TEXT NOT NULL,
+    lang         TEXT NOT NULL DEFAULT 'zh',
+    last_checked TIMESTAMPTZ,
+    last_error   TEXT NOT NULL DEFAULT '',
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS watch_hits (
+    id         BIGSERIAL PRIMARY KEY,
+    watch_id   BIGINT NOT NULL REFERENCES folder_watches(id) ON DELETE CASCADE,
+    dedup_key  TEXT NOT NULL,
+    card       JSONB NOT NULL,
+    why        TEXT NOT NULL DEFAULT '',
+    -- '' while waiting to be looked at, then 'saved' or 'dismissed'. Kept
+    -- rather than deleted so the same paper is never offered twice.
+    status     TEXT NOT NULL DEFAULT '',
+    found_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (watch_id, dedup_key)
+);
+
+CREATE INDEX IF NOT EXISTS watch_hits_open_idx ON watch_hits (watch_id, status);
 CREATE INDEX IF NOT EXISTS note_history_paper_idx ON note_history (paper_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS library_undo_team_idx ON library_undo (team_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS import_jobs_user_idx ON import_jobs (user_id, created_at DESC);
@@ -1227,11 +1257,15 @@ def list_folders(user_id: str, team_id: int | None = None) -> list[dict]:
     with _get_pool().connection() as conn:
         _assert_member(conn, user_id, team_id)
         rows = conn.execute(
-            f"""SELECT f.id, f.name, f.parent_id, COUNT(p.id) AS n
+            f"""SELECT f.id, f.name, f.parent_id, COUNT(p.id) AS n,
+                       w.id AS watch_id,
+                       (SELECT COUNT(*) FROM watch_hits h
+                        WHERE h.watch_id = w.id AND h.status = '') AS fresh
                 FROM folders f
                 LEFT JOIN saved_papers p ON p.folder_id = f.id
+                LEFT JOIN folder_watches w ON w.folder_id = f.id
                 WHERE {scope_sql}
-                GROUP BY f.id, f.name, f.parent_id
+                GROUP BY f.id, f.name, f.parent_id, w.id
                 ORDER BY f.name""",
             params,
         ).fetchall()
@@ -1240,7 +1274,14 @@ def list_folders(user_id: str, team_id: int | None = None) -> list[dict]:
             p_params,
         ).fetchone()["n"]
     folders = [
-        {"id": r["id"], "name": r["name"], "parent_id": r["parent_id"], "count": r["n"]}
+        {
+            "id": r["id"],
+            "name": r["name"],
+            "parent_id": r["parent_id"],
+            "count": r["n"],
+            "watch_id": r["watch_id"],
+            "fresh": int(r["fresh"] or 0),
+        }
         for r in rows
     ]
     return folders + [{"id": None, "name": "", "parent_id": None, "count": unfiled}]
@@ -2167,3 +2208,244 @@ def delete_assistant(user_id: str, assistant_id: int) -> bool:
             (assistant_id, user_id),
         )
         return cur.rowcount > 0
+
+
+# --- Folder watches ---------------------------------------------------------
+#
+# "Tell me what's new in this field" belongs to a folder: the folder already
+# names the field and holds examples of what belongs in it, and a paper worth
+# keeping has an obvious place to land.
+
+
+def _watch_row(row: dict) -> dict:
+    return {
+        "id": row["id"],
+        "folder_id": row["folder_id"],
+        "folder_name": row.get("folder_name", ""),
+        "query": row["query"],
+        "last_checked": row["last_checked"].isoformat() if row.get("last_checked") else None,
+        "last_error": row.get("last_error") or "",
+        "fresh": int(row.get("fresh") or 0),
+    }
+
+
+def _accessible_watch(conn, user_id: str, watch_id: int, team_id: int | None) -> dict | None:
+    scope_sql, params = _folder_scope(user_id, team_id)
+    return conn.execute(
+        f"""SELECT w.*, f.name AS folder_name FROM folder_watches w
+            JOIN folders f ON f.id = w.folder_id
+            WHERE w.id = %s AND {scope_sql}""",
+        [watch_id, *params],
+    ).fetchone()
+
+
+def folder_context(
+    user_id: str, folder_id: int, team_id: int | None = None, n: int = 20
+) -> dict | None:
+    """A folder's name and the titles in it — what a watch query is built from."""
+    with _get_pool().connection() as conn:
+        _assert_member(conn, user_id, team_id)
+        if not _accessible_folder(conn, user_id, folder_id, team_id):
+            return None
+        name = conn.execute(
+            "SELECT name FROM folders WHERE id = %s", (folder_id,)
+        ).fetchone()["name"]
+        rows = conn.execute(
+            """SELECT title FROM saved_papers WHERE folder_id = %s
+               ORDER BY created_at DESC LIMIT %s""",
+            (folder_id, n),
+        ).fetchall()
+    return {"name": name, "titles": [r["title"] for r in rows if r["title"]]}
+
+
+def create_watch(
+    user_id: str, folder_id: int, team_id: int | None, query: str, lang: str
+) -> dict | None:
+    """Start following a folder's field, or re-point an existing watch."""
+    with _get_pool().connection() as conn:
+        _assert_member(conn, user_id, team_id)
+        if not _accessible_folder(conn, user_id, folder_id, team_id):
+            return None
+        row = conn.execute(
+            """INSERT INTO folder_watches (folder_id, user_id, team_id, query, lang)
+               VALUES (%s,%s,%s,%s,%s)
+               ON CONFLICT (folder_id) DO UPDATE SET query = EXCLUDED.query
+               RETURNING id""",
+            (folder_id, user_id, team_id, query, lang),
+        ).fetchone()
+        return _watch_row(_accessible_watch(conn, user_id, row["id"], team_id))
+
+
+def list_watches(user_id: str, team_id: int | None = None) -> list[dict]:
+    scope_sql, params = _folder_scope(user_id, team_id)
+    with _get_pool().connection() as conn:
+        _assert_member(conn, user_id, team_id)
+        rows = conn.execute(
+            f"""SELECT w.*, f.name AS folder_name,
+                       (SELECT COUNT(*) FROM watch_hits h
+                        WHERE h.watch_id = w.id AND h.status = '') AS fresh
+                FROM folder_watches w JOIN folders f ON f.id = w.folder_id
+                WHERE {scope_sql} ORDER BY f.name""",
+            params,
+        ).fetchall()
+    return [_watch_row(r) for r in rows]
+
+
+def update_watch(user_id: str, watch_id: int, team_id: int | None, query: str) -> bool:
+    with _get_pool().connection() as conn:
+        _assert_member(conn, user_id, team_id)
+        if not _accessible_watch(conn, user_id, watch_id, team_id):
+            return False
+        # A new search starts over: the next check looks back the full first
+        # window, not just since the old search last ran.
+        conn.execute(
+            "UPDATE folder_watches SET query = %s, last_checked = NULL WHERE id = %s",
+            (query, watch_id),
+        )
+        return True
+
+
+def delete_watch(user_id: str, watch_id: int, team_id: int | None = None) -> bool:
+    with _get_pool().connection() as conn:
+        _assert_member(conn, user_id, team_id)
+        if not _accessible_watch(conn, user_id, watch_id, team_id):
+            return False
+        conn.execute("DELETE FROM folder_watches WHERE id = %s", (watch_id,))
+        return True
+
+
+def claim_due_watches(hours: int = 20, limit: int = 10) -> list[dict]:
+    """Mark watches as being checked now and hand them over.
+
+    Claimed and stamped in one statement, so two workers — or the timer and
+    someone opening the library at the same moment — never check the same
+    folder twice. `prev` is when it was last checked: new papers are the ones
+    PubMed received since then.
+    """
+    with _get_pool().connection() as conn:
+        return conn.execute(
+            """WITH due AS (
+                   SELECT id, last_checked AS prev FROM folder_watches
+                   WHERE last_checked IS NULL
+                      OR last_checked < now() - make_interval(hours => %s)
+                   ORDER BY last_checked NULLS FIRST
+                   LIMIT %s FOR UPDATE SKIP LOCKED)
+               UPDATE folder_watches w SET last_checked = now()
+               FROM due WHERE w.id = due.id
+               RETURNING w.*, due.prev""",
+            (hours, limit),
+        ).fetchall()
+
+
+def claim_watch(user_id: str, watch_id: int, team_id: int | None = None) -> dict | None:
+    """Claim one watch for an immediate check the user asked for."""
+    with _get_pool().connection() as conn:
+        _assert_member(conn, user_id, team_id)
+        if not _accessible_watch(conn, user_id, watch_id, team_id):
+            return None
+        return conn.execute(
+            """WITH prev AS (SELECT last_checked FROM folder_watches WHERE id = %s)
+               UPDATE folder_watches SET last_checked = now()
+               WHERE id = %s RETURNING *, (SELECT last_checked FROM prev) AS prev""",
+            (watch_id, watch_id),
+        ).fetchone()
+
+
+def watch_known_keys(watch: dict) -> set[str]:
+    """Everything this watch must not offer: already saved, or already offered."""
+    with _get_pool().connection() as conn:
+        if watch["team_id"] is None:
+            saved = conn.execute(
+                "SELECT dedup_key FROM saved_papers WHERE user_id = %s AND team_id IS NULL",
+                (watch["user_id"],),
+            ).fetchall()
+        else:
+            saved = conn.execute(
+                "SELECT dedup_key FROM saved_papers WHERE team_id = %s",
+                (watch["team_id"],),
+            ).fetchall()
+        seen = conn.execute(
+            "SELECT dedup_key FROM watch_hits WHERE watch_id = %s", (watch["id"],)
+        ).fetchall()
+    return {r["dedup_key"] for r in saved} | {r["dedup_key"] for r in seen}
+
+
+def dedup_key(card: dict) -> str:
+    return _dedup_key(card)
+
+
+def add_watch_hits(
+    watch_id: int, hits: list[tuple[dict, str]], rejected: list[dict] | None = None
+) -> int:
+    """Store findings, and remember what the screen turned down.
+
+    A rejected paper is kept as 'screened_out' so the next check does not ask
+    about it again — the screen is not deterministic, and a paper judged off
+    topic on Monday should not turn up on Tuesday because it was re-rolled.
+    """
+    added = 0
+    with _get_pool().connection() as conn:
+        for card, why in hits:
+            cur = conn.execute(
+                """INSERT INTO watch_hits (watch_id, dedup_key, card, why)
+                   VALUES (%s,%s,%s,%s) ON CONFLICT DO NOTHING""",
+                (watch_id, _dedup_key(card), json.dumps(card, ensure_ascii=False), why),
+            )
+            added += cur.rowcount
+        for card in rejected or []:
+            conn.execute(
+                """INSERT INTO watch_hits (watch_id, dedup_key, card, status)
+                   VALUES (%s,%s,%s,'screened_out') ON CONFLICT DO NOTHING""",
+                (watch_id, _dedup_key(card), json.dumps(card, ensure_ascii=False)),
+            )
+        conn.execute(
+            "UPDATE folder_watches SET last_error = '' WHERE id = %s", (watch_id,)
+        )
+    return added
+
+
+def set_watch_error(watch_id: int, error: str) -> None:
+    with _get_pool().connection() as conn:
+        conn.execute(
+            "UPDATE folder_watches SET last_error = %s WHERE id = %s",
+            (error[:300], watch_id),
+        )
+
+
+def list_watch_hits(user_id: str, watch_id: int, team_id: int | None = None) -> list[dict] | None:
+    with _get_pool().connection() as conn:
+        _assert_member(conn, user_id, team_id)
+        if not _accessible_watch(conn, user_id, watch_id, team_id):
+            return None
+        rows = conn.execute(
+            """SELECT id, card, why, found_at FROM watch_hits
+               WHERE watch_id = %s AND status = ''
+               ORDER BY found_at DESC, id LIMIT 100""",
+            (watch_id,),
+        ).fetchall()
+    return [
+        {"id": r["id"], "card": r["card"], "why": r["why"], "found_at": r["found_at"].isoformat()}
+        for r in rows
+    ]
+
+
+def settle_watch_hit(
+    user_id: str, hit_id: int, status: str, team_id: int | None = None
+) -> dict | None:
+    """Mark a finding saved or dismissed. Returns its card and folder."""
+    with _get_pool().connection() as conn:
+        _assert_member(conn, user_id, team_id)
+        row = conn.execute(
+            "SELECT h.card, w.id AS watch_id, w.folder_id FROM watch_hits h "
+            "JOIN folder_watches w ON w.id = h.watch_id WHERE h.id = %s",
+            (hit_id,),
+        ).fetchone()
+        if not row or not _accessible_watch(conn, user_id, row["watch_id"], team_id):
+            return None
+        conn.execute("UPDATE watch_hits SET status = %s WHERE id = %s", (status, hit_id))
+    return {"card": row["card"], "folder_id": row["folder_id"]}
+
+
+def watch_flags(user_id: str, team_id: int | None = None) -> dict[int, int]:
+    """folder id -> number of findings waiting, for every watched folder."""
+    return {w["folder_id"]: w["fresh"] for w in list_watches(user_id, team_id)}

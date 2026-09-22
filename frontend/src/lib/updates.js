@@ -11,8 +11,13 @@
 export const UPDATES = [
   {
     date: '2026-09-22',
-    title: { zh: '实验室负责人转交后真正生效', en: 'Handing over a lab now actually hands it over' },
+    title: { zh: '文件夹可以追踪新文献；实验室转交真正生效', en: 'Folders follow new papers; handing over a lab now works' },
     items: [
+      {
+        kind: 'feature',
+        zh: '文件夹可以「追踪新文献」了。打开任意文件夹，点「开始追踪」：Gaze 根据文件夹名称和里面已有的文献写好 PubMed 检索式，先查近 30 天，之后每天自动查一次。查到的文献会先和文件夹内容比对，只留下真正相关的，每篇附一句「为什么值得看」；点「加入此文件夹」就归档，点「不相关」就不会再出现。有新文献的文件夹旁会显示数字。检索式可以查看和修改，共享文库里全组共用同一份追踪结果。',
+        en: 'Folders can now follow new papers. Open any folder and press "Follow": Gaze writes a PubMed search from the folder name and the papers already in it, looks back 30 days, then checks daily. Findings are screened against the folder’s contents so only ones that belong are kept, each with a sentence on why; "Add to this folder" files it, "Not relevant" makes sure it never comes back. Folders with new papers show a count. The search can be read and edited, and in a lab library the whole group shares one set of findings.',
+      },
       {
         kind: 'feature',
         zh: '笔记有了「修改记录」：每次修改都会记下是谁改的、什么时候改的、改之前写的是什么，可以一键恢复成改前的内容。共享文库里笔记是全组共用的一份，此前被别人整段覆盖了既没有记录，也找不回来；现在删除的笔记也能从这里恢复。恢复本身也会记一笔，所以恢复错了还能再改回去。',

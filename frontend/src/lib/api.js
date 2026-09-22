@@ -331,6 +331,25 @@ export const renameFolder = (id, name, teamId) =>
   })
 export const deleteFolder = (id, teamId) =>
   req(`/api/folders/${id}${ws({}, teamId)}`, { method: 'DELETE' })
+// Folder watches: new papers in the field a folder covers.
+export const watchFolder = (folderId, teamId, lang, query = '') =>
+  jsonPost(`/api/folders/${folderId}/watch${ws({}, teamId)}`, { query, lang })
+export const listWatches = (teamId) => req(`/api/watches${ws({}, teamId)}`)
+export const updateWatch = (id, query, teamId) =>
+  req(`/api/watches/${id}${ws({}, teamId)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query }),
+  })
+export const unwatch = (id, teamId) =>
+  req(`/api/watches/${id}${ws({}, teamId)}`, { method: 'DELETE' })
+export const checkWatch = (id, teamId) =>
+  req(`/api/watches/${id}/check${ws({}, teamId)}`, { method: 'POST' })
+export const watchHits = (id, teamId) => req(`/api/watches/${id}/hits${ws({}, teamId)}`)
+export const saveWatchHit = (hitId, teamId) =>
+  req(`/api/watches/hits/${hitId}/save${ws({}, teamId)}`, { method: 'POST' })
+export const dismissWatchHit = (hitId, teamId) =>
+  req(`/api/watches/hits/${hitId}${ws({}, teamId)}`, { method: 'DELETE' })
 export const movePaper = (paperId, folderId, teamId) =>
   req(`/api/library/${paperId}/folder${ws({}, teamId)}`, {
     method: 'PUT',

@@ -1,14 +1,20 @@
 """Library endpoints: saved papers, tagging, and search history."""
 from __future__ import annotations
 
+import asyncio
 import re
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 
 from .. import db
 from ..auth import current_user
 from ..schemas import (
     FolderMove,
+    FolderWatch,
+    WatchChecked,
+    WatchCreate,
+    WatchHit,
+    WatchUpdate,
     MemberRole,
     Conversation,
     ConversationRename,
@@ -53,7 +59,7 @@ from ..schemas import (
     TeamJoin,
     TeamMember,
 )
-from ..services import librarian, llm_service
+from ..services import librarian, llm_service, watches
 
 router = APIRouter(prefix="/api", tags=["library"])
 
@@ -669,6 +675,119 @@ def move_paper(
 ) -> dict:
     if not _guard(db.set_paper_folder, user, paper_id, req.folder_id, team):
         raise HTTPException(status_code=404, detail="Paper or folder not found")
+    return {"ok": True}
+
+
+# --- Folder watches -----------------------------------------------------
+
+
+@router.post("/folders/{folder_id}/watch", response_model=FolderWatch)
+async def watch_folder(
+    folder_id: int,
+    body: WatchCreate,
+    team: int | None = None,
+    user: str = Depends(current_user),
+) -> FolderWatch:
+    """Start following a folder's field, and look for the first time now.
+
+    The first check runs before answering, so switching it on shows either
+    papers or an honest "nothing this month" — not a promise to look later.
+    """
+    ctx = await asyncio.to_thread(_guard, db.folder_context, user, folder_id, team)
+    if ctx is None:
+        raise HTTPException(status_code=404, detail="Folder not found")
+    query = body.query.strip()
+    if not query:
+        try:
+            query = await llm_service.watch_query(ctx["name"], ctx["titles"])
+        except Exception:  # noqa: BLE001 - the name is still a search
+            query = ctx["name"]
+    made = await asyncio.to_thread(
+        _guard, db.create_watch, user, folder_id, team, query, body.lang
+    )
+    claimed = await asyncio.to_thread(db.claim_watch, user, made["id"], team)
+    try:
+        await watches.check(claimed)
+    except Exception:  # noqa: BLE001 - recorded as last_error, shown in the panel
+        pass
+    return FolderWatch(
+        **next(w for w in db.list_watches(user, team) if w["id"] == made["id"])
+    )
+
+
+@router.get("/watches", response_model=list[FolderWatch])
+def list_watches(
+    background: BackgroundTasks,
+    team: int | None = None,
+    user: str = Depends(current_user),
+) -> list[FolderWatch]:
+    # Opening the library is also the timer's backup: a server that slept
+    # through the night catches up the moment someone looks.
+    background.add_task(watches.run_due)
+    return [FolderWatch(**w) for w in _guard(db.list_watches, user, team)]
+
+
+@router.patch("/watches/{watch_id}")
+def update_watch(
+    watch_id: int,
+    body: WatchUpdate,
+    team: int | None = None,
+    user: str = Depends(current_user),
+) -> dict:
+    if not _guard(db.update_watch, user, watch_id, team, body.query.strip()):
+        raise HTTPException(status_code=404, detail="Watch not found")
+    return {"ok": True}
+
+
+@router.delete("/watches/{watch_id}")
+def delete_watch(
+    watch_id: int, team: int | None = None, user: str = Depends(current_user)
+) -> dict:
+    if not _guard(db.delete_watch, user, watch_id, team):
+        raise HTTPException(status_code=404, detail="Watch not found")
+    return {"ok": True}
+
+
+@router.post("/watches/{watch_id}/check", response_model=WatchChecked)
+async def check_watch(
+    watch_id: int, team: int | None = None, user: str = Depends(current_user)
+) -> WatchChecked:
+    claimed = await asyncio.to_thread(_guard, db.claim_watch, user, watch_id, team)
+    if claimed is None:
+        raise HTTPException(status_code=404, detail="Watch not found")
+    try:
+        return WatchChecked(added=await watches.check(claimed))
+    except Exception as exc:  # noqa: BLE001
+        return WatchChecked(added=0, error=type(exc).__name__)
+
+
+@router.get("/watches/{watch_id}/hits", response_model=list[WatchHit])
+def list_watch_hits(
+    watch_id: int, team: int | None = None, user: str = Depends(current_user)
+) -> list[WatchHit]:
+    hits = _guard(db.list_watch_hits, user, watch_id, team)
+    if hits is None:
+        raise HTTPException(status_code=404, detail="Watch not found")
+    return [WatchHit(**h) for h in hits]
+
+
+@router.post("/watches/hits/{hit_id}/save", response_model=SavedPaper)
+def save_watch_hit(
+    hit_id: int, team: int | None = None, user: str = Depends(current_user)
+) -> SavedPaper:
+    """File a finding into the folder that found it."""
+    hit = _guard(db.settle_watch_hit, user, hit_id, "saved", team)
+    if hit is None:
+        raise HTTPException(status_code=404, detail="Finding not found")
+    return SavedPaper(**_guard(db.save_paper, user, hit["card"], [], hit["folder_id"], team))
+
+
+@router.delete("/watches/hits/{hit_id}")
+def dismiss_watch_hit(
+    hit_id: int, team: int | None = None, user: str = Depends(current_user)
+) -> dict:
+    if _guard(db.settle_watch_hit, user, hit_id, "dismissed", team) is None:
+        raise HTTPException(status_code=404, detail="Finding not found")
     return {"ok": True}
 
 

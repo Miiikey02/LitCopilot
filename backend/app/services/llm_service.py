@@ -54,7 +54,7 @@ _REASONING_HEADROOM = 12000
 
 
 async def _chat(
-    system: str, user: str, max_tokens: int, pro: bool = False
+    system: str, user: str, max_tokens: int, pro: bool = False, think: bool = True
 ) -> tuple[str, str]:
     """One chat-completion round-trip.
 
@@ -62,6 +62,10 @@ async def _chat(
     the default so that adding a new call site cannot silently make every
     search more expensive — the callers that need it say so. `max_tokens` means
     room for the answer either way; see _REASONING_HEADROOM.
+
+    `think=False` switches reasoning off. Both models reason by default, and on
+    a short structured task the reasoning can use the whole budget before any
+    answer is written — a 2000-token query-writing call came back empty.
 
     Returns (text, finish_reason). A finish_reason of "length" means the model
     was cut off by max_tokens and the output is likely truncated.
@@ -73,6 +77,7 @@ async def _chat(
             {"role": "system", "content": system},
             {"role": "user", "content": user},
         ],
+        extra_body=None if think else {"thinking": {"type": "disabled"}},
     )
     choice = resp.choices[0]
     text = (choice.message.content or "").strip()
@@ -909,3 +914,61 @@ async def extract_entities(paper: Paper) -> dict:
         return {}
     keys = ("genes", "proteins", "pathways", "drugs", "diseases", "methods")
     return {k: [x for x in (data.get(k) or []) if x][:12] for k in keys}
+
+
+# --- Folder watches ------------------------------------------------------
+
+_WATCH_QUERY_SYSTEM = """You write a PubMed search that finds NEW papers belonging in one folder of a researcher's library.
+
+You get the folder's name (often Chinese, sometimes a project code) and titles of papers already filed there. Work out the field they share, then write ONE PubMed query:
+- English only. Use [tiab] on free-text terms; add a MeSH term with [mh] only when you are sure it exists.
+- Combine 2–3 concept groups with AND; inside a group, OR together synonyms and abbreviations in parentheses.
+- Specific enough that most hits would belong in this folder, broad enough to catch a few papers a month. Do not AND together more than 3 groups.
+- No date limits, no publication-type filters.
+
+Return JSON only: {"query": "..."}"""
+
+
+async def watch_query(folder_name: str, titles: list[str]) -> str:
+    """A PubMed query for the field one folder covers."""
+    listed = "\n".join(f"- {t}" for t in titles[:20]) or "(the folder is empty)"
+    user = f"Folder name: {folder_name}\n\nPapers already in it:\n{listed}"
+    raw, _ = await _chat(_WATCH_QUERY_SYSTEM, user, max_tokens=400, think=False)
+    query = (_extract_json(raw).get("query") or "").strip()
+    if not query:
+        raise ValueError("empty watch query")
+    return query
+
+
+_WATCH_SCREEN_SYSTEM = """You screen newly published papers for one folder of a researcher's library.
+
+You get the folder's name, titles already filed there, and numbered candidates. Keep a candidate only if a researcher who built this folder would plausibly want to file it there — same disease, method, target or question. A paper that merely shares a keyword is not a match. When in doubt, leave it out: a short list they trust beats a long one they learn to ignore.
+
+For each one you keep, write one short sentence in RESPONSE LANGUAGE saying what it adds for this folder (not a summary of the abstract).
+
+Return JSON only: {"keep": [{"n": 1, "why": "..."}]}"""
+
+
+async def screen_new_papers(
+    folder_name: str, titles: list[str], papers: list[Paper], lang: str
+) -> dict[int, str]:
+    """Which candidates belong in the folder, as {index: reason}."""
+    listed = "\n".join(f"- {t}" for t in titles[:15]) or "(the folder is empty)"
+    cands = "\n\n".join(
+        f"[{i}] {p.title}\n    {p.venue} {p.pub_date}\n    {(p.abstract or '')[:600]}"
+        for i, p in enumerate(papers, 1)
+    )
+    user = (
+        f"RESPONSE LANGUAGE: {_lang_name(lang)}.\n\n"
+        f"Folder name: {folder_name}\n\nAlready in it:\n{listed}\n\nCandidates:\n{cands}"
+    )
+    raw, _ = await _chat(_WATCH_SCREEN_SYSTEM, user, max_tokens=2500, think=False)
+    kept = {}
+    for item in _extract_json(raw).get("keep", []):
+        try:
+            n = int(item.get("n"))
+        except (TypeError, ValueError):
+            continue
+        if 1 <= n <= len(papers):
+            kept[n - 1] = (item.get("why") or "").strip()
+    return kept

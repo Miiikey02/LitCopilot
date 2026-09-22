@@ -96,6 +96,14 @@ def _startup() -> None:
         print(redact(f"[startup] database unavailable: {type(exc).__name__}: {exc}"))
 
 
+@app.on_event("startup")
+async def _start_watch_timer() -> None:
+    if has_db():
+        from .services import watches
+
+        asyncio.get_running_loop().create_task(watches.loop())
+
+
 app.include_router(library.router)
 
 # Local dev: Vite runs on 5173. Loosen as needed for your setup.
