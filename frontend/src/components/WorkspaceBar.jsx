@@ -52,7 +52,12 @@ export default function WorkspaceBar({ teams, activeTeam, onSwitch, onTeamsChang
     setError('')
     if (team) {
       try {
-        setMembers(await api.listMembers(team.id))
+        // Refresh the workspace list too, not just the members. Someone made
+        // 负责人 after this page loaded had the badge — it comes from the fresh
+        // member list — but none of the controls, which read the role cached
+        // from when they had joined as an ordinary member.
+        const [fresh] = await Promise.all([api.listMembers(team.id), onTeamsChanged()])
+        setMembers(fresh)
       } catch {
         setMembers([])
       }
@@ -85,7 +90,11 @@ export default function WorkspaceBar({ teams, activeTeam, onSwitch, onTeamsChang
   const setRole = async (memberId, role) => {
     try {
       await api.setMemberRole(team.id, memberId, role)
-      setMembers(await api.listMembers(team.id))
+      // A 负责人 who steps down should lose the controls at once, and one who
+      // hands the lab over should see it happen — both mean re-reading our
+      // own role, not only the list.
+      const [fresh] = await Promise.all([api.listMembers(team.id), onTeamsChanged()])
+      setMembers(fresh)
     } catch (err) {
       window.alert(err?.status === 403 ? t('ownerOnlyRole') : t('errorNetwork'))
     }
@@ -93,9 +102,13 @@ export default function WorkspaceBar({ teams, activeTeam, onSwitch, onTeamsChang
 
   const kick = async (memberId) => {
     if (!team) return
-    await api.removeMember(team.id, memberId)
-    setMembers(await api.listMembers(team.id))
-    onTeamsChanged()
+    try {
+      await api.removeMember(team.id, memberId)
+      setMembers(await api.listMembers(team.id))
+      onTeamsChanged()
+    } catch (err) {
+      window.alert(err?.status === 403 ? t('ownerOnlyRemove') : t('errorNetwork'))
+    }
   }
 
   const tabClass = (active) =>
@@ -232,15 +245,19 @@ export default function WorkspaceBar({ teams, activeTeam, onSwitch, onTeamsChang
           </div>
 
           <div className="mt-3 border-t border-slate-100 pt-3">
-            {team.role === 'owner' ? (
-              <button onClick={disband} className="text-sm text-red-600 hover:underline">
-                {t('disbandTeam')}
-              </button>
-            ) : (
-              <button onClick={leave} className="text-sm text-red-600 hover:underline">
-                {t('leaveTeam')}
-              </button>
-            )}
+            <div className="flex flex-wrap items-center gap-4">
+              {(team.role !== 'owner' ||
+                members.filter((m) => m.role === 'owner').length > 1) && (
+                <button onClick={leave} className="text-sm text-red-600 hover:underline">
+                  {t('leaveTeam')}
+                </button>
+              )}
+              {team.role === 'owner' && (
+                <button onClick={disband} className="text-sm text-red-600 hover:underline">
+                  {t('disbandTeam')}
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}

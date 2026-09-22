@@ -273,6 +273,15 @@ CREATE TABLE IF NOT EXISTS assistants (
 
 CREATE INDEX IF NOT EXISTS assistants_user_idx ON assistants (user_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS skills_user_idx ON skills (user_id, updated_at DESC);
+
+UPDATE teams t SET owner_id = m.user_id
+  FROM (SELECT DISTINCT ON (team_id) team_id, user_id
+          FROM team_members WHERE role = 'owner'
+         ORDER BY team_id, joined_at) m
+ WHERE m.team_id = t.id
+   AND NOT EXISTS (SELECT 1 FROM team_members x
+                    WHERE x.team_id = t.id AND x.user_id = t.owner_id
+                      AND x.role = 'owner');
 CREATE INDEX IF NOT EXISTS skills_team_idx ON skills (team_id) WHERE team_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS library_undo_user_idx ON library_undo (user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS import_jobs_user_idx ON import_jobs (user_id, created_at DESC);
@@ -523,48 +532,89 @@ def list_members(user_id: str, team_id: int) -> list[dict]:
     ]
 
 
+# Who administers a workspace is decided by `team_members.role`, and only by
+# that. `teams.owner_id` records who created it and used to be checked here
+# too — so handing a lab to someone else updated one and left the other, and
+# the new 负责人 could change roles but not rename, remove anyone or disband,
+# while the student who had stepped down still could. Two sources of truth for
+# a permission is one too many.
+
+
 def rename_team(user_id: str, team_id: int, name: str) -> bool:
     name = name.strip()
     if not name:
         return False
     with _get_pool().connection() as conn:
-        cur = conn.execute(
-            "UPDATE teams SET name = %s WHERE id = %s AND owner_id = %s",
-            (name, team_id, user_id),
-        )
+        if not _is_owner(conn, user_id, team_id):
+            return False
+        cur = conn.execute("UPDATE teams SET name = %s WHERE id = %s", (name, team_id))
         return cur.rowcount > 0
 
 
 def delete_team(user_id: str, team_id: int) -> bool:
-    """Only the owner can disband a team; its shared papers go with it."""
+    """Only a 负责人 can disband a team; its shared papers go with it."""
     with _get_pool().connection() as conn:
-        cur = conn.execute(
-            "DELETE FROM teams WHERE id = %s AND owner_id = %s", (team_id, user_id)
-        )
+        if not _is_owner(conn, user_id, team_id):
+            return False
+        cur = conn.execute("DELETE FROM teams WHERE id = %s", (team_id,))
         return cur.rowcount > 0
 
 
 def leave_team(user_id: str, team_id: int, target_user_id: str | None = None) -> bool:
-    """Leave a team, or (as owner) remove another member.
+    """Leave a team, or (as 负责人) remove another member.
 
-    The owner cannot leave their own team — they disband it instead, so a team
-    is never left without an owner.
+    Anyone may leave, except the last 负责人 — a workspace nobody can
+    administer cannot be repaired, so they hand it over or disband it instead.
+    A 负责人 removes members; removing another 负责人 means demoting them first,
+    so "remove" never quietly strips someone of administration.
     """
     target = target_user_id or user_id
     with _get_pool().connection() as conn:
-        team = conn.execute("SELECT owner_id FROM teams WHERE id = %s", (team_id,)).fetchone()
-        if not team:
+        if not conn.execute("SELECT 1 FROM teams WHERE id = %s", (team_id,)).fetchone():
             return False
-        is_owner = str(team["owner_id"]) == str(user_id)
-        if target != user_id and not is_owner:
-            return False  # only the owner removes other people
-        if str(team["owner_id"]) == str(target):
-            return False  # owner must delete the team instead
+        if target != user_id and not _is_owner(conn, user_id, team_id):
+            return False  # only a 负责人 removes other people
+        row = conn.execute(
+            "SELECT role FROM team_members WHERE team_id = %s AND user_id = %s",
+            (team_id, target),
+        ).fetchone()
+        if not row:
+            return False
+        if row["role"] == "owner":
+            if target != user_id:
+                return False  # demote first
+            owners = conn.execute(
+                "SELECT COUNT(*) AS n FROM team_members WHERE team_id = %s AND role = 'owner'",
+                (team_id,),
+            ).fetchone()["n"]
+            if owners <= 1:
+                return False  # the last 负责人 hands over or disbands
         cur = conn.execute(
             "DELETE FROM team_members WHERE team_id = %s AND user_id = %s",
             (team_id, target),
         )
+        _sync_owner_id(conn, team_id)
         return cur.rowcount > 0
+
+
+def _sync_owner_id(conn, team_id: int) -> None:
+    """Keep the legacy owner_id pointing at a current 负责人.
+
+    Nothing checks it for permission any more, but it is a NOT NULL column that
+    other code and people reading the table will take at its word, so it
+    should not name someone who has stepped down.
+    """
+    conn.execute(
+        """UPDATE teams t SET owner_id = m.user_id
+             FROM (SELECT user_id FROM team_members
+                    WHERE team_id = %s AND role = 'owner'
+                    ORDER BY joined_at LIMIT 1) m
+            WHERE t.id = %s
+              AND NOT EXISTS (SELECT 1 FROM team_members x
+                               WHERE x.team_id = t.id AND x.user_id = t.owner_id
+                                 AND x.role = 'owner')""",
+        (team_id, team_id),
+    )
 
 
 # --- Saved papers ---------------------------------------------------------
@@ -1639,6 +1689,7 @@ def set_member_role(user_id: str, team_id: int, member_id: str, role: str) -> bo
             "UPDATE team_members SET role = %s WHERE team_id = %s AND user_id = %s",
             (role, team_id, member_id),
         )
+        _sync_owner_id(conn, team_id)
         return cur.rowcount > 0
 
 

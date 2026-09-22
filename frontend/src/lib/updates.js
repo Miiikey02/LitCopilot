@@ -10,6 +10,22 @@
 
 export const UPDATES = [
   {
+    date: '2026-09-22',
+    title: { zh: '实验室负责人转交后真正生效', en: 'Handing over a lab now actually hands it over' },
+    items: [
+      {
+        kind: 'fix',
+        zh: '实验室转交负责人后，新负责人看得到「负责人」标记，却没有任何管理按钮；就算有，改名、移出成员、解散也会被拒绝——而已经卸任的原负责人反而仍然能解散整个实验室。原因是「谁是负责人」在系统里记了两份，转交时只改了其中一份。现在统一为一份：转交之后，新负责人拥有全部管理权限，卸任的人不再有。已按这个规则修复了现有的实验室。',
+        en: 'After a lab was handed over, the new admin saw the admin badge but none of the controls — and even with them, renaming, removing members and disbanding were refused, while the person who had stepped down could still disband the whole lab. Ownership was recorded in two places and a handover changed only one. It is now one: after a handover the new admin has every control and the old one has none. Existing labs have been repaired to match.',
+      },
+      {
+        kind: 'change',
+        zh: '一个实验室可以有多位负责人。有其他负责人时，负责人也可以自己退出；只有最后一位负责人需要先转交或解散。要移出另一位负责人，先把他设为普通成员。',
+        en: 'A lab can have more than one admin. With another admin in place, an admin may leave; only the last one has to hand over or disband first. To remove another admin, make them a member first.',
+      },
+    ],
+  },
+  {
     date: '2026-08-19',
     title: { zh: '研究记录可以逐步核查', en: 'A research record you can check step by step' },
     items: [
