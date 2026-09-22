@@ -292,7 +292,18 @@ async def search(
         answer = ""
     else:
         try:
-            result = await llm_service.synthesize(query, lang, papers)
+            # Say which source is the paper asked for. Left to infer it, the
+            # model hedged ("this DOI probably points to Source 1").
+            asked = query
+            if pinned:
+                asked = (
+                    f"{query}\n\n(This DOI/title identifies Source 1, "
+                    f"[{pinned.citation_key()}] \"{pinned.title}\" — introduce that paper first. "
+                    "If its abstract is empty, give what is known — journal, year, authors — "
+                    "say the abstract is not available, and point to the original. "
+                    "Refer to it by its citation, never as \"Source 1\".)"
+                )
+            result = await llm_service.synthesize(asked, lang, papers)
             answer = result["answer"]
         except Exception:  # noqa: BLE001 - keep the API responsive on LLM errors
             answer = ""
